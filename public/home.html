@@ -4,20 +4,81 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Home — Unit Navigator</title>
+  <script>(function(){var t=localStorage.getItem('un_theme')||'dark';document.documentElement.dataset.theme=t;})()</script>
   <link rel="stylesheet" href="/css/main.css">
 </head>
 <body>
 <div id="nav-container"></div>
-<!-- TODO: Codex builds this page per MVP brief (5 action cards + Needs Attention) -->
-<div class="page" style="text-align:center;padding-top:80px;">
-  <h1 style="font-size:1.5rem;margin-bottom:8px;">Home Page</h1>
-  <p style="color:var(--muted);">Built by Codex — see MVP brief.</p>
-  <div style="margin-top:32px;display:flex;gap:16px;justify-content:center;flex-wrap:wrap;">
-    <a href="/inventory/new" class="btn btn-primary">Add Unit</a>
-    <a href="/inventory" class="btn btn-ghost">Open Inventory</a>
-  </div>
-</div>
+<main class="home-shell">
+  <section class="home-hero">
+    <div class="home-hero-copy">
+      <p class="home-kicker">Dealer workflow command center</p>
+      <h1>Welcome back, <span id="firstName">Alex</span>.</h1>
+      <p>What do you want to get done today?</p>
+    </div>
+
+    <div class="home-actions" aria-label="Primary workflows">
+      <a class="home-action-card green" href="/credit/new">
+        <span class="action-orb">
+          <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M9 29a15 15 0 1 1 30 0"/><path d="M24 29l8-10"/><path d="M16 29h-3m22 0h-3M16.9 17.9l-2.1-2.1M31.1 17.9l2.1-2.1M24 14v-3"/><circle cx="24" cy="29" r="2"/></svg>
+        </span>
+        <h2>Credit Pull</h2>
+        <p>Pull credit, view reports, and decide whether to start a deal.</p>
+        <span class="action-link">Start Now <span>→</span></span>
+      </a>
+
+      <a class="home-action-card blue" href="/inventory/new">
+        <span class="action-orb">
+          <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M11 29h26l-3-10a5 5 0 0 0-5-4H19a5 5 0 0 0-5 4l-3 10Z"/><path d="M14 29v6m20-6v6M18 35h12"/><circle cx="17" cy="29" r="2"/><circle cx="31" cy="29" r="2"/><path d="M35 17h6m-3-3v6"/></svg>
+        </span>
+        <h2>Add Inventory</h2>
+        <p>Scan VIN or add a new vehicle to inventory.</p>
+        <span class="action-link">Add Vehicle <span>→</span></span>
+      </a>
+
+      <a class="home-action-card purple" href="/inventory">
+        <span class="action-orb">
+          <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M11 29h26l-3-10a5 5 0 0 0-5-4H19a5 5 0 0 0-5 4l-3 10Z"/><path d="M14 29v6m20-6v6M18 35h12"/><circle cx="17" cy="29" r="2"/><circle cx="31" cy="29" r="2"/></svg>
+        </span>
+        <h2>Edit / View Inventory</h2>
+        <p>Manage, update and price your vehicles.</p>
+        <span class="action-link">View Inventory <span>→</span></span>
+      </a>
+
+      <a class="home-action-card orange" href="/deals">
+        <span class="action-orb">
+          <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M17 26l5 5a4 4 0 0 0 6 0l7-7"/><path d="M18 18l-5 5 12 12 12-12-5-5"/><path d="M21 21l5-5 6 6"/></svg>
+        </span>
+        <h2>Current Deals</h2>
+        <p>View pending deals, follow-ups, missing docs, and status.</p>
+        <span class="action-link">Open Deals <span>→</span></span>
+      </a>
+
+      <a class="home-action-card cyan" href="/paperwork/start">
+        <span class="action-orb">
+          <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M15 8h14l6 6v26H15Z"/><path d="M29 8v7h6"/><path d="M20 23h10M20 29h10M20 35h6"/></svg>
+        </span>
+        <h2>Start Paperwork</h2>
+        <p>Choose deal type and generate the packet.</p>
+        <span class="action-link">Start Packet <span>→</span></span>
+      </a>
+    </div>
+
+    <section class="home-metrics" aria-label="Needs attention">
+      <a href="/deals" class="metric green"><span>$</span><div><p>Deals Need Follow-Up</p><strong>4</strong><small>Ask if still active</small></div></a>
+      <a href="/inventory" class="metric blue"><span>▣</span><div><p>Units Missing Photos</p><strong>7</strong><small>Ready to clean up</small></div></a>
+      <a href="/inventory" class="metric purple"><span>✓</span><div><p>Missing Acquisition Cost</p><strong>3</strong><small>Profit needs cost stack</small></div></a>
+      <a href="/paperwork/start" class="metric orange"><span>!</span><div><p>Paperwork Incomplete</p><strong>5</strong><small>Finish started packets</small></div></a>
+    </section>
+  </section>
+</main>
 <script src="/js/nav.js"></script>
-<script>UN.requireAuth(); UN.renderNav();</script>
+<script>
+if (UN.requireAuth()) {
+  UN.renderNav();
+  const user = UN.getUser();
+  document.getElementById('firstName').textContent = (user?.name || 'Alex').split(' ')[0];
+}
+</script>
 </body>
 </html>

@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Unit Navigator</title>
+  <script>(function(){var t=localStorage.getItem('un_theme')||'dark';document.documentElement.dataset.theme=t;})()</script>
   <link rel="stylesheet" href="/css/main.css">
   <style>
     body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
@@ -19,12 +20,21 @@
     .login-submit { width: 100%; padding: 13px; font-size: 1rem; font-weight: 700; margin-top: 8px; }
     .login-error { color: var(--red); font-size: 0.875rem; text-align: center; margin-top: 12px; display: none; }
     .login-footer { text-align: center; margin-top: 24px; font-size: 0.8125rem; color: var(--muted); }
+    .login-theme-toggle { position: fixed; top: 18px; right: 18px; }
+    @media (max-width: 520px) {
+      .login-theme-toggle { position: static; margin: 16px auto 0; width: max-content; }
+      body { align-items: flex-start; padding-top: 20px; }
+    }
   </style>
 </head>
 <body>
+<div class="theme-toggle login-theme-toggle" aria-label="Theme">
+  <button type="button" data-theme-option="light" onclick="UN.setTheme('light')" aria-pressed="false">Light</button>
+  <button type="button" data-theme-option="dark" onclick="UN.setTheme('dark')" aria-pressed="true">Dark</button>
+</div>
 <div class="login-wrap">
   <div class="login-logo">
-    <img src="/images/logo.png" alt="Unit Navigator">
+    <img data-theme-logo src="/assets/unit-navigator-logo-on-dark.png" alt="Unit Navigator">
     <p class="login-tagline">You made the list.<br>Log in and get to work.</p>
   </div>
   <div class="login-card">
@@ -45,6 +55,7 @@
 
 <script src="/js/nav.js"></script>
 <script>
+UN.syncThemeToggle();
 if (UN.getToken()) location.href = '/home';
 
 document.addEventListener('keydown', e => { if (e.key === 'Enter') login(); });

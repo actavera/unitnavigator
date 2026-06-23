@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Current Deals — Unit Navigator</title>
+  <link rel="stylesheet" href="/css/main.css">
+</head>
+<body class="workflow-page">
+<div id="nav-container"></div>
+<main class="workflow-wrap">
+  <header class="workflow-header">
+    <div>
+      <p class="home-kicker">Current Deals</p>
+      <h1>Keep every active deal moving.</h1>
+      <p>Pending deals, follow-ups, missing docs, and status changes in one clean view.</p>
+    </div>
+    <a href="/paperwork/start" class="btn btn-primary">Start Paperwork</a>
+  </header>
+  <div class="filter-row">
+    <button class="btn active">Pending</button>
+    <button class="btn btn-ghost">Needs Follow-Up</button>
+    <button class="btn btn-ghost">Missing Docs</button>
+  </div>
+  <section class="deal-list">
+    <article class="deal-card-home panel-glass">
+      <span class="badge badge-pending">Needs Follow-Up</span>
+      <h2 class="mt-16">Maya Collins</h2>
+      <p>2021 Toyota Camry · They Finance</p>
+      <div class="deal-meta"><div><span>Last activity</span><strong>Credit pulled today</strong></div><div><span>Next follow-up</span><strong>Jun 26</strong></div><div><span>Missing docs</span><strong>1</strong></div></div>
+      <div class="deal-actions-mini"><button class="btn btn-ghost btn-sm">Open Deal</button><button class="btn btn-ghost btn-sm">Upload Docs</button><a class="btn btn-primary btn-sm" href="/paperwork/start">Start Packet</a><button class="btn btn-ghost btn-sm">Mark Closed</button></div>
+    </article>
+    <article class="deal-card-home panel-glass">
+      <span class="badge badge-recon">Missing Docs</span>
+      <h2 class="mt-16">Robert Hayes</h2>
+      <p>2019 Ford F-150 · BHPH</p>
+      <div class="deal-meta"><div><span>Last activity</span><strong>Packet started</strong></div><div><span>Next follow-up</span><strong>Jun 25</strong></div><div><span>Missing docs</span><strong>3</strong></div></div>
+      <div class="deal-actions-mini"><button class="btn btn-ghost btn-sm">Open Deal</button><button class="btn btn-ghost btn-sm">Upload Docs</button><a class="btn btn-primary btn-sm" href="/paperwork/start">Start Packet</a><button class="btn btn-ghost btn-sm">Change Vehicle</button></div>
+    </article>
+    <article class="deal-card-home panel-glass">
+      <span class="badge badge-ready">Pending</span>
+      <h2 class="mt-16">Lena Torres</h2>
+      <p>2020 Honda CR-V · Cash</p>
+      <div class="deal-meta"><div><span>Last activity</span><strong>Vehicle changed</strong></div><div><span>Next follow-up</span><strong>Jun 27</strong></div><div><span>Missing docs</span><strong>0</strong></div></div>
+      <div class="deal-actions-mini"><button class="btn btn-ghost btn-sm">Open Deal</button><button class="btn btn-ghost btn-sm">Mark Dead</button><a class="btn btn-primary btn-sm" href="/paperwork/start">Start Packet</a><button class="btn btn-ghost btn-sm">Mark Closed</button></div>
+    </article>
+  </section>
+</main>
+<script src="/js/nav.js"></script>
+<script>if (UN.requireAuth()) UN.renderNav();</script>
+</body>
+</html>

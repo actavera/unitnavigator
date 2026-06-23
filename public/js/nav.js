@@ -2,6 +2,28 @@ const UN = {
   getToken() { return localStorage.getItem('un_session'); },
   setToken(t) { localStorage.setItem('un_session', t); },
   clearToken() { localStorage.removeItem('un_session'); localStorage.removeItem('un_user'); },
+  getTheme() { return localStorage.getItem('un_theme') || 'dark'; },
+  setTheme(theme) {
+    localStorage.setItem('un_theme', theme);
+    UN.applyTheme();
+    UN.syncThemeToggle();
+  },
+  applyTheme() {
+    const theme = UN.getTheme() === 'light' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = theme;
+  },
+  syncThemeToggle() {
+    const theme = UN.getTheme() === 'light' ? 'light' : 'dark';
+    document.querySelectorAll('[data-theme-option]').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.themeOption === theme);
+      btn.setAttribute('aria-pressed', String(btn.dataset.themeOption === theme));
+    });
+    document.querySelectorAll('[data-theme-logo]').forEach(img => {
+      img.src = theme === 'light'
+        ? '/assets/unit-navigator-logo-transparent.png'
+        : '/assets/unit-navigator-logo-on-dark.png';
+    });
+  },
   getUser() {
     try { return JSON.parse(localStorage.getItem('un_user') || 'null'); } catch { return null; }
   },
@@ -37,15 +59,20 @@ const UN = {
     const initials = user?.name ? user.name.split(' ').map(n => n[0]).join('').slice(0,2).toUpperCase() : '?';
     el.innerHTML = `
       <nav class="nav">
-        <a href="/home" class="nav-logo">
-          <img src="/images/logo.png" alt="Unit Navigator">
+        <a href="/home" class="nav-logo" aria-label="Unit Navigator home">
+          <img data-theme-logo src="/assets/unit-navigator-logo-on-dark.png" alt="Unit Navigator">
         </a>
         <div class="nav-right">
+          <div class="theme-toggle" aria-label="Theme">
+            <button type="button" data-theme-option="light" onclick="UN.setTheme('light')" aria-pressed="false">Light</button>
+            <button type="button" data-theme-option="dark" onclick="UN.setTheme('dark')" aria-pressed="true">Dark</button>
+          </div>
           <span class="nav-user">${user?.name || ''}</span>
           <div class="nav-avatar">${initials}</div>
           <button class="nav-logout" onclick="UN.logout()">Log out</button>
         </div>
       </nav>`;
+    UN.syncThemeToggle();
   },
 
   fmt: {
@@ -82,6 +109,8 @@ const UN = {
     },
   },
 };
+
+UN.applyTheme();
 
 // Global toast
 function toast(msg, type = 'ok') {

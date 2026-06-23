@@ -14,6 +14,7 @@ const PORT = process.env.PORT || 3001;
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
+app.get('/favicon.ico', (_req, res) => res.status(204).end());
 
 app.use('/api/auth',      require('./routes/auth'));
 app.use('/api/inventory', require('./routes/inventory'));
@@ -25,6 +26,9 @@ const staticPages = {
   '/':              'index.html',
   '/login':         'login.html',
   '/home':          'home.html',
+  '/credit/new':    'credit-new.html',
+  '/deals':         'deals.html',
+  '/paperwork/start':'paperwork-start.html',
   '/inventory':     'inventory.html',
   '/inventory/new': 'inventory-new.html',
 };

@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Credit Pull — Unit Navigator</title>
+  <link rel="stylesheet" href="/css/main.css">
+</head>
+<body class="workflow-page">
+<div id="nav-container"></div>
+<main class="workflow-wrap">
+  <header class="workflow-header">
+    <div>
+      <p class="home-kicker">Credit Pull</p>
+      <h1>Run credit, then decide if this becomes a deal.</h1>
+      <p>MVP stores a placeholder result until the 700 Credit integration is connected.</p>
+    </div>
+  </header>
+  <form class="credit-form panel-glass">
+    <div class="form-group"><label class="form-label">First name</label><input class="form-input" placeholder="Maya"></div>
+    <div class="form-group"><label class="form-label">Last name</label><input class="form-input" placeholder="Collins"></div>
+    <div class="form-group"><label class="form-label">DOB</label><input class="form-input" type="date"></div>
+    <div class="form-group"><label class="form-label">SSN last 4</label><input class="form-input" inputmode="numeric" placeholder="1234"></div>
+    <div class="form-group"><label class="form-label">Phone</label><input class="form-input" placeholder="(555) 210-4488"></div>
+    <div class="form-group"><label class="form-label">Email</label><input class="form-input" type="email" placeholder="customer@email.com"></div>
+    <div class="form-group form-wide"><label class="form-label">Vehicle interested in</label><input class="form-input" placeholder="2021 Toyota Camry"></div>
+    <div class="form-group form-wide"><label class="form-label">Notes</label><textarea class="form-textarea" placeholder="Trade-in notes, lender context, internal reminders"></textarea></div>
+    <label class="form-wide flex items-center gap-12 text-sm"><input type="checkbox"> Customer consent confirmed</label>
+    <div class="mock-credit-result form-wide">
+      <div><p class="home-kicker">Mock credit result</p><strong id="creditStatus">Pending</strong><small class="text-muted">Score placeholder: 684</small></div>
+      <select class="form-select" style="max-width:220px;" onchange="document.getElementById('creditStatus').textContent=this.value"><option>Pending</option><option>Approved</option><option>Review</option><option>Declined</option></select>
+    </div>
+    <div class="form-wide flex gap-12"><a class="btn btn-primary" href="/deals">Yes, Start Deal</a><a class="btn btn-ghost" href="/home">No, Save and Exit</a></div>
+  </form>
+</main>
+<script src="/js/nav.js"></script>
+<script>if (UN.requireAuth()) UN.renderNav();</script>
+</body>
+</html>

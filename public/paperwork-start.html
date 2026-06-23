@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Start Paperwork — Unit Navigator</title>
+  <link rel="stylesheet" href="/css/main.css">
+</head>
+<body class="workflow-page">
+<div id="nav-container"></div>
+<main class="workflow-wrap">
+  <header class="workflow-header">
+    <div>
+      <p class="home-kicker">Start Paperwork</p>
+      <h1>What kind of deal is this?</h1>
+      <p>Generate a printable HTML packet first. PDF generation can come later.</p>
+    </div>
+  </header>
+  <div class="paper-source"><button class="btn active">Existing Deal</button><button class="btn btn-ghost">New Customer</button><button class="btn btn-ghost">Existing Customer</button></div>
+  <section class="packet-grid">
+    <article class="packet-option panel-glass"><span class="badge badge-ready">We Finance</span><h2 class="mt-16">In-house financing</h2><ul><li>Buyer info</li><li>Vehicle info</li><li>Financing terms</li><li>Required docs checklist</li><li>Internal notes</li></ul><button class="btn btn-primary w-full">Generate Packet</button></article>
+    <article class="packet-option panel-glass"><span class="badge badge-pending">BHPH</span><h2 class="mt-16">Buy Here Pay Here</h2><ul><li>Standard deal packet</li><li>BHPH contract</li><li>Payment schedule</li><li>Late fee terms</li><li>Repo disclosure placeholder</li></ul><button class="btn btn-primary w-full">Generate Packet</button></article>
+    <article class="packet-option panel-glass"><span class="badge badge-acquired">They Finance</span><h2 class="mt-16">Outside lender</h2><ul><li>Customer info</li><li>Vehicle info</li><li>Purchase agreement</li><li>Bank packet checklist</li></ul><button class="btn btn-primary w-full">Generate Packet</button></article>
+    <article class="packet-option panel-glass"><span class="badge badge-recon">Cash</span><h2 class="mt-16">Cash deal</h2><ul><li>Buyer info</li><li>Vehicle info</li><li>Cash receipt</li><li>Bill of sale / purchase docs</li></ul><button class="btn btn-primary w-full">Generate Packet</button></article>
+  </section>
+</main>
+<script src="/js/nav.js"></script>
+<script>if (UN.requireAuth()) UN.renderNav();</script>
+</body>
+</html>
