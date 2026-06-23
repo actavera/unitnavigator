@@ -252,16 +252,17 @@
 
     <div class="vin-row">
       <div class="vin-input-wrap">
-        <label class="form-label">Vehicle Identification Number</label>
+        <label class="form-label">Vehicle Identification Number <span style="color:var(--muted);font-weight:400;">(optional)</span></label>
         <input class="form-input vin-field" id="vinInput" maxlength="17" placeholder="1HGBH41JXMN109186"
-          oninput="this.value=this.value.toUpperCase().replace(/[^A-HJ-NPR-Z0-9]/g,'')" autocomplete="off">
+          oninput="this.value=this.value.toUpperCase().replace(/[^A-HJ-NPR-Z0-9]/g,'');onVinInput()" autocomplete="off">
       </div>
       <button class="btn btn-primary" onclick="decodeVin()" id="decodeBtn">Decode</button>
     </div>
+    <p style="font-size:0.8125rem;color:var(--muted);margin-top:8px;">No VIN? Leave it blank and fill in vehicle details manually.</p>
     <div id="decodeStatus" style="margin-top:12px;"></div>
     <div class="step-nav">
       <button class="btn btn-ghost" onclick="history.back()">← Back</button>
-      <button class="btn btn-primary" onclick="goStep(1)" id="vinNextBtn" disabled>Continue</button>
+      <button class="btn btn-primary" onclick="goStep(1)" id="vinNextBtn">Continue</button>
     </div>
   </div>
 
@@ -476,10 +477,21 @@ function goStep(n) {
   window.scrollTo(0, 0);
 }
 
+function onVinInput() {
+  // If user clears VIN after a decode, reset status so they know they're going manual
+  const vin = document.getElementById('vinInput').value.trim();
+  if (!vin) {
+    document.getElementById('decodeStatus').innerHTML = '';
+  }
+}
+
 function validateStep(n) {
   if (n === 0) {
     const vin = document.getElementById('vinInput').value.trim();
-    if (vin.length !== 17) { toast('Enter a full 17-character VIN', 'err'); return false; }
+    if (vin.length > 0 && vin.length !== 17) {
+      toast('VIN must be exactly 17 characters — or leave it blank to skip', 'err');
+      return false;
+    }
     return true;
   }
   if (n === 1) {

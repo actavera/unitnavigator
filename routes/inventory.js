@@ -110,11 +110,13 @@ router.post('/', requireAuth, (req, res) => {
     asking_price, minimum_price, acquisition_source, acquisition_date, notes,
   } = req.body;
 
-  if (!vin) return res.status(400).json({ error: 'VIN is required' });
+  const vinClean = vin ? vin.toUpperCase().trim() : '';
 
-  const existing = db.prepare('SELECT id FROM units WHERE vin = ? AND dealership_id = ? AND archived_at IS NULL')
-    .get(vin, req.user.dealership_id);
-  if (existing) return res.status(409).json({ error: 'A unit with this VIN already exists in your inventory' });
+  if (vinClean) {
+    const existing = db.prepare('SELECT id FROM units WHERE vin = ? AND dealership_id = ? AND archived_at IS NULL')
+      .get(vinClean, req.user.dealership_id);
+    if (existing) return res.status(409).json({ error: 'A unit with this VIN already exists in your inventory' });
+  }
 
   const info = db.prepare(`
     INSERT INTO units (dealership_id, vin, year, make, model, trim, body_style, color, mileage,
@@ -122,7 +124,7 @@ router.post('/', requireAuth, (req, res) => {
       asking_price, minimum_price, acquisition_source, acquisition_date, notes)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(
-    req.user.dealership_id, vin.toUpperCase(), year, make, model, trim, body_style, color,
+    req.user.dealership_id, vinClean, year, make, model, trim, body_style, color,
     mileage || 0,
     acquisition_cost || 0, transport_cost || 0, repair_cost || 0, detail_cost || 0, other_cost || 0,
     asking_price || null, minimum_price || null, acquisition_source || null, acquisition_date || null, notes || null,
