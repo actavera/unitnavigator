@@ -64,6 +64,81 @@
     .decode-err { background: var(--red-bg); border: 1px solid rgba(248,113,113,0.2); color: var(--red); }
     .decode-loading { display: flex; align-items: center; gap: 10px; color: var(--muted); }
 
+    /* ── Scan big button + divider ──────────────────────────────── */
+    .btn-scan-vin {
+      display: flex; align-items: center; justify-content: center; gap: 14px;
+      width: 100%; padding: 22px; font-size: 1.0625rem; font-weight: 700;
+      background: var(--blue-gl); border: 2px solid var(--blue-border);
+      color: var(--blue); border-radius: var(--r-lg); cursor: pointer;
+      transition: background 0.18s, color 0.18s, border-color 0.18s;
+      margin-bottom: 4px; font-family: inherit; letter-spacing: 0;
+    }
+    .btn-scan-vin:hover { background: var(--blue); color: #fff; border-color: var(--blue); }
+    .btn-scan-vin svg { width: 26px; height: 26px; flex-shrink: 0; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+    .or-divider {
+      display: flex; align-items: center; gap: 12px;
+      margin: 22px 0 18px; color: var(--muted); font-size: 0.8125rem;
+    }
+    .or-divider::before, .or-divider::after {
+      content: ''; flex: 1; height: 1px; background: var(--border-md);
+    }
+
+    /* ── Scanner full-screen modal ──────────────────────────────── */
+    .scan-modal {
+      display: none; position: fixed; inset: 0; z-index: 9999;
+      background: #000; flex-direction: column;
+    }
+    .scan-modal.open { display: flex; }
+
+    .scan-topbar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 20px; background: rgba(0,0,0,0.92);
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+    .scan-topbar-title { color: #fff; font-weight: 700; font-size: 0.9375rem; }
+    .scan-close-btn {
+      background: rgba(255,255,255,0.1); border: none; color: #fff;
+      border-radius: 50%; width: 36px; height: 36px; cursor: pointer;
+      font-size: 1.1rem; display: flex; align-items: center; justify-content: center;
+    }
+    .scan-close-btn:hover { background: rgba(255,255,255,0.22); }
+
+    .scan-viewport { flex: 1; position: relative; overflow: hidden; background: #000; }
+    #scanVideo { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .scan-guide {
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      pointer-events: none;
+    }
+    .scan-box {
+      width: 85vw; max-width: 460px; height: 100px;
+      border: 2px solid rgba(59,130,246,0.9); border-radius: 6px;
+      position: relative; overflow: hidden;
+      box-shadow: 0 0 0 4000px rgba(0,0,0,0.45);
+    }
+    .scan-line {
+      position: absolute; left: 0; right: 0; height: 2px;
+      background: linear-gradient(to right, transparent, #3b82f6 30%, #93c5fd 50%, #3b82f6 70%, transparent);
+      animation: scanmove 2s ease-in-out infinite;
+    }
+    @keyframes scanmove { 0%, 100% { top: 6%; } 50% { top: 86%; } }
+
+    .scan-hint {
+      padding: 14px 20px; text-align: center;
+      background: rgba(0,0,0,0.9); color: rgba(255,255,255,0.5);
+      font-size: 0.8125rem; line-height: 1.5;
+    }
+    .scan-hint b { color: rgba(255,255,255,0.85); display: block; margin-bottom: 2px; font-size: 0.875rem; }
+
+    .scan-found-banner {
+      display: none; padding: 16px 20px; background: #16a34a; color: #fff;
+      font-size: 1.0625rem; font-weight: 700; text-align: center;
+      letter-spacing: 0.1em; font-family: monospace;
+    }
+    .scan-unsupported {
+      display: none; padding: 24px 20px; text-align: center; color: rgba(255,255,255,0.7);
+    }
+
     /* ── Cost stack ──────────────────────────────────────────────── */
     .cost-stack { background: var(--s2); border-radius: var(--r); padding: 20px; }
     .cost-row {
@@ -166,7 +241,15 @@
   <!-- Step 0: VIN -->
   <div class="step-panel active" id="panel-0">
     <p class="panel-title">Scan or Enter VIN</p>
-    <p class="panel-sub">The VIN is the starting point for every unit. Enter it and we'll decode the vehicle automatically.</p>
+    <p class="panel-sub">The VIN is the starting point for every unit. Scan the barcode or type it manually.</p>
+
+    <button class="btn-scan-vin" onclick="openScanner()" id="scanVinBtn">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="7" width="3" height="10"/><rect x="7" y="7" width="1" height="10"/><rect x="10" y="7" width="2" height="10"/><rect x="14" y="7" width="1" height="10"/><rect x="17" y="7" width="2" height="10"/><rect x="21" y="7" width="1" height="10"/><path d="M1 4h3v3H1zM1 17h3v3H1zM20 4h3v3h-3zM20 17h3v3h-3z"/></svg>
+      Scan VIN Barcode
+    </button>
+
+    <div class="or-divider"><span>or type it in</span></div>
+
     <div class="vin-row">
       <div class="vin-input-wrap">
         <label class="form-label">Vehicle Identification Number</label>
@@ -342,6 +425,33 @@
 
 </div>
 
+<!-- VIN Scanner Modal -->
+<div class="scan-modal" id="scanModal" role="dialog" aria-modal="true" aria-label="VIN Scanner">
+  <div class="scan-topbar">
+    <span class="scan-topbar-title">Scan VIN Barcode</span>
+    <button class="scan-close-btn" onclick="closeScanner()" aria-label="Close scanner">✕</button>
+  </div>
+  <div class="scan-viewport" id="scanViewport">
+    <video id="scanVideo" playsinline muted autoplay></video>
+    <div class="scan-guide">
+      <div class="scan-box">
+        <div class="scan-line"></div>
+      </div>
+    </div>
+    <div class="scan-unsupported" id="scanUnsupported">
+      <p style="font-size:1.5rem;margin-bottom:12px;">📵</p>
+      <p>VIN scanning requires Chrome or Safari 17+.</p>
+      <p style="margin-top:8px;">Please type the VIN manually.</p>
+      <button class="btn btn-ghost" onclick="closeScanner()" style="margin-top:20px;">Close</button>
+    </div>
+  </div>
+  <div class="scan-found-banner" id="scanFoundBanner"></div>
+  <div class="scan-hint">
+    <b>Point camera at the VIN barcode</b>
+    Found on dashboard (driver side), door jamb sticker, or title
+  </div>
+</div>
+
 <script src="/js/nav.js"></script>
 <script>
 UN.requireAuth();
@@ -419,6 +529,100 @@ async function decodeVin() {
 document.getElementById('vinInput').addEventListener('keydown', e => {
   if (e.key === 'Enter') decodeVin();
 });
+
+// ── VIN Scanner ─────────────────────────────────────────────────────────────
+let _scanStream = null;
+let _scanInterval = null;
+let _scanDetector = null;
+
+async function openScanner() {
+  const modal = document.getElementById('scanModal');
+  const video = document.getElementById('scanVideo');
+  const unsupported = document.getElementById('scanUnsupported');
+
+  document.getElementById('scanFoundBanner').style.display = 'none';
+  unsupported.style.display = 'none';
+  modal.classList.add('open');
+
+  if (!('BarcodeDetector' in window)) {
+    video.style.display = 'none';
+    document.querySelector('.scan-guide').style.display = 'none';
+    document.querySelector('.scan-hint').style.display = 'none';
+    unsupported.style.display = 'block';
+    return;
+  }
+
+  try {
+    _scanStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
+    });
+    video.srcObject = _scanStream;
+    await video.play();
+
+    const supported = await BarcodeDetector.getSupportedFormats().catch(() => []);
+    const want = ['code_39', 'code_128', 'pdf417', 'data_matrix'];
+    const formats = want.filter(f => supported.includes(f));
+    _scanDetector = new BarcodeDetector({ formats: formats.length ? formats : ['code_39', 'code_128'] });
+
+    _scanInterval = setInterval(_scanFrame, 200);
+  } catch (e) {
+    closeScanner();
+    toast(e.name === 'NotAllowedError' ? 'Camera permission denied — please allow camera access' : 'Could not open camera', 'err');
+  }
+}
+
+async function _scanFrame() {
+  const video = document.getElementById('scanVideo');
+  if (!_scanDetector || video.readyState < 2) return;
+  try {
+    const results = await _scanDetector.detect(video);
+    for (const r of results) {
+      const vin = _extractVin(r.rawValue);
+      if (vin) {
+        clearInterval(_scanInterval);
+        _scanInterval = null;
+        _onVinDetected(vin);
+        return;
+      }
+    }
+  } catch { /* ignore per-frame errors */ }
+}
+
+function _extractVin(raw) {
+  // Strip Code 39 stop/start chars (* whitespace), uppercase everything
+  const clean = raw.replace(/[^A-HJ-NPR-Za-hj-npr-z0-9]/g, '').toUpperCase();
+  const m = clean.match(/[A-HJ-NPR-Z0-9]{17}/);
+  return m ? m[0] : null;
+}
+
+function _onVinDetected(vin) {
+  const banner = document.getElementById('scanFoundBanner');
+  banner.textContent = vin;
+  banner.style.display = 'block';
+  setTimeout(() => {
+    closeScanner();
+    document.getElementById('vinInput').value = vin;
+    decodeVin();
+  }, 700);
+}
+
+function closeScanner() {
+  clearInterval(_scanInterval);
+  _scanInterval = null;
+  _scanDetector = null;
+  if (_scanStream) {
+    _scanStream.getTracks().forEach(t => t.stop());
+    _scanStream = null;
+  }
+  const video = document.getElementById('scanVideo');
+  video.srcObject = null;
+  video.style.display = '';
+  const guide = document.querySelector('.scan-guide');
+  if (guide) guide.style.display = '';
+  const hint = document.querySelector('.scan-hint');
+  if (hint) hint.style.display = '';
+  document.getElementById('scanModal').classList.remove('open');
+}
 
 // ── Cost total ──────────────────────────────────────────────────────────────
 function getTotal() {
