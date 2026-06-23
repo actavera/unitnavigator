@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Home — Unit Navigator</title>
+  <link rel="stylesheet" href="/css/main.css">
+</head>
+<body>
+<div id="nav-container"></div>
+<!-- TODO: Codex builds this page per MVP brief (5 action cards + Needs Attention) -->
+<div class="page" style="text-align:center;padding-top:80px;">
+  <h1 style="font-size:1.5rem;margin-bottom:8px;">Home Page</h1>
+  <p style="color:var(--muted);">Built by Codex — see MVP brief.</p>
+  <div style="margin-top:32px;display:flex;gap:16px;justify-content:center;flex-wrap:wrap;">
+    <a href="/inventory/new" class="btn btn-primary">Add Unit</a>
+    <a href="/inventory" class="btn btn-ghost">Open Inventory</a>
+  </div>
+</div>
+<script src="/js/nav.js"></script>
+<script>UN.requireAuth(); UN.renderNav();</script>
+</body>
+</html>

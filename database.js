@@ -1,0 +1,130 @@
+'use strict';
+const Database = require('better-sqlite3');
+const path = require('path');
+const fs = require('fs');
+
+const dataDir = path.join(__dirname, 'data');
+if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+
+const db = new Database(path.join(dataDir, 'unitnavigator.db'));
+db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = ON');
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS dealerships (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    status TEXT DEFAULT 'active',
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    dealership_id INTEGER REFERENCES dealerships(id),
+    name TEXT NOT NULL,
+    email TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    role TEXT DEFAULT 'staff' CHECK(role IN ('admin','manager','staff')),
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS units (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    dealership_id INTEGER REFERENCES dealerships(id),
+    vin TEXT NOT NULL,
+    year INTEGER,
+    make TEXT,
+    model TEXT,
+    trim TEXT,
+    body_style TEXT,
+    color TEXT,
+    mileage INTEGER DEFAULT 0,
+    stage TEXT DEFAULT 'acquired'
+      CHECK(stage IN ('acquired','transport','recon','ready','pending','sold','archived')),
+    acquisition_cost REAL DEFAULT 0,
+    transport_cost REAL DEFAULT 0,
+    repair_cost REAL DEFAULT 0,
+    detail_cost REAL DEFAULT 0,
+    other_cost REAL DEFAULT 0,
+    asking_price REAL,
+    minimum_price REAL,
+    sold_price REAL,
+    acquisition_source TEXT,
+    acquisition_date TEXT,
+    notes TEXT,
+    photos TEXT DEFAULT '[]',
+    created_at TEXT DEFAULT (datetime('now')),
+    sold_at TEXT,
+    archived_at TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS customers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    dealership_id INTEGER REFERENCES dealerships(id),
+    first_name TEXT,
+    last_name TEXT,
+    phone TEXT,
+    email TEXT,
+    address TEXT,
+    previous_address TEXT,
+    employer TEXT,
+    monthly_income REAL,
+    time_at_job TEXT,
+    time_at_residence TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS credit_pulls (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    dealership_id INTEGER REFERENCES dealerships(id),
+    customer_id INTEGER REFERENCES customers(id),
+    provider TEXT DEFAULT 'mock',
+    provider_status TEXT,
+    result_summary TEXT,
+    score_placeholder INTEGER,
+    consent_confirmed INTEGER DEFAULT 0,
+    vehicle_interest TEXT,
+    notes TEXT,
+    pulled_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS deals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    dealership_id INTEGER REFERENCES dealerships(id),
+    customer_id INTEGER REFERENCES customers(id),
+    unit_id INTEGER REFERENCES units(id),
+    credit_pull_id INTEGER REFERENCES credit_pulls(id),
+    deal_type TEXT CHECK(deal_type IN ('we_finance','bhph','they_finance','cash')),
+    status TEXT DEFAULT 'pending'
+      CHECK(status IN ('pending','closed','dead','vehicle_changed')),
+    next_follow_up_at TEXT,
+    last_status_check_at TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    closed_at TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS documents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    dealership_id INTEGER REFERENCES dealerships(id),
+    customer_id INTEGER REFERENCES customers(id),
+    deal_id INTEGER REFERENCES deals(id),
+    document_type TEXT,
+    file_url TEXT,
+    status TEXT DEFAULT 'missing'
+      CHECK(status IN ('missing','uploaded','reviewed','rejected')),
+    uploaded_at TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS activity_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    dealership_id INTEGER,
+    entity_type TEXT,
+    entity_id INTEGER,
+    action TEXT NOT NULL,
+    note TEXT,
+    user_id INTEGER,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+`);
+
+module.exports = db;

@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Unit — Unit Navigator</title>
+  <link rel="stylesheet" href="/css/main.css">
+  <style>
+    .detail-layout {
+      display: grid; grid-template-columns: 1fr 380px;
+      gap: 24px; padding: 24px; max-width: 1300px; margin: 0 auto;
+    }
+    .main-col { display: flex; flex-direction: column; gap: 20px; }
+    .side-col  { display: flex; flex-direction: column; gap: 16px; }
+
+    /* ── Hero ────────────────────────────────────────────────────── */
+    .hero {
+      background: var(--s1); border: 1px solid var(--border);
+      border-radius: var(--r-lg); overflow: hidden;
+    }
+    .hero-photos {
+      position: relative; background: var(--s2);
+      height: 340px; overflow: hidden;
+    }
+    .hero-photo {
+      width: 100%; height: 100%; object-fit: cover;
+      display: none;
+    }
+    .hero-photo.active { display: block; }
+    .hero-no-photo {
+      width: 100%; height: 100%;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      color: var(--muted); gap: 12px;
+    }
+    .hero-no-photo span { font-size: 4rem; opacity: 0.3; }
+    .hero-arrows {
+      position: absolute; bottom: 12px; right: 12px;
+      display: flex; gap: 8px;
+    }
+    .hero-arrow {
+      background: rgba(0,0,0,0.6); border: none; color: white;
+      border-radius: var(--r-sm); width: 32px; height: 32px;
+      font-size: 1rem; cursor: pointer; display: flex; align-items: center; justify-content: center;
+    }
+    .hero-dots {
+      position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 6px;
+    }
+    .hero-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: rgba(255,255,255,0.4); cursor: pointer; transition: background 0.2s;
+    }
+    .hero-dot.active { background: white; }
+    .hero-count {
+      position: absolute; top: 12px; left: 12px;
+      background: rgba(0,0,0,0.6); color: white;
+      font-size: 0.75rem; padding: 4px 10px; border-radius: 99px;
+    }
+    .hero-body {
+      padding: 20px 24px;
+      display: flex; align-items: flex-start; justify-content: space-between;
+    }
+    .hero-title { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em; }
+    .hero-sub   { color: var(--muted); font-size: 0.875rem; margin-top: 4px; font-family: monospace; }
+    .hero-meta  { display: flex; gap: 16px; margin-top: 12px; flex-wrap: wrap; }
+    .hero-meta-item { display: flex; flex-direction: column; gap: 2px; }
+    .hero-meta-label { font-size: 0.6875rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+    .hero-meta-val   { font-size: 0.9375rem; font-weight: 600; }
+
+    /* ── Section card ────────────────────────────────────────────── */
+    .section-card {
+      background: var(--s1); border: 1px solid var(--border);
+      border-radius: var(--r-lg); overflow: hidden;
+    }
+    .section-header {
+      padding: 16px 20px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .section-title { font-size: 0.875rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+    .section-body { padding: 20px; }
+
+    /* ── Cost stack ──────────────────────────────────────────────── */
+    .cost-line {
+      display: flex; justify-content: space-between;
+      padding: 10px 0; border-bottom: 1px solid var(--border);
+      font-size: 0.875rem;
+    }
+    .cost-line:last-child { border-bottom: none; }
+    .cost-line-label { color: var(--text-2); }
+    .cost-total-line {
+      display: flex; justify-content: space-between; align-items: center;
+      padding-top: 12px; margin-top: 4px;
+      border-top: 2px solid var(--border-md);
+    }
+    .cost-total-line .lbl { font-weight: 700; }
+    .cost-total-line .val { font-size: 1.25rem; font-weight: 800; color: var(--primary); }
+
+    /* ── Profit panel ────────────────────────────────────────────── */
+    .profit-grid {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .profit-box {
+      background: var(--s2); border-radius: var(--r);
+      padding: 16px; text-align: center;
+    }
+    .profit-label { font-size: 0.75rem; color: var(--muted); margin-bottom: 6px; }
+    .profit-val   { font-size: 1.125rem; font-weight: 700; }
+
+    /* ── Stage changer ───────────────────────────────────────────── */
+    .stage-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+    }
+    .stage-btn {
+      padding: 10px 8px; border-radius: var(--r-sm);
+      font-size: 0.8rem; font-weight: 600; font-family: inherit;
+      border: 1px solid var(--border-md); background: var(--s2);
+      color: var(--text-2); cursor: pointer; text-align: center;
+      transition: all 0.15s;
+    }
+    .stage-btn:hover { border-color: var(--border-hi); color: var(--text); background: var(--s3); }
+    .stage-btn.current {
+      border-color: var(--primary); background: var(--primary-gl); color: var(--primary);
+    }
+    .stage-btn.sold    { border-color: var(--c-sold); background: rgba(148,163,184,0.1); color: var(--c-sold); }
+    .stage-btn.archived{ border-color: var(--c-archived); background: rgba(71,85,105,0.15); color: var(--c-archived); }
+
+    /* ── Activity log ────────────────────────────────────────────── */
+    .activity-item {
+      display: flex; gap: 12px;
+      padding: 10px 0; border-bottom: 1px solid var(--border);
+    }
+    .activity-item:last-child { border-bottom: none; }
+    .activity-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--primary); flex-shrink: 0; margin-top: 5px;
+    }
+    .activity-action { font-size: 0.875rem; font-weight: 500; }
+    .activity-note   { font-size: 0.8125rem; color: var(--text-2); margin-top: 2px; }
+    .activity-time   { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
+
+    /* ── Photo thumb strip ───────────────────────────────────────── */
+    .thumb-strip {
+      display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px;
+    }
+    .thumb-item {
+      width: 72px; height: 72px; border-radius: var(--r-sm);
+      overflow: hidden; cursor: pointer; border: 2px solid transparent;
+      transition: border-color 0.15s; flex-shrink: 0; position: relative;
+    }
+    .thumb-item.active { border-color: var(--primary); }
+    .thumb-item img { width: 100%; height: 100%; object-fit: cover; }
+    .thumb-remove {
+      position: absolute; top: 2px; right: 2px;
+      width: 18px; height: 18px; border-radius: 50%;
+      background: rgba(0,0,0,0.8); color: white;
+      border: none; font-size: 0.6875rem; cursor: pointer;
+      display: none; align-items: center; justify-content: center;
+    }
+    .thumb-item:hover .thumb-remove { display: flex; }
+
+    /* ── Edit inline ─────────────────────────────────────────────── */
+    .editable {
+      cursor: pointer; border-bottom: 1px dashed var(--border-md);
+      transition: border-color 0.15s;
+    }
+    .editable:hover { border-color: var(--primary); }
+
+    @media(max-width:1024px) {
+      .detail-layout { grid-template-columns: 1fr; }
+    }
+    @media(max-width:640px) {
+      .detail-layout { padding: 16px; }
+      .hero-photos { height: 220px; }
+      .hero-body { flex-direction: column; gap: 12px; }
+      .profit-grid { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+<div id="nav-container"></div>
+
+<div style="padding:12px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;font-size:0.875rem;">
+  <a href="/inventory" style="color:var(--muted);">← Inventory</a>
+  <span style="color:var(--muted);">/</span>
+  <span id="breadcrumb" style="color:var(--text-2);">Loading…</span>
+</div>
+
+<div class="detail-layout" id="detailLayout" style="display:none;">
+
+  <!-- ── Main column ─────────────────────────────────────────── -->
+  <div class="main-col">
+
+    <!-- Hero -->
+    <div class="hero">
+      <div class="hero-photos" id="heroPhotos">
+        <div class="hero-no-photo"><span>🚗</span><p style="color:var(--muted);font-size:0.875rem;">No photos yet</p></div>
+      </div>
+      <div class="hero-body">
+        <div>
+          <div class="hero-title" id="heroTitle">—</div>
+          <div class="hero-sub" id="heroVin">—</div>
+          <div class="hero-meta" id="heroMeta"></div>
+        </div>
+        <div id="heroBadge"></div>
+      </div>
+    </div>
+
+    <!-- Photos management -->
+    <div class="section-card">
+      <div class="section-header">
+        <span class="section-title">Photos</span>
+        <label class="btn btn-ghost btn-sm" style="cursor:pointer;">
+          + Add Photos
+          <input type="file" accept="image/*" multiple style="display:none" onchange="uploadPhotos(this.files)">
+        </label>
+      </div>
+      <div class="section-body">
+        <div class="thumb-strip" id="thumbStrip">
+          <div style="color:var(--muted);font-size:0.875rem;">No photos yet.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Edit Details -->
+    <div class="section-card">
+      <div class="section-header">
+        <span class="section-title">Vehicle Details</span>
+        <button class="btn btn-ghost btn-sm" id="editToggle" onclick="toggleEdit()">Edit</button>
+      </div>
+      <div class="section-body" id="detailsPanel"></div>
+    </div>
+
+    <!-- Activity Log -->
+    <div class="section-card">
+      <div class="section-header"><span class="section-title">Activity</span></div>
+      <div class="section-body" id="activityLog">
+        <div class="text-muted text-sm">No activity yet.</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── Side column ─────────────────────────────────────────── -->
+  <div class="side-col">
+
+    <!-- Cost Stack -->
+    <div class="section-card">
+      <div class="section-header">
+        <span class="section-title">Cost Stack</span>
+        <button class="btn btn-ghost btn-sm" id="editCostBtn" onclick="toggleCostEdit()">Edit</button>
+      </div>
+      <div class="section-body" id="costPanel"></div>
+    </div>
+
+    <!-- Profit Position -->
+    <div class="section-card">
+      <div class="section-header"><span class="section-title">Profit Position</span></div>
+      <div class="section-body" id="profitPanel"></div>
+    </div>
+
+    <!-- Stage -->
+    <div class="section-card">
+      <div class="section-header"><span class="section-title">Stage</span></div>
+      <div class="section-body">
+        <div class="stage-grid" id="stageGrid"></div>
+      </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="section-card">
+      <div class="section-header"><span class="section-title">Actions</span></div>
+      <div class="section-body" style="display:flex;flex-direction:column;gap:10px;">
+        <a href="/deals/new" class="btn btn-primary w-full" style="justify-content:center;">Start a Deal</a>
+        <button class="btn btn-ghost w-full" onclick="archiveUnit()" style="justify-content:center;">Archive Unit</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div id="loadError" style="display:none;" class="empty-state">
+  <div class="empty-icon">⚠️</div>
+  <h3>Unit not found</h3>
+  <p><a href="/inventory">Back to Inventory</a></p>
+</div>
+
+<script src="/js/nav.js"></script>
+<script>
+UN.requireAuth();
+UN.renderNav();
+
+const unitId = location.pathname.split('/').pop();
+const STAGES = [
+  { key:'acquired', label:'Acquired' },
+  { key:'transport', label:'Transport' },
+  { key:'recon', label:'Recon' },
+  { key:'ready', label:'Ready' },
+  { key:'pending', label:'Pending Deal' },
+  { key:'sold', label:'Sold' },
+];
+
+let unit = null;
+let editMode = false;
+let editCostMode = false;
+let photoIndex = 0;
+
+// ── Load ────────────────────────────────────────────────────────────────────
+async function load() {
+  try {
+    const data = await UN.api('GET', `/api/inventory/${unitId}`);
+    unit = data.unit;
+    document.getElementById('detailLayout').style.display = '';
+    document.getElementById('breadcrumb').textContent = `${unit.year} ${unit.make} ${unit.model}`;
+    document.title = `${unit.year} ${unit.make} ${unit.model} — Unit Navigator`;
+    render(data.activity);
+  } catch {
+    document.getElementById('loadError').style.display = 'block';
+    document.getElementById('breadcrumb').textContent = 'Not found';
+  }
+}
+
+function render(activity) {
+  renderHero();
+  renderPhotos();
+  renderDetails();
+  renderCosts();
+  renderProfit();
+  renderStages();
+  renderActivity(activity);
+}
+
+// ── Hero ────────────────────────────────────────────────────────────────────
+function renderHero() {
+  document.getElementById('heroTitle').textContent = `${unit.year} ${unit.make} ${unit.model}${unit.trim ? ' ' + unit.trim : ''}`;
+  document.getElementById('heroVin').textContent = unit.vin;
+  document.getElementById('heroBadge').innerHTML = UN.fmt.stageBadge(unit.stage);
+  document.getElementById('heroMeta').innerHTML = `
+    <div class="hero-meta-item"><span class="hero-meta-label">Mileage</span><span class="hero-meta-val">${UN.fmt.miles(unit.mileage)}</span></div>
+    <div class="hero-meta-item"><span class="hero-meta-label">Color</span><span class="hero-meta-val">${unit.color || '—'}</span></div>
+    <div class="hero-meta-item"><span class="hero-meta-label">Added</span><span class="hero-meta-val">${UN.fmt.date(unit.created_at)}</span></div>
+    ${unit.acquisition_source ? `<div class="hero-meta-item"><span class="hero-meta-label">Source</span><span class="hero-meta-val">${unit.acquisition_source}</span></div>` : ''}
+  `;
+
+  const heroPhotos = document.getElementById('heroPhotos');
+  if (unit.photos?.length) {
+    photoIndex = 0;
+    heroPhotos.innerHTML = unit.photos.map((p, i) =>
+      `<img class="hero-photo${i === 0 ? ' active' : ''}" src="${p}" alt="Photo ${i+1}">`
+    ).join('') + `
+      <div class="hero-count" id="photoCount">${unit.photos.length > 1 ? `1 / ${unit.photos.length}` : '1 photo'}</div>
+      ${unit.photos.length > 1 ? `
+      <div class="hero-arrows">
+        <button class="hero-arrow" onclick="heroNav(-1)">‹</button>
+        <button class="hero-arrow" onclick="heroNav(1)">›</button>
+      </div>
+      <div class="hero-dots">${unit.photos.map((_,i) => `<div class="hero-dot${i===0?' active':''}" onclick="heroGo(${i})"></div>`).join('')}</div>
+      ` : ''}`;
+  } else {
+    heroPhotos.innerHTML = `<div class="hero-no-photo"><span>🚗</span><p style="color:var(--muted);font-size:0.875rem;">No photos yet</p></div>`;
+  }
+}
+
+function heroNav(dir) {
+  if (!unit.photos?.length) return;
+  heroGo((photoIndex + dir + unit.photos.length) % unit.photos.length);
+}
+function heroGo(idx) {
+  photoIndex = idx;
+  document.querySelectorAll('.hero-photo').forEach((el, i) => el.classList.toggle('active', i === idx));
+  document.querySelectorAll('.hero-dot').forEach((el, i) => el.classList.toggle('active', i === idx));
+  const cnt = document.getElementById('photoCount');
+  if (cnt) cnt.textContent = `${idx + 1} / ${unit.photos.length}`;
+}
+
+// ── Photo strip ─────────────────────────────────────────────────────────────
+function renderPhotos() {
+  const strip = document.getElementById('thumbStrip');
+  if (!unit.photos?.length) {
+    strip.innerHTML = `<div style="color:var(--muted);font-size:0.875rem;">No photos yet.</div>`;
+    return;
+  }
+  strip.innerHTML = unit.photos.map((p, i) => `
+    <div class="thumb-item${i === photoIndex ? ' active' : ''}" onclick="heroGo(${i})">
+      <img src="${p}" alt="Photo ${i+1}">
+      <button class="thumb-remove" onclick="removePhoto(event,'${p}')">✕</button>
+    </div>`).join('');
+}
+
+async function uploadPhotos(files) {
+  if (!files.length) return;
+  const fd = new FormData();
+  Array.from(files).forEach(f => fd.append('photos', f));
+  try {
+    const r = await fetch(`/api/inventory/${unitId}/photos`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${UN.getToken()}` },
+      body: fd,
+    });
+    const data = await r.json();
+    unit.photos = data.photos;
+    renderHero();
+    renderPhotos();
+    toast('Photos uploaded');
+  } catch { toast('Upload failed', 'err'); }
+}
+
+async function removePhoto(e, url) {
+  e.stopPropagation();
+  if (!confirm('Remove this photo?')) return;
+  try {
+    await UN.api('DELETE', `/api/inventory/${unitId}/photos`, { url });
+    unit.photos = unit.photos.filter(p => p !== url);
+    renderHero();
+    renderPhotos();
+    toast('Photo removed');
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+// ── Details panel ───────────────────────────────────────────────────────────
+function renderDetails() {
+  const el = document.getElementById('detailsPanel');
+  if (!editMode) {
+    el.innerHTML = `
+      <div class="form-row form-row-2">
+        ${field('Year', unit.year)}
+        ${field('Make', unit.make)}
+        ${field('Model', unit.model)}
+        ${field('Trim', unit.trim)}
+        ${field('Body Style', unit.body_style)}
+        ${field('Color', unit.color)}
+        ${field('Mileage', UN.fmt.miles(unit.mileage))}
+        ${field('Acquisition Date', UN.fmt.date(unit.acquisition_date))}
+        ${field('Source', unit.acquisition_source)}
+      </div>
+      ${unit.notes ? `<div style="margin-top:16px;padding:14px;background:var(--s2);border-radius:var(--r-sm);font-size:0.875rem;color:var(--text-2);">${unit.notes}</div>` : ''}
+    `;
+  } else {
+    el.innerHTML = `
+      <div class="form-row form-row-3" style="margin-bottom:14px;">
+        ${editField('Year','fYear','number',unit.year)}
+        ${editField('Make','fMake','text',unit.make)}
+        ${editField('Model','fModel','text',unit.model)}
+      </div>
+      <div class="form-row form-row-3" style="margin-bottom:14px;">
+        ${editField('Trim','fTrim','text',unit.trim)}
+        ${editField('Body Style','fBodyStyle','text',unit.body_style)}
+        ${editField('Color','fColor','text',unit.color)}
+      </div>
+      <div class="form-row form-row-2" style="margin-bottom:14px;">
+        ${editField('Mileage','fMileage','number',unit.mileage)}
+        ${editField('Acq. Date','fAcqDate','date',unit.acquisition_date)}
+      </div>
+      ${editField('Source','fSource','text',unit.acquisition_source,'margin-bottom:14px')}
+      <div class="form-group" style="margin-bottom:14px;">
+        <label class="form-label">Notes</label>
+        <textarea class="form-textarea" id="fNotes">${unit.notes || ''}</textarea>
+      </div>
+      <div class="flex gap-8">
+        <button class="btn btn-primary btn-sm" onclick="saveDetails()">Save</button>
+        <button class="btn btn-ghost btn-sm" onclick="cancelEdit()">Cancel</button>
+      </div>
+    `;
+  }
+}
+
+function field(label, val) {
+  return `<div class="review-item" style="padding:10px 0;border-bottom:1px solid var(--border);">
+    <span style="font-size:0.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.04em;">${label}</span>
+    <span style="font-size:0.9375rem;font-weight:500;">${val || '—'}</span>
+  </div>`;
+}
+function editField(label, id, type, val, style='') {
+  return `<div class="form-group" style="${style}"><label class="form-label">${label}</label><input class="form-input" id="${id}" type="${type}" value="${val || ''}"></div>`;
+}
+
+function toggleEdit() {
+  editMode = !editMode;
+  document.getElementById('editToggle').textContent = editMode ? 'Cancel' : 'Edit';
+  renderDetails();
+}
+function cancelEdit() { editMode = false; document.getElementById('editToggle').textContent = 'Edit'; renderDetails(); }
+
+async function saveDetails() {
+  const body = {
+    year: Number(document.getElementById('fYear').value) || null,
+    make: document.getElementById('fMake').value.trim(),
+    model: document.getElementById('fModel').value.trim(),
+    trim: document.getElementById('fTrim').value.trim() || null,
+    body_style: document.getElementById('fBodyStyle').value.trim() || null,
+    color: document.getElementById('fColor').value.trim() || null,
+    mileage: Number(document.getElementById('fMileage').value) || 0,
+    acquisition_date: document.getElementById('fAcqDate').value || null,
+    acquisition_source: document.getElementById('fSource').value.trim() || null,
+    notes: document.getElementById('fNotes').value.trim() || null,
+  };
+  try {
+    const data = await UN.api('PUT', `/api/inventory/${unitId}`, body);
+    unit = data.unit;
+    editMode = false;
+    document.getElementById('editToggle').textContent = 'Edit';
+    document.getElementById('heroTitle').textContent = `${unit.year} ${unit.make} ${unit.model}${unit.trim ? ' ' + unit.trim : ''}`;
+    document.getElementById('breadcrumb').textContent = `${unit.year} ${unit.make} ${unit.model}`;
+    render(null);
+    toast('Details saved');
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+// ── Cost panel ──────────────────────────────────────────────────────────────
+function renderCosts() {
+  const el = document.getElementById('costPanel');
+  if (!editCostMode) {
+    const lines = [
+      ['Acquisition', unit.acquisition_cost],
+      ['Transport', unit.transport_cost],
+      ['Recon / Repairs', unit.repair_cost],
+      ['Detail', unit.detail_cost],
+      ['Other', unit.other_cost],
+    ];
+    el.innerHTML = lines.filter(([,v]) => v).map(([l, v]) =>
+      `<div class="cost-line"><span class="cost-line-label">${l}</span><span>${UN.fmt.money(v)}</span></div>`
+    ).join('') +
+    `<div class="cost-total-line"><span class="lbl">Total</span><span class="val">${UN.fmt.money(unit.total_cost)}</span></div>`;
+  } else {
+    const costFields = [
+      { id: 'cAcq', label: 'Acquisition', val: unit.acquisition_cost, key: 'acquisition_cost' },
+      { id: 'cTransport', label: 'Transport', val: unit.transport_cost, key: 'transport_cost' },
+      { id: 'cRepair', label: 'Recon / Repairs', val: unit.repair_cost, key: 'repair_cost' },
+      { id: 'cDetail', label: 'Detail', val: unit.detail_cost, key: 'detail_cost' },
+      { id: 'cOther', label: 'Other', val: unit.other_cost, key: 'other_cost' },
+    ];
+    el.innerHTML = costFields.map(f => `
+      <div class="cost-row" style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+        <span style="width:130px;font-size:0.8125rem;color:var(--text-2);flex-shrink:0;">${f.label}</span>
+        <input class="form-input" id="${f.id}" type="number" min="0" step="50" value="${f.val || 0}" oninput="previewCostTotal()">
+      </div>`).join('') +
+    `<div style="font-size:1rem;font-weight:700;text-align:right;padding:10px 0;color:var(--primary);" id="previewTotal">Total: ${UN.fmt.money(unit.total_cost)}</div>
+    <div class="flex gap-8"><button class="btn btn-primary btn-sm" onclick="saveCosts()">Save</button><button class="btn btn-ghost btn-sm" onclick="cancelCostEdit()">Cancel</button></div>`;
+  }
+}
+
+function previewCostTotal() {
+  const t = ['cAcq','cTransport','cRepair','cDetail','cOther']
+    .reduce((s, id) => s + (Number(document.getElementById(id)?.value) || 0), 0);
+  const el = document.getElementById('previewTotal');
+  if (el) el.textContent = `Total: ${UN.fmt.money(t)}`;
+}
+
+function toggleCostEdit() {
+  editCostMode = !editCostMode;
+  document.getElementById('editCostBtn').textContent = editCostMode ? 'Cancel' : 'Edit';
+  renderCosts();
+}
+function cancelCostEdit() { editCostMode = false; document.getElementById('editCostBtn').textContent = 'Edit'; renderCosts(); }
+
+async function saveCosts() {
+  const body = {
+    acquisition_cost: Number(document.getElementById('cAcq').value) || 0,
+    transport_cost:   Number(document.getElementById('cTransport').value) || 0,
+    repair_cost:      Number(document.getElementById('cRepair').value) || 0,
+    detail_cost:      Number(document.getElementById('cDetail').value) || 0,
+    other_cost:       Number(document.getElementById('cOther').value) || 0,
+  };
+  try {
+    const data = await UN.api('PUT', `/api/inventory/${unitId}`, body);
+    unit = data.unit;
+    editCostMode = false;
+    document.getElementById('editCostBtn').textContent = 'Edit';
+    renderCosts();
+    renderProfit();
+    toast('Costs updated');
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+// ── Profit panel ────────────────────────────────────────────────────────────
+function renderProfit() {
+  const el = document.getElementById('profitPanel');
+  el.innerHTML = `
+    <div class="profit-grid">
+      <div class="profit-box">
+        <div class="profit-label">Asking Price</div>
+        <div class="profit-val">${UN.fmt.money(unit.asking_price)}</div>
+      </div>
+      <div class="profit-box">
+        <div class="profit-label">Minimum</div>
+        <div class="profit-val">${UN.fmt.money(unit.minimum_price)}</div>
+      </div>
+      <div class="profit-box">
+        <div class="profit-label">Est. Gross</div>
+        <div class="profit-val">${UN.fmt.gross(unit.estimated_gross)}</div>
+      </div>
+      <div class="profit-box">
+        <div class="profit-label">Actual Gross</div>
+        <div class="profit-val">${unit.sold_price ? UN.fmt.gross(unit.actual_gross) : '<span style="color:var(--muted)">—</span>'}</div>
+      </div>
+    </div>
+    <div style="margin-top:12px;display:flex;gap:8px;">
+      <input class="form-input" id="pAskEdit" type="number" placeholder="Asking price" value="${unit.asking_price || ''}" style="flex:1;">
+      <input class="form-input" id="pMinEdit" type="number" placeholder="Minimum" value="${unit.minimum_price || ''}" style="flex:1;">
+    </div>
+    ${unit.stage === 'sold' ? `<div style="margin-top:8px;"><input class="form-input" id="pSoldEdit" type="number" placeholder="Sold price" value="${unit.sold_price || ''}"></div>` : ''}
+    <button class="btn btn-ghost btn-sm w-full" style="margin-top:10px;justify-content:center;" onclick="savePricing()">Update Pricing</button>
+  `;
+}
+
+async function savePricing() {
+  const body = {
+    asking_price:  Number(document.getElementById('pAskEdit').value) || null,
+    minimum_price: Number(document.getElementById('pMinEdit').value) || null,
+  };
+  const soldEl = document.getElementById('pSoldEdit');
+  if (soldEl) body.sold_price = Number(soldEl.value) || null;
+  try {
+    const data = await UN.api('PUT', `/api/inventory/${unitId}`, body);
+    unit = data.unit;
+    renderProfit();
+    toast('Pricing updated');
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+// ── Stage ───────────────────────────────────────────────────────────────────
+function renderStages() {
+  const el = document.getElementById('stageGrid');
+  el.innerHTML = STAGES.map(s => `
+    <button class="stage-btn ${s.key === unit.stage ? 'current' : ''}" onclick="setStage('${s.key}')">
+      <span class="stage-dot dot-${s.key}" style="margin-right:6px;"></span>${s.label}
+    </button>`).join('') +
+    `<button class="stage-btn archived ${unit.stage === 'archived' ? 'current' : ''}" onclick="setStage('archived')" style="grid-column:span 2;">Archive</button>`;
+}
+
+async function setStage(stage) {
+  if (stage === unit.stage) return;
+  if (stage === 'archived' && !confirm('Archive this unit?')) return;
+  if (stage === 'sold') {
+    const price = prompt('Enter sold price (optional):');
+    if (price) await UN.api('PUT', `/api/inventory/${unitId}`, { sold_price: Number(price) });
+  }
+  try {
+    const data = await UN.api('PATCH', `/api/inventory/${unitId}/stage`, { stage });
+    unit = data.unit;
+    renderHero();
+    renderStages();
+    renderProfit();
+    toast(`Stage → ${stage}`);
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+// ── Archive ─────────────────────────────────────────────────────────────────
+async function archiveUnit() {
+  if (!confirm('Archive this unit? It will be hidden from the main board.')) return;
+  await setStage('archived');
+  setTimeout(() => location.href = '/inventory', 800);
+}
+
+// ── Activity ────────────────────────────────────────────────────────────────
+function renderActivity(activity) {
+  if (!activity) return;
+  const el = document.getElementById('activityLog');
+  if (!activity.length) { el.innerHTML = `<div class="text-muted text-sm">No activity yet.</div>`; return; }
+  el.innerHTML = activity.map(a => `
+    <div class="activity-item">
+      <div class="activity-dot"></div>
+      <div>
+        <div class="activity-action">${a.action}</div>
+        ${a.note ? `<div class="activity-note">${a.note}</div>` : ''}
+        <div class="activity-time">${UN.fmt.ago(a.created_at)} ${a.user_name ? '· ' + a.user_name : ''}</div>
+      </div>
+    </div>`).join('');
+}
+
+load();
+</script>
+</body>
+</html>

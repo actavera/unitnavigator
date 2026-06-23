@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Unit Navigator</title>
+  <link rel="stylesheet" href="/css/main.css">
+  <style>
+    body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .login-wrap { width: 100%; max-width: 400px; padding: 24px; }
+    .login-logo {
+      text-align: center; margin-bottom: 40px;
+    }
+    .login-logo svg { margin-bottom: 14px; }
+    .login-logo h1 { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em; }
+    .login-logo h1 span { color: var(--primary); }
+    .login-tagline { color: var(--muted); font-size: 0.9375rem; margin-top: 10px; line-height: 1.6; }
+    .login-card { background: var(--s1); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 32px; }
+    .login-card h2 { font-size: 1rem; font-weight: 600; margin-bottom: 24px; color: var(--text-2); }
+    .form-group { margin-bottom: 16px; }
+    .login-submit { width: 100%; padding: 13px; font-size: 1rem; font-weight: 700; margin-top: 8px; }
+    .login-error { color: var(--red); font-size: 0.875rem; text-align: center; margin-top: 12px; display: none; }
+    .login-footer { text-align: center; margin-top: 24px; font-size: 0.8125rem; color: var(--muted); }
+  </style>
+</head>
+<body>
+<div class="login-wrap">
+  <div class="login-logo">
+    <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+      <rect width="48" height="48" rx="12" fill="#6366f1"/>
+      <path d="M12 32 L24 16 L36 32" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <h1>Unit<span>Navigator</span></h1>
+    <p class="login-tagline">You made the list.<br>Log in and get to work.</p>
+  </div>
+  <div class="login-card">
+    <h2>Sign in to your account</h2>
+    <div class="form-group">
+      <label class="form-label">Email</label>
+      <input class="form-input" id="email" type="email" placeholder="you@dealership.com" autocomplete="email">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Password</label>
+      <input class="form-input" id="password" type="password" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button class="btn btn-primary login-submit" id="loginBtn" onclick="login()">Log In</button>
+    <div class="login-error" id="loginError"></div>
+  </div>
+  <div class="login-footer">Need access? Contact your admin.</div>
+</div>
+
+<script src="/js/nav.js"></script>
+<script>
+if (UN.getToken()) location.href = '/home';
+
+document.addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+
+async function login() {
+  const btn = document.getElementById('loginBtn');
+  const errEl = document.getElementById('loginError');
+  const email = document.getElementById('email').value.trim();
+  const password = document.getElementById('password').value;
+
+  errEl.style.display = 'none';
+  if (!email || !password) { showErr('Enter email and password'); return; }
+
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  try {
+    const data = await UN.api('POST', '/api/auth/login', { email, password });
+    UN.setToken(data.token);
+    UN.setUser(data.user);
+    location.href = '/home';
+  } catch(e) {
+    showErr(e.message);
+    btn.disabled = false; btn.textContent = 'Log In';
+  }
+}
+function showErr(msg) {
+  const el = document.getElementById('loginError');
+  el.textContent = msg; el.style.display = 'block';
+}
+</script>
+</body>
+</html>

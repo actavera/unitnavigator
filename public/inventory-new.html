@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Add Unit — Unit Navigator</title>
+  <link rel="stylesheet" href="/css/main.css">
+  <style>
+    /* ── Steps ───────────────────────────────────────────────────── */
+    .steps {
+      display: flex; align-items: center; justify-content: center;
+      gap: 0; padding: 28px 24px 0;
+    }
+    .step {
+      display: flex; flex-direction: column; align-items: center; gap: 6px;
+      position: relative;
+    }
+    .step-circle {
+      width: 36px; height: 36px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.8125rem; font-weight: 700;
+      background: var(--s3); border: 2px solid var(--border-md);
+      color: var(--muted); transition: all 0.2s;
+    }
+    .step.active .step-circle  { background: var(--primary-dk); border-color: var(--primary); color: #fff; }
+    .step.done .step-circle    { background: var(--green-bg); border-color: var(--green); color: var(--green); }
+    .step-label {
+      font-size: 0.6875rem; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.04em; color: var(--muted); white-space: nowrap;
+    }
+    .step.active .step-label   { color: var(--primary); }
+    .step.done .step-label     { color: var(--green); }
+    .step-line {
+      flex: 1; height: 2px; background: var(--border-md); margin: 0 8px; margin-bottom: 22px;
+    }
+    .step.done ~ .step-line, .step.done + .step-line { background: var(--green); opacity: 0.4; }
+
+    /* ── Form panels ─────────────────────────────────────────────── */
+    .form-wrap {
+      max-width: 680px; margin: 0 auto;
+      padding: 28px 24px 60px;
+    }
+    .step-panel { display: none; }
+    .step-panel.active { display: block; }
+
+    .panel-title { font-size: 1.25rem; font-weight: 700; margin-bottom: 6px; }
+    .panel-sub   { color: var(--text-2); font-size: 0.875rem; margin-bottom: 28px; }
+
+    /* ── VIN input ───────────────────────────────────────────────── */
+    .vin-row {
+      display: flex; gap: 10px; align-items: flex-end;
+    }
+    .vin-input-wrap { flex: 1; }
+    .vin-field {
+      font-family: monospace; font-size: 1.25rem; letter-spacing: 0.12em;
+      text-transform: uppercase; font-weight: 600;
+    }
+    .decode-status {
+      padding: 12px 16px; border-radius: var(--r-sm);
+      font-size: 0.875rem; margin-top: 12px;
+    }
+    .decode-ok  { background: var(--green-bg); border: 1px solid rgba(52,211,153,0.2); color: var(--green); }
+    .decode-err { background: var(--red-bg); border: 1px solid rgba(248,113,113,0.2); color: var(--red); }
+    .decode-loading { display: flex; align-items: center; gap: 10px; color: var(--muted); }
+
+    /* ── Cost stack ──────────────────────────────────────────────── */
+    .cost-stack { background: var(--s2); border-radius: var(--r); padding: 20px; }
+    .cost-row {
+      display: flex; align-items: center; gap: 12px; margin-bottom: 12px;
+    }
+    .cost-label { width: 140px; font-size: 0.875rem; color: var(--text-2); flex-shrink: 0; }
+    .cost-total {
+      display: flex; justify-content: space-between; align-items: center;
+      padding-top: 12px; margin-top: 4px;
+      border-top: 1px solid var(--border-md);
+    }
+    .cost-total-label { font-weight: 700; }
+    .cost-total-val   { font-size: 1.25rem; font-weight: 700; color: var(--primary); }
+
+    /* ── Photo upload ────────────────────────────────────────────── */
+    .drop-zone {
+      border: 2px dashed var(--border-md); border-radius: var(--r);
+      padding: 48px 24px; text-align: center; cursor: pointer;
+      transition: all 0.2s;
+    }
+    .drop-zone:hover, .drop-zone.drag { border-color: var(--primary); background: var(--primary-gl); }
+    .drop-zone-icon { font-size: 2.5rem; margin-bottom: 12px; opacity: 0.5; }
+    .drop-zone p    { color: var(--text-2); font-size: 0.875rem; }
+    .drop-zone strong { color: var(--primary); }
+    #photoInput { display: none; }
+
+    .photo-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 10px; margin-top: 16px;
+    }
+    .photo-thumb {
+      aspect-ratio: 1; border-radius: var(--r-sm); overflow: hidden;
+      position: relative;
+    }
+    .photo-thumb img { width: 100%; height: 100%; object-fit: cover; }
+    .photo-remove {
+      position: absolute; top: 4px; right: 4px;
+      background: rgba(0,0,0,0.7); border: none; color: white;
+      border-radius: 50%; width: 22px; height: 22px; cursor: pointer;
+      font-size: 0.75rem; display: flex; align-items: center; justify-content: center;
+    }
+
+    /* ── Nav buttons ─────────────────────────────────────────────── */
+    .step-nav {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-top: 32px; padding-top: 20px; border-top: 1px solid var(--border);
+    }
+
+    /* ── Review section ──────────────────────────────────────────── */
+    .review-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .review-item { display: flex; flex-direction: column; gap: 3px; }
+    .review-key  { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+    .review-val  { font-size: 0.9375rem; font-weight: 500; }
+
+    @media(max-width:640px) {
+      .steps { gap: 0; }
+      .step-label { display: none; }
+      .review-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+<div id="nav-container"></div>
+
+<!-- Step indicators -->
+<div class="steps" id="stepsEl">
+  <div class="step active" data-step="0">
+    <div class="step-circle">1</div>
+    <span class="step-label">VIN</span>
+  </div>
+  <div class="step-line"></div>
+  <div class="step" data-step="1">
+    <div class="step-circle">2</div>
+    <span class="step-label">Vehicle</span>
+  </div>
+  <div class="step-line"></div>
+  <div class="step" data-step="2">
+    <div class="step-circle">3</div>
+    <span class="step-label">Costs</span>
+  </div>
+  <div class="step-line"></div>
+  <div class="step" data-step="3">
+    <div class="step-circle">4</div>
+    <span class="step-label">Pricing</span>
+  </div>
+  <div class="step-line"></div>
+  <div class="step" data-step="4">
+    <div class="step-circle">5</div>
+    <span class="step-label">Photos</span>
+  </div>
+  <div class="step-line"></div>
+  <div class="step" data-step="5">
+    <div class="step-circle">6</div>
+    <span class="step-label">Review</span>
+  </div>
+</div>
+
+<div class="form-wrap">
+
+  <!-- Step 0: VIN -->
+  <div class="step-panel active" id="panel-0">
+    <p class="panel-title">Scan or Enter VIN</p>
+    <p class="panel-sub">The VIN is the starting point for every unit. Enter it and we'll decode the vehicle automatically.</p>
+    <div class="vin-row">
+      <div class="vin-input-wrap">
+        <label class="form-label">Vehicle Identification Number</label>
+        <input class="form-input vin-field" id="vinInput" maxlength="17" placeholder="1HGBH41JXMN109186"
+          oninput="this.value=this.value.toUpperCase().replace(/[^A-HJ-NPR-Z0-9]/g,'')" autocomplete="off">
+      </div>
+      <button class="btn btn-primary" onclick="decodeVin()" id="decodeBtn">Decode</button>
+    </div>
+    <div id="decodeStatus" style="margin-top:12px;"></div>
+    <div class="step-nav">
+      <a href="/inventory" class="btn btn-ghost">← Back</a>
+      <button class="btn btn-primary" onclick="goStep(1)" id="vinNextBtn" disabled>Continue</button>
+    </div>
+  </div>
+
+  <!-- Step 1: Vehicle Info -->
+  <div class="step-panel" id="panel-1">
+    <p class="panel-title">Vehicle Details</p>
+    <p class="panel-sub">Review the decoded info and fill in anything missing.</p>
+    <div class="form-row form-row-3" style="margin-bottom:16px;">
+      <div class="form-group">
+        <label class="form-label">Year *</label>
+        <input class="form-input" id="fYear" type="number" min="1900" max="2100" placeholder="2022">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Make *</label>
+        <input class="form-input" id="fMake" placeholder="Toyota">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Model *</label>
+        <input class="form-input" id="fModel" placeholder="Camry">
+      </div>
+    </div>
+    <div class="form-row form-row-2" style="margin-bottom:16px;">
+      <div class="form-group">
+        <label class="form-label">Trim</label>
+        <input class="form-input" id="fTrim" placeholder="SE">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Body Style</label>
+        <input class="form-input" id="fBodyStyle" placeholder="Sedan">
+      </div>
+    </div>
+    <div class="form-row form-row-2" style="margin-bottom:16px;">
+      <div class="form-group">
+        <label class="form-label">Mileage *</label>
+        <input class="form-input" id="fMileage" type="number" min="0" placeholder="45000">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Color</label>
+        <input class="form-input" id="fColor" placeholder="Silver">
+      </div>
+    </div>
+    <div class="form-row form-row-2">
+      <div class="form-group">
+        <label class="form-label">Acquisition Date</label>
+        <input class="form-input" id="fAcqDate" type="date">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Source</label>
+        <input class="form-input" id="fSource" placeholder="Auction, private seller…">
+      </div>
+    </div>
+    <div class="step-nav">
+      <button class="btn btn-ghost" onclick="goStep(0)">← Back</button>
+      <button class="btn btn-primary" onclick="goStep(2)">Continue →</button>
+    </div>
+  </div>
+
+  <!-- Step 2: Costs -->
+  <div class="step-panel" id="panel-2">
+    <p class="panel-title">Cost Stack</p>
+    <p class="panel-sub">Every dollar in. This builds your total cost basis automatically.</p>
+    <div class="cost-stack">
+      <div class="cost-row">
+        <span class="cost-label">Acquisition *</span>
+        <input class="form-input" id="cAcq" type="number" min="0" step="100" placeholder="0" oninput="updateTotal()">
+      </div>
+      <div class="cost-row">
+        <span class="cost-label">Transport</span>
+        <input class="form-input" id="cTransport" type="number" min="0" step="50" placeholder="0" oninput="updateTotal()">
+      </div>
+      <div class="cost-row">
+        <span class="cost-label">Recon / Repairs</span>
+        <input class="form-input" id="cRepair" type="number" min="0" step="50" placeholder="0" oninput="updateTotal()">
+      </div>
+      <div class="cost-row">
+        <span class="cost-label">Detail</span>
+        <input class="form-input" id="cDetail" type="number" min="0" step="25" placeholder="0" oninput="updateTotal()">
+      </div>
+      <div class="cost-row">
+        <span class="cost-label">Other</span>
+        <input class="form-input" id="cOther" type="number" min="0" step="25" placeholder="0" oninput="updateTotal()">
+      </div>
+      <div class="cost-total">
+        <span class="cost-total-label">Total In Cost</span>
+        <span class="cost-total-val" id="totalDisplay">$0</span>
+      </div>
+    </div>
+    <div class="step-nav">
+      <button class="btn btn-ghost" onclick="goStep(1)">← Back</button>
+      <button class="btn btn-primary" onclick="goStep(3)">Continue →</button>
+    </div>
+  </div>
+
+  <!-- Step 3: Pricing -->
+  <div class="step-panel" id="panel-3">
+    <p class="panel-title">Pricing</p>
+    <p class="panel-sub">Set your asking price and floor. The gross calculates live.</p>
+    <div class="form-row form-row-2" style="margin-bottom:20px;">
+      <div class="form-group">
+        <label class="form-label">Asking Price</label>
+        <input class="form-input" id="pAsk" type="number" min="0" step="100" placeholder="0" oninput="updateGross()">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Minimum Acceptable</label>
+        <input class="form-input" id="pMin" type="number" min="0" step="100" placeholder="0">
+      </div>
+    </div>
+    <div class="card card-sm" id="grossPreview" style="display:none;">
+      <div class="flex justify-between items-center">
+        <span class="text-muted text-sm">Estimated Gross</span>
+        <span id="grossVal" class="font-600" style="font-size:1.25rem;"></span>
+      </div>
+      <div class="flex justify-between items-center mt-8" style="font-size:0.8125rem;color:var(--muted);">
+        <span>Asking <span id="previewAsk">—</span></span>
+        <span>− Cost <span id="previewCost">—</span></span>
+      </div>
+    </div>
+    <div class="form-group mt-16">
+      <label class="form-label">Notes</label>
+      <textarea class="form-textarea" id="fNotes" placeholder="Anything relevant about this unit…"></textarea>
+    </div>
+    <div class="step-nav">
+      <button class="btn btn-ghost" onclick="goStep(2)">← Back</button>
+      <button class="btn btn-primary" onclick="goStep(4)">Continue →</button>
+    </div>
+  </div>
+
+  <!-- Step 4: Photos -->
+  <div class="step-panel" id="panel-4">
+    <p class="panel-title">Photos</p>
+    <p class="panel-sub">Optional now — you can add more after the unit is created.</p>
+    <div class="drop-zone" id="dropZone"
+      onclick="document.getElementById('photoInput').click()"
+      ondragover="event.preventDefault();this.classList.add('drag')"
+      ondragleave="this.classList.remove('drag')"
+      ondrop="handleDrop(event)">
+      <div class="drop-zone-icon">📷</div>
+      <p><strong>Click to browse</strong> or drag photos here</p>
+      <p style="margin-top:4px;font-size:0.8125rem;color:var(--muted);">JPG, PNG, WEBP — up to 10MB each</p>
+    </div>
+    <input type="file" id="photoInput" accept="image/*" multiple onchange="handleFiles(this.files)">
+    <div class="photo-grid" id="photoGrid"></div>
+    <div class="step-nav">
+      <button class="btn btn-ghost" onclick="goStep(3)">← Back</button>
+      <button class="btn btn-primary" onclick="goStep(5)">Review →</button>
+    </div>
+  </div>
+
+  <!-- Step 5: Review + Submit -->
+  <div class="step-panel" id="panel-5">
+    <p class="panel-title">Review &amp; Create</p>
+    <p class="panel-sub">Everything look right? Hit create to add this unit to inventory.</p>
+    <div id="reviewContent"></div>
+    <div class="step-nav">
+      <button class="btn btn-ghost" onclick="goStep(4)">← Back</button>
+      <button class="btn btn-primary" id="submitBtn" onclick="submit()">
+        Create Unit
+      </button>
+    </div>
+  </div>
+
+</div>
+
+<script src="/js/nav.js"></script>
+<script>
+UN.requireAuth();
+UN.renderNav();
+
+let currentStep = 0;
+let pendingPhotos = []; // File objects for upload after unit creation
+let decoded = null;
+
+// ── Step navigation ─────────────────────────────────────────────────────────
+function goStep(n) {
+  if (n > currentStep && !validateStep(currentStep)) return;
+  document.getElementById(`panel-${currentStep}`).classList.remove('active');
+  document.querySelectorAll('.step').forEach((el, i) => {
+    el.classList.remove('active','done');
+    if (i < n) el.classList.add('done');
+    if (i === n) el.classList.add('active');
+  });
+  currentStep = n;
+  document.getElementById(`panel-${n}`).classList.add('active');
+  if (n === 5) buildReview();
+  window.scrollTo(0, 0);
+}
+
+function validateStep(n) {
+  if (n === 0) {
+    const vin = document.getElementById('vinInput').value.trim();
+    if (vin.length !== 17) { toast('Enter a full 17-character VIN', 'err'); return false; }
+    return true;
+  }
+  if (n === 1) {
+    const year = document.getElementById('fYear').value;
+    const make = document.getElementById('fMake').value.trim();
+    const model = document.getElementById('fModel').value.trim();
+    const mileage = document.getElementById('fMileage').value;
+    if (!year || !make || !model) { toast('Year, Make, and Model are required', 'err'); return false; }
+    if (!mileage && mileage !== '0') { toast('Mileage is required', 'err'); return false; }
+    return true;
+  }
+  if (n === 2) {
+    const acq = document.getElementById('cAcq').value;
+    if (!acq || Number(acq) < 0) { toast('Enter acquisition cost (can be 0)', 'err'); return false; }
+    return true;
+  }
+  return true;
+}
+
+// ── VIN Decode ──────────────────────────────────────────────────────────────
+async function decodeVin() {
+  const vin = document.getElementById('vinInput').value.trim();
+  if (vin.length !== 17) { toast('VIN must be exactly 17 characters', 'err'); return; }
+  const status = document.getElementById('decodeStatus');
+  const btn = document.getElementById('decodeBtn');
+  btn.disabled = true;
+  status.innerHTML = '<div class="decode-loading"><div class="spinner"></div> Decoding VIN…</div>';
+
+  try {
+    const data = await UN.api('GET', `/api/inventory/decode-vin/${vin}`);
+    decoded = data;
+    if (data.year) document.getElementById('fYear').value = data.year;
+    if (data.make) document.getElementById('fMake').value = data.make;
+    if (data.model) document.getElementById('fModel').value = data.model;
+    if (data.trim) document.getElementById('fTrim').value = data.trim;
+    if (data.body_style) document.getElementById('fBodyStyle').value = data.body_style;
+
+    status.innerHTML = `<div class="decode-status decode-ok">✓ Decoded: ${data.year} ${data.make} ${data.model}${data.trim ? ' ' + data.trim : ''}</div>`;
+    document.getElementById('vinNextBtn').disabled = false;
+  } catch(e) {
+    status.innerHTML = `<div class="decode-status decode-err">⚠ ${e.message} — you can still fill in vehicle details manually.</div>`;
+    document.getElementById('vinNextBtn').disabled = false;
+  }
+  btn.disabled = false;
+}
+
+document.getElementById('vinInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') decodeVin();
+});
+
+// ── Cost total ──────────────────────────────────────────────────────────────
+function getTotal() {
+  return ['cAcq','cTransport','cRepair','cDetail','cOther']
+    .reduce((s, id) => s + (Number(document.getElementById(id).value) || 0), 0);
+}
+function updateTotal() {
+  document.getElementById('totalDisplay').textContent = UN.fmt.money(getTotal());
+  updateGross();
+}
+function updateGross() {
+  const ask = Number(document.getElementById('pAsk').value) || 0;
+  const cost = getTotal();
+  const el = document.getElementById('grossPreview');
+  if (!ask) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  const gross = ask - cost;
+  document.getElementById('grossVal').innerHTML = UN.fmt.gross(gross);
+  document.getElementById('previewAsk').textContent = UN.fmt.money(ask);
+  document.getElementById('previewCost').textContent = UN.fmt.money(cost);
+}
+
+// ── Photos ──────────────────────────────────────────────────────────────────
+function handleFiles(files) {
+  Array.from(files).forEach(f => {
+    if (!f.type.startsWith('image/')) return;
+    pendingPhotos.push(f);
+    const reader = new FileReader();
+    reader.onload = e => addThumb(e.target.result, pendingPhotos.length - 1);
+    reader.readAsDataURL(f);
+  });
+}
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('dropZone').classList.remove('drag');
+  handleFiles(e.dataTransfer.files);
+}
+function addThumb(src, idx) {
+  const grid = document.getElementById('photoGrid');
+  const div = document.createElement('div');
+  div.className = 'photo-thumb'; div.id = `thumb-${idx}`;
+  div.innerHTML = `<img src="${src}"><button class="photo-remove" onclick="removePhoto(${idx})">✕</button>`;
+  grid.appendChild(div);
+}
+function removePhoto(idx) {
+  pendingPhotos[idx] = null;
+  const el = document.getElementById(`thumb-${idx}`);
+  if (el) el.remove();
+}
+
+// ── Review ──────────────────────────────────────────────────────────────────
+function buildReview() {
+  const vin = document.getElementById('vinInput').value.trim();
+  const year = document.getElementById('fYear').value;
+  const make = document.getElementById('fMake').value;
+  const model = document.getElementById('fModel').value;
+  const trim = document.getElementById('fTrim').value;
+  const mileage = document.getElementById('fMileage').value;
+  const color = document.getElementById('fColor').value;
+  const source = document.getElementById('fSource').value;
+  const cost = getTotal();
+  const ask = Number(document.getElementById('pAsk').value) || null;
+
+  document.getElementById('reviewContent').innerHTML = `
+    <div class="card" style="margin-bottom:16px;">
+      <div class="flex items-center gap-12" style="margin-bottom:16px;">
+        <div>
+          <div style="font-size:1.125rem;font-weight:700;">${year} ${make} ${model}${trim ? ' ' + trim : ''}</div>
+          <div style="font-family:monospace;color:var(--muted);font-size:0.875rem;">${vin}</div>
+        </div>
+      </div>
+      <div class="review-grid">
+        <div class="review-item"><span class="review-key">Mileage</span><span class="review-val">${UN.fmt.miles(mileage)}</span></div>
+        <div class="review-item"><span class="review-key">Color</span><span class="review-val">${color || '—'}</span></div>
+        <div class="review-item"><span class="review-key">Source</span><span class="review-val">${source || '—'}</span></div>
+        <div class="review-item"><span class="review-key">Photos</span><span class="review-val">${pendingPhotos.filter(Boolean).length}</span></div>
+      </div>
+    </div>
+    <div class="card card-sm">
+      <div class="flex justify-between items-center" style="margin-bottom:10px;">
+        <span class="font-600">Cost Stack</span>
+        <span class="font-600" style="color:var(--primary);font-size:1.125rem;">${UN.fmt.money(cost)}</span>
+      </div>
+      <div class="flex justify-between" style="font-size:0.875rem;color:var(--text-2);">
+        <span>Asking Price</span><span>${UN.fmt.money(ask)}</span>
+      </div>
+      <div class="flex justify-between" style="font-size:0.875rem;margin-top:6px;">
+        <span style="color:var(--text-2);">Est. Gross</span>
+        <span>${ask ? UN.fmt.gross(ask - cost) : '<span class="money-muted">—</span>'}</span>
+      </div>
+    </div>
+  `;
+}
+
+// ── Submit ──────────────────────────────────────────────────────────────────
+async function submit() {
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  btn.textContent = 'Creating…';
+
+  const body = {
+    vin:               document.getElementById('vinInput').value.trim().toUpperCase(),
+    year:              Number(document.getElementById('fYear').value) || null,
+    make:              document.getElementById('fMake').value.trim(),
+    model:             document.getElementById('fModel').value.trim(),
+    trim:              document.getElementById('fTrim').value.trim() || null,
+    body_style:        document.getElementById('fBodyStyle').value.trim() || null,
+    color:             document.getElementById('fColor').value.trim() || null,
+    mileage:           Number(document.getElementById('fMileage').value) || 0,
+    acquisition_cost:  Number(document.getElementById('cAcq').value) || 0,
+    transport_cost:    Number(document.getElementById('cTransport').value) || 0,
+    repair_cost:       Number(document.getElementById('cRepair').value) || 0,
+    detail_cost:       Number(document.getElementById('cDetail').value) || 0,
+    other_cost:        Number(document.getElementById('cOther').value) || 0,
+    asking_price:      Number(document.getElementById('pAsk').value) || null,
+    minimum_price:     Number(document.getElementById('pMin').value) || null,
+    acquisition_source:document.getElementById('fSource').value.trim() || null,
+    acquisition_date:  document.getElementById('fAcqDate').value || null,
+    notes:             document.getElementById('fNotes').value.trim() || null,
+  };
+
+  try {
+    const { unit } = await UN.api('POST', '/api/inventory', body);
+
+    // Upload photos if any
+    const photos = pendingPhotos.filter(Boolean);
+    if (photos.length) {
+      const fd = new FormData();
+      photos.forEach(f => fd.append('photos', f));
+      await fetch(`/api/inventory/${unit.id}/photos`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${UN.getToken()}` },
+        body: fd,
+      });
+    }
+
+    toast('Unit created!');
+    setTimeout(() => location.href = `/inventory/${unit.id}`, 600);
+  } catch(e) {
+    toast(e.message, 'err');
+    btn.disabled = false;
+    btn.textContent = 'Create Unit';
+  }
+}
+</script>
+</body>
+</html>
