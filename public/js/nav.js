@@ -37,13 +37,9 @@ const UN = {
     const initials = user?.name ? user.name.split(' ').map(n => n[0]).join('').slice(0,2).toUpperCase() : '?';
     el.innerHTML = `
       <nav class="nav">
-        <div class="nav-logo">
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-            <rect width="20" height="20" rx="5" fill="#6366f1"/>
-            <path d="M5 13 L10 7 L15 13" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          Unit<span>Navigator</span>
-        </div>
+        <a href="/home" class="nav-logo">
+          <img src="/images/logo.png" alt="Unit Navigator">
+        </a>
         <div class="nav-right">
           <span class="nav-user">${user?.name || ''}</span>
           <div class="nav-avatar">${initials}</div>
