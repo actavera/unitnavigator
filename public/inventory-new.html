@@ -192,6 +192,13 @@
     .review-item { display: flex; flex-direction: column; gap: 3px; }
     .review-key  { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
     .review-val  { font-size: 0.9375rem; font-weight: 500; }
+    .final-stage-card {
+      margin-top: 16px;
+      padding: 18px;
+      border: 1px solid var(--border-md);
+      border-radius: var(--r);
+      background: var(--s1);
+    }
 
     @media(max-width:640px) {
       .steps { gap: 0; }
@@ -217,21 +224,16 @@
   <div class="step-line"></div>
   <div class="step" data-step="2">
     <div class="step-circle">3</div>
-    <span class="step-label">Costs</span>
+    <span class="step-label">Pricing</span>
   </div>
   <div class="step-line"></div>
   <div class="step" data-step="3">
     <div class="step-circle">4</div>
-    <span class="step-label">Pricing</span>
+    <span class="step-label">Photos</span>
   </div>
   <div class="step-line"></div>
   <div class="step" data-step="4">
     <div class="step-circle">5</div>
-    <span class="step-label">Photos</span>
-  </div>
-  <div class="step-line"></div>
-  <div class="step" data-step="5">
-    <div class="step-circle">6</div>
     <span class="step-label">Review</span>
   </div>
 </div>
@@ -273,15 +275,15 @@
     <div class="form-row form-row-3" style="margin-bottom:16px;">
       <div class="form-group">
         <label class="form-label">Year *</label>
-        <input class="form-input" id="fYear" type="number" min="1900" max="2100" placeholder="2022">
+        <input class="form-input" id="fYear" type="number" min="1900" max="2100" placeholder="2022" required>
       </div>
       <div class="form-group">
         <label class="form-label">Make *</label>
-        <input class="form-input" id="fMake" placeholder="Toyota">
+        <input class="form-input" id="fMake" placeholder="Toyota" required>
       </div>
       <div class="form-group">
         <label class="form-label">Model *</label>
-        <input class="form-input" id="fModel" placeholder="Camry">
+        <input class="form-input" id="fModel" placeholder="Camry" required>
       </div>
     </div>
     <div class="form-row form-row-2" style="margin-bottom:16px;">
@@ -297,14 +299,18 @@
     <div class="form-row form-row-2" style="margin-bottom:16px;">
       <div class="form-group">
         <label class="form-label">Mileage *</label>
-        <input class="form-input" id="fMileage" type="number" min="0" placeholder="45000">
+        <input class="form-input" id="fMileage" type="number" min="0" placeholder="45000" required>
       </div>
       <div class="form-group">
         <label class="form-label">Color</label>
         <input class="form-input" id="fColor" placeholder="Silver">
       </div>
     </div>
-    <div class="form-row form-row-2">
+    <div class="form-row form-row-3" style="margin-bottom:16px;">
+      <div class="form-group">
+        <label class="form-label">Acquisition Cost *</label>
+        <input class="form-input" id="cAcq" type="number" min="0" step="100" placeholder="0" oninput="updateGross()" required>
+      </div>
       <div class="form-group">
         <label class="form-label">Acquisition Date</label>
         <input class="form-input" id="fAcqDate" type="date">
@@ -320,44 +326,8 @@
     </div>
   </div>
 
-  <!-- Step 2: Costs -->
+  <!-- Step 2: Pricing -->
   <div class="step-panel" id="panel-2">
-    <p class="panel-title">Cost Stack</p>
-    <p class="panel-sub">Every dollar in. This builds your total cost basis automatically.</p>
-    <div class="cost-stack">
-      <div class="cost-row">
-        <span class="cost-label">Acquisition *</span>
-        <input class="form-input" id="cAcq" type="number" min="0" step="100" placeholder="0" oninput="updateTotal()">
-      </div>
-      <div class="cost-row">
-        <span class="cost-label">Transport</span>
-        <input class="form-input" id="cTransport" type="number" min="0" step="50" placeholder="0" oninput="updateTotal()">
-      </div>
-      <div class="cost-row">
-        <span class="cost-label">Recon / Repairs</span>
-        <input class="form-input" id="cRepair" type="number" min="0" step="50" placeholder="0" oninput="updateTotal()">
-      </div>
-      <div class="cost-row">
-        <span class="cost-label">Detail</span>
-        <input class="form-input" id="cDetail" type="number" min="0" step="25" placeholder="0" oninput="updateTotal()">
-      </div>
-      <div class="cost-row">
-        <span class="cost-label">Other</span>
-        <input class="form-input" id="cOther" type="number" min="0" step="25" placeholder="0" oninput="updateTotal()">
-      </div>
-      <div class="cost-total">
-        <span class="cost-total-label">Total In Cost</span>
-        <span class="cost-total-val" id="totalDisplay">$0</span>
-      </div>
-    </div>
-    <div class="step-nav">
-      <button class="btn btn-ghost" onclick="goStep(1)">← Back</button>
-      <button class="btn btn-primary" onclick="goStep(3)">Continue →</button>
-    </div>
-  </div>
-
-  <!-- Step 3: Pricing -->
-  <div class="step-panel" id="panel-3">
     <p class="panel-title">Pricing</p>
     <p class="panel-sub">Set your asking price and floor. The gross calculates live.</p>
     <div class="form-row form-row-2" style="margin-bottom:20px;">
@@ -385,13 +355,13 @@
       <textarea class="form-textarea" id="fNotes" placeholder="Anything relevant about this unit…"></textarea>
     </div>
     <div class="step-nav">
-      <button class="btn btn-ghost" onclick="goStep(2)">← Back</button>
-      <button class="btn btn-primary" onclick="goStep(4)">Continue →</button>
+      <button class="btn btn-ghost" onclick="goStep(1)">← Back</button>
+      <button class="btn btn-primary" onclick="goStep(3)">Continue →</button>
     </div>
   </div>
 
-  <!-- Step 4: Photos -->
-  <div class="step-panel" id="panel-4">
+  <!-- Step 3: Photos -->
+  <div class="step-panel" id="panel-3">
     <p class="panel-title">Photos</p>
     <p class="panel-sub">Optional now — you can add more after the unit is created.</p>
     <div class="drop-zone" id="dropZone"
@@ -406,18 +376,31 @@
     <input type="file" id="photoInput" accept="image/*" multiple onchange="handleFiles(this.files)">
     <div class="photo-grid" id="photoGrid"></div>
     <div class="step-nav">
-      <button class="btn btn-ghost" onclick="goStep(3)">← Back</button>
-      <button class="btn btn-primary" onclick="goStep(5)">Review →</button>
+      <button class="btn btn-ghost" onclick="goStep(2)">← Back</button>
+      <button class="btn btn-primary" onclick="goStep(4)">Review →</button>
     </div>
   </div>
 
-  <!-- Step 5: Review + Submit -->
-  <div class="step-panel" id="panel-5">
+  <!-- Step 4: Review + Submit -->
+  <div class="step-panel" id="panel-4">
     <p class="panel-title">Review &amp; Create</p>
     <p class="panel-sub">Everything look right? Hit create to add this unit to inventory.</p>
     <div id="reviewContent"></div>
+    <div class="final-stage-card">
+      <div class="form-group">
+        <label class="form-label">Is this vehicle ready to sell? *</label>
+        <select class="form-select" id="fInitialStage" required>
+          <option value="ready">Ready to Sell</option>
+          <option value="transport">Needs to be Transported</option>
+          <option value="screening">Needs to be Screened</option>
+          <option value="recon">Needs Recon</option>
+          <option value="pending">Purchased for Buyer (Pending Close)</option>
+        </select>
+        <p class="form-hint">This sends the unit straight to the right Kanban column.</p>
+      </div>
+    </div>
     <div class="step-nav">
-      <button class="btn btn-ghost" onclick="goStep(4)">← Back</button>
+      <button class="btn btn-ghost" onclick="goStep(3)">← Back</button>
       <button class="btn btn-primary" id="submitBtn" onclick="submit()">
         Create Unit
       </button>
@@ -462,6 +445,26 @@ let currentStep = 0;
 let pendingPhotos = []; // File objects for upload after unit creation
 let decoded = null;
 
+function parseMoneyInput(value) {
+  const parsed = Number(String(value ?? '').replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function promptReconRepairs() {
+  const items = [];
+  let keepGoing = true;
+  while (keepGoing) {
+    const description = prompt(items.length ? 'Next repair needed?' : 'Repair needed?') || '';
+    const costRaw = description ? (prompt('Estimated repair cost? Optional — leave blank if unknown.') || '') : '';
+    const cost = parseMoneyInput(costRaw);
+    if (description.trim() || cost) {
+      items.push({ description: description.trim(), cost, status: 'searching' });
+    }
+    keepGoing = confirm('Is there anything else needed?');
+  }
+  return items;
+}
+
 // ── Step navigation ─────────────────────────────────────────────────────────
 function goStep(n) {
   if (n > currentStep && !validateStep(currentStep)) return;
@@ -473,7 +476,7 @@ function goStep(n) {
   });
   currentStep = n;
   document.getElementById(`panel-${n}`).classList.add('active');
-  if (n === 5) buildReview();
+  if (n === 4) buildReview();
   window.scrollTo(0, 0);
 }
 
@@ -499,12 +502,9 @@ function validateStep(n) {
     const make = document.getElementById('fMake').value.trim();
     const model = document.getElementById('fModel').value.trim();
     const mileage = document.getElementById('fMileage').value;
+    const acq = document.getElementById('cAcq').value;
     if (!year || !make || !model) { toast('Year, Make, and Model are required', 'err'); return false; }
     if (!mileage && mileage !== '0') { toast('Mileage is required', 'err'); return false; }
-    return true;
-  }
-  if (n === 2) {
-    const acq = document.getElementById('cAcq').value;
     if (!acq || Number(acq) < 0) { toast('Enter acquisition cost (can be 0)', 'err'); return false; }
     return true;
   }
@@ -638,12 +638,7 @@ function closeScanner() {
 
 // ── Cost total ──────────────────────────────────────────────────────────────
 function getTotal() {
-  return ['cAcq','cTransport','cRepair','cDetail','cOther']
-    .reduce((s, id) => s + (Number(document.getElementById(id).value) || 0), 0);
-}
-function updateTotal() {
-  document.getElementById('totalDisplay').textContent = UN.fmt.money(getTotal());
-  updateGross();
+  return Number(document.getElementById('cAcq').value) || 0;
 }
 function updateGross() {
   const ask = Number(document.getElementById('pAsk').value) || 0;
@@ -715,7 +710,7 @@ function buildReview() {
     </div>
     <div class="card card-sm">
       <div class="flex justify-between items-center" style="margin-bottom:10px;">
-        <span class="font-600">Cost Stack</span>
+        <span class="font-600">Acquisition Cost</span>
         <span class="font-600" style="color:var(--primary);font-size:1.125rem;">${UN.fmt.money(cost)}</span>
       </div>
       <div class="flex justify-between" style="font-size:0.875rem;color:var(--text-2);">
@@ -732,6 +727,13 @@ function buildReview() {
 // ── Submit ──────────────────────────────────────────────────────────────────
 async function submit() {
   const btn = document.getElementById('submitBtn');
+  const initialStage = document.getElementById('fInitialStage').value;
+  let repairItems = [];
+
+  if (initialStage === 'recon') {
+    repairItems = promptReconRepairs();
+  }
+
   btn.disabled = true;
   btn.textContent = 'Creating…';
 
@@ -744,11 +746,12 @@ async function submit() {
     body_style:        document.getElementById('fBodyStyle').value.trim() || null,
     color:             document.getElementById('fColor').value.trim() || null,
     mileage:           Number(document.getElementById('fMileage').value) || 0,
+    stage:             initialStage,
     acquisition_cost:  Number(document.getElementById('cAcq').value) || 0,
-    transport_cost:    Number(document.getElementById('cTransport').value) || 0,
-    repair_cost:       Number(document.getElementById('cRepair').value) || 0,
-    detail_cost:       Number(document.getElementById('cDetail').value) || 0,
-    other_cost:        Number(document.getElementById('cOther').value) || 0,
+    transport_cost:    0,
+    repair_items:      repairItems,
+    detail_cost:       0,
+    other_cost:        0,
     asking_price:      Number(document.getElementById('pAsk').value) || null,
     minimum_price:     Number(document.getElementById('pMin').value) || null,
     acquisition_source:document.getElementById('fSource').value.trim() || null,

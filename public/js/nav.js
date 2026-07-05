@@ -104,7 +104,7 @@ const UN = {
       return `<span class="${cls}">${n >= 0 ? '+' : ''}${UN.fmt.money(n)}</span>`;
     },
     stageBadge(stage) {
-      const labels = { acquired:'Acquired', transport:'Transport', recon:'Recon', ready:'Ready', pending:'Pending Deal', sold:'Sold', archived:'Archived' };
+      const labels = { acquired:'At Auction', transport:'Being Transported', screening:'Needs Screening', recon:'Recon', ready:'Ready', pending:'Pending', sold:'Sold', archived:'Archived' };
       return `<span class="badge badge-${stage}">${labels[stage] || stage}</span>`;
     },
   },

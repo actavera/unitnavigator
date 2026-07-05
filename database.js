@@ -40,10 +40,11 @@ db.exec(`
     color TEXT,
     mileage INTEGER DEFAULT 0,
     stage TEXT DEFAULT 'acquired'
-      CHECK(stage IN ('acquired','transport','recon','ready','pending','sold','archived')),
+      CHECK(stage IN ('acquired','transport','screening','recon','ready','pending','sold','archived')),
     acquisition_cost REAL DEFAULT 0,
     transport_cost REAL DEFAULT 0,
     repair_cost REAL DEFAULT 0,
+    repair_items TEXT DEFAULT '[]',
     detail_cost REAL DEFAULT 0,
     other_cost REAL DEFAULT 0,
     asking_price REAL,
@@ -126,5 +127,102 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now'))
   );
 `);
+
+const unitSchema = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'units'").get()?.sql || '';
+if (unitSchema && !unitSchema.includes("'screening'")) {
+  db.exec(`
+    PRAGMA foreign_keys = OFF;
+    ALTER TABLE units RENAME TO units_old_stage_migration;
+    CREATE TABLE units (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      dealership_id INTEGER REFERENCES dealerships(id),
+      vin TEXT NOT NULL,
+      year INTEGER,
+      make TEXT,
+      model TEXT,
+      trim TEXT,
+      body_style TEXT,
+      color TEXT,
+      mileage INTEGER DEFAULT 0,
+      stage TEXT DEFAULT 'acquired'
+        CHECK(stage IN ('acquired','transport','screening','recon','ready','pending','sold','archived')),
+      acquisition_cost REAL DEFAULT 0,
+      transport_cost REAL DEFAULT 0,
+      repair_cost REAL DEFAULT 0,
+      repair_items TEXT DEFAULT '[]',
+      detail_cost REAL DEFAULT 0,
+      other_cost REAL DEFAULT 0,
+      asking_price REAL,
+      minimum_price REAL,
+      sold_price REAL,
+      acquisition_source TEXT,
+      acquisition_date TEXT,
+      notes TEXT,
+      photos TEXT DEFAULT '[]',
+      created_at TEXT DEFAULT (datetime('now')),
+      sold_at TEXT,
+      archived_at TEXT
+    );
+    INSERT INTO units (
+      id, dealership_id, vin, year, make, model, trim, body_style, color, mileage, stage,
+      acquisition_cost, transport_cost, repair_cost, detail_cost, other_cost, asking_price,
+      minimum_price, sold_price, acquisition_source, acquisition_date, notes, photos,
+      created_at, sold_at, archived_at
+    )
+    SELECT
+      id, dealership_id, vin, year, make, model, trim, body_style, color, mileage, stage,
+      acquisition_cost, transport_cost, repair_cost, detail_cost, other_cost, asking_price,
+      minimum_price, sold_price, acquisition_source, acquisition_date, notes, photos,
+      created_at, sold_at, archived_at
+    FROM units_old_stage_migration;
+    DROP TABLE units_old_stage_migration;
+    PRAGMA foreign_keys = ON;
+  `);
+}
+
+const dealsSchema = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'deals'").get()?.sql || '';
+if (dealsSchema.includes('units_old_stage_migration')) {
+  db.exec(`
+    PRAGMA foreign_keys = OFF;
+    ALTER TABLE deals RENAME TO deals_old_unit_fk_migration;
+    CREATE TABLE deals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      dealership_id INTEGER REFERENCES dealerships(id),
+      customer_id INTEGER REFERENCES customers(id),
+      unit_id INTEGER REFERENCES units(id),
+      credit_pull_id INTEGER REFERENCES credit_pulls(id),
+      deal_type TEXT CHECK(deal_type IN ('we_finance','bhph','they_finance','cash')),
+      status TEXT DEFAULT 'pending'
+        CHECK(status IN ('pending','closed','dead','vehicle_changed')),
+      next_follow_up_at TEXT,
+      last_status_check_at TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      closed_at TEXT
+    );
+    INSERT INTO deals (
+      id, dealership_id, customer_id, unit_id, credit_pull_id, deal_type, status,
+      next_follow_up_at, last_status_check_at, created_at, closed_at
+    )
+    SELECT
+      id, dealership_id, customer_id, unit_id, credit_pull_id, deal_type, status,
+      next_follow_up_at, last_status_check_at, created_at, closed_at
+    FROM deals_old_unit_fk_migration;
+    DROP TABLE deals_old_unit_fk_migration;
+    PRAGMA foreign_keys = ON;
+  `);
+}
+
+const unitColumns = db.prepare("PRAGMA table_info(units)").all().map(col => col.name);
+if (!unitColumns.includes('repair_items')) {
+  db.exec("ALTER TABLE units ADD COLUMN repair_items TEXT DEFAULT '[]'");
+}
+if (!unitColumns.includes('last_age_check_at')) {
+  db.exec("ALTER TABLE units ADD COLUMN last_age_check_at TEXT");
+}
+
+const dealColumns = db.prepare("PRAGMA table_info(deals)").all().map(col => col.name);
+if (!dealColumns.includes('last_status_check_at')) {
+  db.exec("ALTER TABLE deals ADD COLUMN last_status_check_at TEXT");
+}
 
 module.exports = db;

@@ -63,6 +63,38 @@
     .summary-item { display: flex; flex-direction: column; gap: 2px; }
     .summary-label { color: var(--muted); }
     .summary-val { font-weight: 600; font-size: 0.9375rem; }
+    .sold-report {
+      display: none;
+      grid-template-columns: 220px 1fr 1fr;
+      gap: 16px;
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--border);
+      background: var(--s1);
+    }
+    .sold-report.show { display: grid; }
+    .sold-card {
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      background: var(--bg);
+      padding: 16px;
+    }
+    .sold-card h3 {
+      font-size: 0.78rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 10px;
+    }
+    .sold-big { font-size: 2rem; font-weight: 800; }
+    .sold-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 7px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.875rem;
+    }
+    .sold-row:last-child { border-bottom: 0; }
 
     /* ── Board (Kanban) ──────────────────────────────────────────── */
     .board {
@@ -102,6 +134,11 @@
       flex: 1; overflow-y: auto; padding: 12px;
       display: flex; flex-direction: column; gap: 10px;
     }
+    .col-body.drag-over {
+      outline: 2px dashed var(--blue);
+      outline-offset: -6px;
+      background: var(--blue-gl);
+    }
     .col-body::-webkit-scrollbar { width: 4px; }
     .col-body::-webkit-scrollbar-thumb { background: var(--border-md); border-radius: 2px; }
 
@@ -114,6 +151,7 @@
       cursor: pointer;
       transition: border-color 0.15s, transform 0.15s;
     }
+    .unit-card.dragging { opacity: 0.55; transform: scale(0.98); }
     .unit-card:hover { border-color: var(--border-hi); transform: translateY(-2px); }
     .unit-photo {
       width: 100%; height: 130px; object-fit: cover;
@@ -180,6 +218,7 @@
     /* column stage accent */
     .col[data-stage="acquired"]  { border-top: 2px solid var(--blue);   }
     .col[data-stage="transport"] { border-top: 2px solid var(--purple); }
+    .col[data-stage="screening"] { border-top: 2px solid var(--yellow); }
     .col[data-stage="recon"]     { border-top: 2px solid var(--orange); }
     .col[data-stage="ready"]     { border-top: 2px solid var(--green);  }
     .col[data-stage="pending"]   { border-top: 2px solid var(--yellow); }
@@ -188,6 +227,7 @@
     @media(max-width:768px) {
       .board { flex-direction: column; height: auto; }
       .col { flex: 0 0 auto; }
+      .sold-report { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -202,8 +242,9 @@
 
   <div class="stage-tabs" id="stageTabs">
     <button class="stage-tab active" data-stage="all" onclick="setStage('all',this)">All</button>
-    <button class="stage-tab" data-stage="acquired"  onclick="setStage('acquired',this)">Acquired</button>
-    <button class="stage-tab" data-stage="transport" onclick="setStage('transport',this)">Transport</button>
+    <button class="stage-tab" data-stage="acquired"  onclick="setStage('acquired',this)">At Auction</button>
+    <button class="stage-tab" data-stage="transport" onclick="setStage('transport',this)">Being Transported</button>
+    <button class="stage-tab" data-stage="screening" onclick="setStage('screening',this)">Needs Screening</button>
     <button class="stage-tab" data-stage="recon"     onclick="setStage('recon',this)">Recon</button>
     <button class="stage-tab" data-stage="ready"     onclick="setStage('ready',this)">Ready</button>
     <button class="stage-tab" data-stage="pending"   onclick="setStage('pending',this)">Pending</button>
@@ -212,6 +253,13 @@
   </div>
 
   <div style="margin-left:auto;display:flex;gap:10px;align-items:center;">
+    <select class="form-select" id="soldRange" onchange="renderSoldReport()" style="width:140px;">
+      <option value="day">Sold: Day</option>
+      <option value="week">Sold: Week</option>
+      <option value="month" selected>Sold: Month</option>
+      <option value="ytd">Sold: YTD</option>
+    </select>
+    <a href="/inventory/list" class="btn btn-ghost btn-sm">Inventory List</a>
     <div class="view-toggle">
       <button class="view-btn active" id="vBoard" onclick="setView('board')" title="Board">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="3" width="7" height="10" rx="1"/><rect x="14" y="17" width="7" height="4" rx="1"/></svg>
@@ -228,6 +276,7 @@
 </div>
 
 <div class="summary-bar" id="summaryBar"></div>
+<div class="sold-report" id="soldReport"></div>
 
 <div id="mainContent"></div>
 
@@ -236,22 +285,98 @@
 UN.requireAuth();
 UN.renderNav();
 
-const STAGES = ['acquired','transport','recon','ready','pending','sold'];
-const STAGE_LABELS = { acquired:'Acquired', transport:'Transport', recon:'Recon', ready:'Ready', pending:'Pending Deal', sold:'Sold', archived:'Archived' };
+const STAGES = ['acquired','transport','screening','recon','ready','pending','sold'];
+const STAGE_LABELS = { acquired:'At Auction', transport:'Being Transported', screening:'Needs Screening', recon:'Recon', ready:'Ready', pending:'Pending', sold:'Sold', archived:'Archived' };
 
 let allUnits = [];
 let currentStage = 'all';
-let currentView = 'board';
+let currentView = location.pathname.endsWith('/list') ? 'list' : 'board';
+let listSort = { key: 'created_at', dir: 'desc' };
+
+function parseMoneyInput(value) {
+  const parsed = Number(String(value ?? '').replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function promptReconRepairs() {
+  const items = [];
+  let keepGoing = true;
+  while (keepGoing) {
+    const description = prompt(items.length ? 'Next repair needed?' : 'Repair needed?') || '';
+    const costRaw = description ? (prompt('Estimated repair cost? Optional — leave blank if unknown.') || '') : '';
+    const cost = parseMoneyInput(costRaw);
+    if (description.trim() || cost) {
+      items.push({ description: description.trim(), cost, status: 'searching' });
+    }
+    keepGoing = confirm('Is there anything else needed?');
+  }
+  return items;
+}
 
 async function load() {
   try {
     const data = await UN.api('GET', '/api/inventory');
     allUnits = data.units;
     renderSummary();
+    renderSoldReport();
+    if (currentView === 'list') {
+      document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('vList').classList.add('active');
+    }
     renderUnits();
   } catch(e) {
     toast(e.message, 'err');
   }
+}
+
+function soldUnitsForRange() {
+  const range = document.getElementById('soldRange').value;
+  const now = new Date();
+  const start = new Date(now);
+  if (range === 'day') start.setHours(0, 0, 0, 0);
+  if (range === 'week') start.setDate(now.getDate() - 7);
+  if (range === 'month') start.setMonth(now.getMonth() - 1);
+  if (range === 'ytd') {
+    start.setMonth(0, 1);
+    start.setHours(0, 0, 0, 0);
+  }
+  return allUnits.filter(u => {
+    if (u.stage !== 'sold') return false;
+    if (!u.sold_at) return true;
+    return new Date(u.sold_at) >= start;
+  });
+}
+
+function renderSoldReport() {
+  const el = document.getElementById('soldReport');
+  const sold = soldUnitsForRange();
+  const show = currentStage === 'sold' || currentStage === 'all';
+  el.classList.toggle('show', show);
+  if (!show) return;
+
+  const byModel = new Map();
+  sold.forEach(u => {
+    const model = `${u.make || 'Unknown'} ${u.model || ''}`.trim();
+    const current = byModel.get(model) || { count: 0, profit: 0 };
+    current.count += 1;
+    current.profit += Number(u.actual_gross || 0);
+    byModel.set(model, current);
+  });
+  const modelsByCount = [...byModel.entries()].sort((a, b) => b[1].count - a[1].count);
+  const modelsByProfit = [...byModel.entries()].sort((a, b) => b[1].profit - a[1].profit);
+
+  el.innerHTML = `
+    <div class="sold-card"><h3>Cars Sold</h3><div class="sold-big">${sold.length}</div><p class="text-muted text-sm mt-8">${document.getElementById('soldRange').selectedOptions[0].textContent.replace('Sold: ', '')}</p></div>
+    <div class="sold-card"><h3>Models Sold</h3>${soldRows(modelsByCount, 'count')}</div>
+    <div class="sold-card"><h3>Profit / Model</h3>${soldRows(modelsByProfit, 'profit')}</div>
+  `;
+}
+
+function soldRows(rows, mode) {
+  if (!rows.length) return '<p class="text-muted text-sm">No sold units in this range.</p>';
+  return rows.slice(0, 6).map(([model, data]) => `
+    <div class="sold-row"><span>${model}</span><strong>${mode === 'count' ? data.count : UN.fmt.money(data.profit)}</strong></div>
+  `).join('');
 }
 
 function filteredUnits() {
@@ -280,6 +405,7 @@ function renderSummary() {
 
 function renderUnits() {
   const units = filteredUnits();
+  renderSoldReport();
   const el = document.getElementById('mainContent');
   if (currentView === 'board') renderBoard(units, el);
   else if (currentView === 'grid') renderGrid(units, el);
@@ -306,7 +432,7 @@ function renderBoard(units, el) {
         <span class="col-title">${STAGE_LABELS[stage]}</span>
         <span class="col-count">${stageUnits.length}</span>
       </div>
-      <div class="col-body" id="col-${stage}"></div>`;
+      <div class="col-body" id="col-${stage}" data-drop-stage="${stage}" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event, '${stage}')"></div>`;
     board.appendChild(col);
 
     const body = col.querySelector('.col-body');
@@ -332,17 +458,24 @@ function renderGrid(units, el) {
 function renderList(units, el) {
   el.innerHTML = '';
   if (!units.length) { el.innerHTML = emptyState(); return; }
+  const sorted = [...units].sort((a, b) => {
+    const av = valueForSort(a, listSort.key);
+    const bv = valueForSort(b, listSort.key);
+    if (av < bv) return listSort.dir === 'asc' ? -1 : 1;
+    if (av > bv) return listSort.dir === 'asc' ? 1 : -1;
+    return 0;
+  });
   el.innerHTML = `
     <div class="list-view">
       <table class="list-table">
         <thead>
           <tr>
-            <th>Unit</th><th>VIN</th><th>Stage</th><th>Mileage</th>
-            <th>In Cost</th><th>Asking</th><th>Est. Gross</th><th>Added</th>
+            <th onclick="sortList('unit')">Unit</th><th onclick="sortList('vin')">VIN</th><th onclick="sortList('stage')">Stage</th><th onclick="sortList('mileage')">Mileage</th>
+            <th onclick="sortList('total_cost')">In Cost</th><th onclick="sortList('asking_price')">Asking</th><th onclick="sortList('estimated_gross')">Est. Gross</th><th onclick="sortList('created_at')">Added</th><th></th>
           </tr>
         </thead>
         <tbody>
-          ${units.map(u => `
+          ${sorted.map(u => `
             <tr onclick="location.href='/inventory/${u.id}'" style="cursor:pointer">
               <td>
                 <div class="list-unit-name">${u.year} ${u.make} ${u.model}</div>
@@ -355,15 +488,34 @@ function renderList(units, el) {
               <td class="money">${UN.fmt.money(u.asking_price)}</td>
               <td class="money">${UN.fmt.gross(u.estimated_gross)}</td>
               <td style="color:var(--muted);font-size:0.8125rem">${UN.fmt.date(u.created_at)}</td>
+              <td><button class="unit-action" onclick="deleteUnit(event, ${u.id})">Delete</button></td>
             </tr>`).join('')}
         </tbody>
       </table>
     </div>`;
 }
 
+function valueForSort(u, key) {
+  if (key === 'unit') return `${u.year || ''} ${u.make || ''} ${u.model || ''}`.toLowerCase();
+  if (key === 'vin') return (u.vin || '').toLowerCase();
+  if (key === 'stage') return STAGE_LABELS[u.stage] || u.stage || '';
+  return u[key] || 0;
+}
+
+function sortList(key) {
+  if (listSort.key === key) listSort.dir = listSort.dir === 'asc' ? 'desc' : 'asc';
+  else listSort = { key, dir: key === 'unit' || key === 'vin' || key === 'stage' ? 'asc' : 'desc' };
+  renderUnits();
+}
+
 function makeCard(u) {
   const div = document.createElement('div');
   div.className = 'unit-card';
+  div.draggable = true;
+  div.dataset.unitId = u.id;
+  div.dataset.stage = u.stage;
+  div.addEventListener('dragstart', onDragStart);
+  div.addEventListener('dragend', onDragEnd);
   div.onclick = () => location.href = `/inventory/${u.id}`;
   const photo = u.photos?.[0];
   div.innerHTML = `
@@ -381,9 +533,40 @@ function makeCard(u) {
       <div class="unit-actions" onclick="event.stopPropagation()">
         <button class="unit-action" onclick="location.href='/inventory/${u.id}'">Open</button>
         <button class="unit-action" onclick="quickStage(event, ${u.id}, '${u.stage}')">Move Stage</button>
+        <button class="unit-action" onclick="deleteUnit(event, ${u.id})">Delete</button>
       </div>
     </div>`;
   return div;
+}
+
+function onDragStart(e) {
+  e.currentTarget.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', e.currentTarget.dataset.unitId);
+}
+
+function onDragEnd(e) {
+  e.currentTarget.classList.remove('dragging');
+  document.querySelectorAll('.col-body.drag-over').forEach(el => el.classList.remove('drag-over'));
+}
+
+function onDragOver(e) {
+  e.preventDefault();
+  e.currentTarget.classList.add('drag-over');
+  e.dataTransfer.dropEffect = 'move';
+}
+
+function onDragLeave(e) {
+  if (!e.currentTarget.contains(e.relatedTarget)) e.currentTarget.classList.remove('drag-over');
+}
+
+async function onDrop(e, stage) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  const id = Number(e.dataTransfer.getData('text/plain'));
+  const unit = allUnits.find(u => u.id === id);
+  if (!unit || unit.stage === stage) return;
+  await moveUnitToStage(id, stage);
 }
 
 function emptyState() {
@@ -399,6 +582,7 @@ function setStage(stage, btn) {
   currentStage = stage;
   document.querySelectorAll('.stage-tab').forEach(t => t.classList.remove('active'));
   btn.classList.add('active');
+  if (stage === 'sold') document.getElementById('soldRange').focus();
   renderUnits();
 }
 
@@ -411,13 +595,54 @@ function setView(view) {
 
 async function quickStage(e, id, current) {
   e.stopPropagation();
-  const stages = ['acquired','transport','recon','ready','pending','sold','archived'];
+  const stages = ['acquired','transport','screening','recon','ready','pending','sold','archived'];
   const idx = stages.indexOf(current);
   const next = stages[(idx + 1) % stages.length];
   if (!confirm(`Move to "${STAGE_LABELS[next]}"?`)) return;
+  await moveUnitToStage(id, next);
+}
+
+async function moveUnitToStage(id, next) {
   try {
+    if (next === 'transport') {
+      const costRaw = prompt('Transport cost? Optional — leave blank if unknown.') || '';
+      const cost = parseMoneyInput(costRaw);
+      if (cost) await UN.api('PUT', `/api/inventory/${id}`, { transport_cost: cost });
+    }
+    if (next === 'recon') {
+      const unit = allUnits.find(u => u.id === id);
+      const newRepairs = promptReconRepairs();
+      if (newRepairs.length) {
+        const repairItems = Array.isArray(unit?.repair_items) ? unit.repair_items : [];
+        await UN.api('PUT', `/api/inventory/${id}`, {
+          repair_items: [...repairItems, ...newRepairs],
+        });
+      }
+    }
+    if (next === 'sold') {
+      const unit = allUnits.find(u => u.id === id);
+      const saleType = prompt('Sale type? Retail, wholesale, trade, or other. Optional.') || '';
+      const priceRaw = prompt('Sold/trade value? Optional — leave blank if unknown.') || '';
+      const price = priceRaw.trim() ? Number(priceRaw) || 0 : 0;
+      const updates = {};
+      if (price) updates.sold_price = price;
+      if (saleType) updates.notes = [unit?.notes || '', `Sold type: ${saleType}`].filter(Boolean).join('\n');
+      if (Object.keys(updates).length) await UN.api('PUT', `/api/inventory/${id}`, updates);
+    }
     await UN.api('PATCH', `/api/inventory/${id}/stage`, { stage: next });
     toast(`Moved to ${STAGE_LABELS[next]}`);
+    await load();
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+async function deleteUnit(e, id) {
+  e.stopPropagation();
+  const unit = allUnits.find(u => u.id === id);
+  const label = unit ? `${unit.year || ''} ${unit.make || ''} ${unit.model || ''}`.trim() : 'this unit';
+  if (!confirm(`Delete ${label}? This permanently removes it from inventory.`)) return;
+  try {
+    await UN.api('DELETE', `/api/inventory/${id}`);
+    toast('Unit deleted');
     await load();
   } catch(e) { toast(e.message, 'err'); }
 }

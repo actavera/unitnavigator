@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vehicle Details - Unit Navigator</title>
+  <link rel="stylesheet" href="/css/main.css">
+  <script>
+    document.documentElement.dataset.publicTheme = localStorage.getItem('un_public_theme') || 'dark';
+  </script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --show-bg-a: #05070c;
+      --show-bg-b: #0b111d;
+      --show-text: #f8fafc;
+      --show-muted: rgba(226,232,240,.76);
+      --show-panel: rgba(255,255,255,.065);
+      --show-line: rgba(255,255,255,.12);
+      --show-field: rgba(255,255,255,.08);
+      --show-shadow: rgba(0,0,0,.3);
+    }
+    :root[data-public-theme="light"] {
+      color-scheme: light;
+      --show-bg-a: #f8fbff;
+      --show-bg-b: #edf5ff;
+      --show-text: #071120;
+      --show-muted: rgba(71,85,105,.9);
+      --show-panel: rgba(255,255,255,.78);
+      --show-line: rgba(15,23,42,.12);
+      --show-field: rgba(241,245,249,.95);
+      --show-shadow: rgba(15,23,42,.14);
+    }
+    body {
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 14% 8%, rgba(59,130,246,.24), transparent 28%),
+        radial-gradient(circle at 86% 0%, rgba(34,211,238,.15), transparent 30%),
+        linear-gradient(180deg, var(--show-bg-a), var(--show-bg-b) 54%, var(--show-bg-a));
+      color: var(--show-text);
+    }
+    .detail-shell { width: min(100% - 44px, 1320px); margin: 0 auto; padding: 30px 0 70px; }
+    .showroom-nav { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 28px; }
+    .showroom-brand img { width: 176px; height: auto; }
+    .showroom-nav-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .theme-toggle {
+      display: inline-flex; gap: 4px; padding: 4px; border: 1px solid var(--show-line);
+      border-radius: 999px; background: var(--show-panel); backdrop-filter: blur(14px);
+    }
+    .toggle-btn {
+      min-height: 38px; border: 0; border-radius: 999px; padding: 0 14px;
+      color: var(--show-muted); background: transparent; font-weight: 900; cursor: pointer;
+    }
+    .toggle-btn.active { background: #2563eb; color: #fff; }
+    .detail-grid { display: grid; grid-template-columns: minmax(0,1.15fr) minmax(360px,.65fr); gap: 24px; align-items: start; }
+    .photo-stage {
+      position: relative; overflow: hidden; min-height: 620px; border-radius: 34px;
+      border: 1px solid var(--show-line); background: #111827 center / cover no-repeat;
+      box-shadow: 0 30px 90px var(--show-shadow);
+    }
+    .photo-stage::after {
+      content: ""; position: absolute; inset: 0;
+      background: linear-gradient(180deg, transparent 20%, rgba(2,6,23,.2) 62%, rgba(2,6,23,.78));
+      pointer-events: none;
+    }
+    .photo-title { position: absolute; left: 26px; right: 26px; bottom: 26px; z-index: 2; color: #fff; }
+    .photo-title h1 { font-size: clamp(2.6rem, 6vw, 5.4rem); line-height: .88; letter-spacing: -.075em; }
+    .photo-title p { margin-top: 12px; color: rgba(226,232,240,.82); font-size: 1.1rem; }
+    .photo-arrow {
+      position: absolute; z-index: 3; top: 50%; transform: translateY(-50%);
+      width: 48px; height: 48px; border-radius: 999px; border: 1px solid rgba(255,255,255,.18);
+      background: rgba(2,6,23,.46); color: #fff; cursor: pointer; backdrop-filter: blur(10px);
+      font-size: 1.55rem;
+    }
+    .photo-arrow.prev { left: 16px; }
+    .photo-arrow.next { right: 16px; }
+    .detail-panel {
+      border: 1px solid var(--show-line); border-radius: 30px; background: var(--show-panel);
+      padding: 24px; box-shadow: 0 24px 80px var(--show-shadow); backdrop-filter: blur(18px);
+    }
+    .price { font-size: 2.6rem; letter-spacing: -.06em; font-weight: 950; margin-bottom: 8px; }
+    .muted { color: var(--show-muted); line-height: 1.5; }
+    .spec-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 22px 0; }
+    .spec { border: 1px solid var(--show-line); border-radius: 16px; padding: 12px; background: var(--show-field); }
+    .spec span { display: block; color: var(--show-muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .09em; }
+    .spec strong { display: block; margin-top: 4px; }
+    .calculator { display: grid; gap: 12px; margin-top: 22px; }
+    .calc-row { display: grid; grid-template-columns: 1fr 120px; gap: 12px; align-items: center; }
+    .calc-row label { color: var(--show-muted); font-weight: 800; }
+    .calc-row input {
+      width: 100%; border: 1px solid var(--show-line); border-radius: 14px;
+      background: var(--show-field); color: var(--show-text); padding: 11px 12px; font: inherit;
+    }
+    .payment-result {
+      margin-top: 10px; padding: 18px; border-radius: 22px; border: 1px solid rgba(37,99,235,.28);
+      background: rgba(37,99,235,.14);
+    }
+    .payment-result span { color: var(--show-muted); font-weight: 800; }
+    .payment-result strong { display: block; margin-top: 4px; font-size: 2.2rem; letter-spacing: -.06em; }
+    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 18px; }
+    .empty-detail { text-align: center; padding: 90px 20px; color: var(--show-muted); }
+    @media(max-width: 920px) {
+      .detail-shell { width: min(100% - 24px, 620px); padding-top: 18px; }
+      .showroom-nav { align-items: flex-start; flex-direction: column; }
+      .showroom-brand img { width: 148px; }
+      .detail-grid { grid-template-columns: 1fr; }
+      .photo-stage { min-height: 470px; border-radius: 28px; }
+      .detail-panel { border-radius: 26px; padding: 18px; }
+      .actions { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+<main class="detail-shell">
+  <nav class="showroom-nav">
+    <a class="showroom-brand" href="/showroom">
+      <img id="brandLogo" src="/assets/unit-navigator-logo-on-dark.png" alt="Unit Navigator">
+    </a>
+    <div class="showroom-nav-actions">
+      <div class="theme-toggle" aria-label="Theme">
+        <button class="toggle-btn" id="lightBtn" type="button" onclick="setTheme('light')">Light</button>
+        <button class="toggle-btn" id="darkBtn" type="button" onclick="setTheme('dark')">Dark</button>
+      </div>
+      <a class="btn btn-ghost" href="/showroom">Back to Inventory</a>
+      <a class="btn btn-primary" href="/credit/new">Apply for Credit</a>
+    </div>
+  </nav>
+  <section id="detailRoot" class="empty-detail">Loading vehicle...</section>
+</main>
+
+<script>
+let unit = null;
+let photoIndex = 0;
+const fallbackPhoto = '/assets/home-hero-car.png';
+
+function money(n) {
+  if (!n) return 'Call for price';
+  return '$' + Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 });
+}
+
+function miles(n) {
+  if (n == null || n === '') return '-';
+  return Number(n).toLocaleString('en-US');
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch]));
+}
+
+function setTheme(theme) {
+  document.documentElement.dataset.publicTheme = theme;
+  localStorage.setItem('un_public_theme', theme);
+  document.getElementById('lightBtn')?.classList.toggle('active', theme === 'light');
+  document.getElementById('darkBtn')?.classList.toggle('active', theme === 'dark');
+  const logo = document.getElementById('brandLogo');
+  if (logo) logo.src = theme === 'light' ? '/assets/unit-navigator-logo-transparent.png' : '/assets/unit-navigator-logo-on-dark.png';
+}
+
+function titleFor(u) {
+  return [u.year, u.make, u.model].filter(Boolean).join(' ') || 'Available Unit';
+}
+
+function monthly(price, downPct, months, aprPct) {
+  if (!price) return null;
+  const principal = Number(price) * (1 - Number(downPct) / 100);
+  const r = Number(aprPct) / 100 / 12;
+  return r ? principal * r / (1 - Math.pow(1 + r, -Number(months))) : principal / Number(months);
+}
+
+function calcPayment() {
+  if (!unit) return;
+  const payment = monthly(unit.price, document.getElementById('downPct').value, document.getElementById('months').value, document.getElementById('apr').value);
+  document.getElementById('paymentAmount').textContent = payment ? `${money(payment)}/mo est.` : 'Ask dealer';
+}
+
+function renderDetail() {
+  const photos = unit.photos?.length ? unit.photos : [fallbackPhoto];
+  const photo = photos[photoIndex] || photos[0];
+  const subtitle = [unit.trim, unit.mileage != null ? `${miles(unit.mileage)} miles` : null].filter(Boolean).join(' · ') || unit.body_style || 'Available now';
+  document.getElementById('detailRoot').className = 'detail-grid';
+  document.getElementById('detailRoot').innerHTML = `
+    <section class="photo-stage" style="background-image:url('${escapeHtml(photo)}')">
+      ${photos.length > 1 ? `
+        <button class="photo-arrow prev" onclick="movePhoto(-1)" aria-label="Previous photo">‹</button>
+        <button class="photo-arrow next" onclick="movePhoto(1)" aria-label="Next photo">›</button>
+      ` : ''}
+      <div class="photo-title">
+        <h1>${escapeHtml(titleFor(unit))}</h1>
+        <p>${escapeHtml(subtitle)}</p>
+      </div>
+    </section>
+    <aside class="detail-panel">
+      <div class="price">${money(unit.price)}</div>
+      <p class="muted">Customize the estimate below. Defaults are set to 20% down and 60 months.</p>
+      <div class="spec-grid">
+        <div class="spec"><span>Trim</span><strong>${escapeHtml(unit.trim || '-')}</strong></div>
+        <div class="spec"><span>Miles</span><strong>${miles(unit.mileage)}</strong></div>
+        <div class="spec"><span>Color</span><strong>${escapeHtml(unit.color || '-')}</strong></div>
+        <div class="spec"><span>Body</span><strong>${escapeHtml(unit.body_style || '-')}</strong></div>
+      </div>
+      <div class="calculator">
+        <div class="calc-row"><label for="downPct">Down payment</label><input id="downPct" type="number" min="0" max="100" value="20" oninput="calcPayment()"></div>
+        <div class="calc-row"><label for="months">Term months</label><input id="months" type="number" min="12" max="96" value="60" oninput="calcPayment()"></div>
+        <div class="calc-row"><label for="apr">APR</label><input id="apr" type="number" min="0" step=".01" value="9.99" oninput="calcPayment()"></div>
+      </div>
+      <div class="payment-result">
+        <span>Estimated monthly payment</span>
+        <strong id="paymentAmount">-</strong>
+      </div>
+      <p class="muted">Estimate only. Final payment depends on approved credit, taxes, fees, lender terms, and dealer documentation.</p>
+      <div class="actions">
+        <a class="btn btn-primary" href="/credit/new">Apply for Credit</a>
+        <a class="btn btn-ghost" href="/showroom">Keep Browsing</a>
+      </div>
+    </aside>
+  `;
+  calcPayment();
+}
+
+function movePhoto(dir) {
+  const photos = unit.photos?.length ? unit.photos : [fallbackPhoto];
+  photoIndex = (photoIndex + dir + photos.length) % photos.length;
+  renderDetail();
+}
+
+async function loadDetail() {
+  setTheme(localStorage.getItem('un_public_theme') || 'dark');
+  const id = location.pathname.split('/').filter(Boolean).pop();
+  const res = await fetch(`/api/public/inventory/${encodeURIComponent(id)}`);
+  if (!res.ok) throw new Error('not found');
+  const data = await res.json();
+  unit = data.unit;
+  renderDetail();
+}
+
+loadDetail().catch(() => {
+  document.getElementById('detailRoot').innerHTML = '<h1>Vehicle unavailable</h1><p>This unit may have sold or is no longer public.</p><p><a class="btn btn-primary" href="/showroom">Back to Inventory</a></p>';
+});
+</script>
+</body>
+</html>

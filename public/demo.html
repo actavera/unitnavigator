@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Unit Navigator Demo</title>
+  <script>(function(){var t=localStorage.getItem('un_theme')||'dark';document.documentElement.dataset.theme=t;})()</script>
+  <link rel="stylesheet" href="/css/main.css">
+  <style>
+    body {
+      background:
+        linear-gradient(180deg, rgba(37,99,235,.07), transparent 360px),
+        radial-gradient(circle at 82% 10%, rgba(37,99,235,.2), transparent 32%),
+        var(--bg);
+    }
+    .demo-nav {
+      position: sticky; top: 0; z-index: 30;
+      display: flex; align-items: center; justify-content: space-between; gap: 14px;
+      padding: 14px clamp(18px,4vw,38px); border-bottom: 1px solid var(--border);
+      background: rgba(10,10,16,.88); backdrop-filter: blur(18px);
+    }
+    :root[data-theme="light"] .demo-nav { background: rgba(255,255,255,.9); }
+    .demo-nav img { width: 214px; max-width: 50vw; display: block; }
+    .demo-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: flex-end; }
+    .demo-shell { width: min(100% - 36px, 1380px); margin: 0 auto; padding: 26px 0 54px; }
+    .demo-hero {
+      display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 18px; align-items: end;
+      margin-bottom: 18px;
+    }
+    .demo-hero h1 { font-size: clamp(2.1rem, 4.8vw, 4.8rem); line-height: .95; letter-spacing: -.055em; margin: 8px 0 10px; }
+    .demo-hero p { color: var(--text-2); max-width: 760px; line-height: 1.55; }
+    .demo-note {
+      border: 1px solid var(--yellow-border); background: var(--yellow-gl); color: var(--text-2);
+      border-radius: var(--r-lg); padding: 13px 15px; margin-bottom: 18px; line-height: 1.45;
+    }
+    .demo-home-actions {
+      display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 12px; margin-bottom: 18px;
+    }
+    .demo-work-card {
+      border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--s1);
+      padding: 18px; min-height: 142px; cursor: pointer;
+      transition: transform .18s, border-color .18s, box-shadow .18s;
+    }
+    .demo-work-card:hover { transform: translateY(-3px); border-color: var(--blue-border); box-shadow: 0 20px 60px rgba(37,99,235,.13); }
+    .demo-work-card .orb {
+      width: 42px; height: 42px; border-radius: 14px; display: grid; place-items: center;
+      color: var(--accent); background: color-mix(in srgb, var(--accent) 13%, transparent);
+      border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent); font-weight: 900; margin-bottom: 14px;
+    }
+    .demo-work-card h2 { font-size: 1rem; margin-bottom: 6px; }
+    .demo-work-card p { color: var(--text-2); font-size: .88rem; line-height: 1.42; }
+    .demo-work-card.green { --accent: var(--green); }
+    .demo-work-card.blue { --accent: var(--blue); }
+    .demo-work-card.purple { --accent: var(--purple); }
+    .demo-work-card.orange { --accent: var(--orange); }
+    .demo-work-card.cyan { --accent: #22d3ee; }
+    .demo-summary { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 10px; margin-bottom: 18px; }
+    .summary-tile { border: 1px solid var(--border); border-radius: var(--r); background: var(--s1); padding: 14px; }
+    .summary-tile span { display: block; color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; }
+    .summary-tile strong { display: block; font-size: 1.45rem; margin-top: 3px; }
+    .demo-layout { display: grid; grid-template-columns: minmax(0,1.2fr) minmax(360px,.78fr); gap: 18px; align-items: start; }
+    .demo-panel { border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--s1); overflow: hidden; box-shadow: 0 18px 60px rgba(0,0,0,.13); }
+    .demo-panel-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 17px 20px; border-bottom: 1px solid var(--border); }
+    .demo-panel-header h2 { font-size: .95rem; text-transform: uppercase; letter-spacing: .05em; }
+    .demo-panel-body { padding: 18px; }
+    .demo-view-tabs, .demo-stage-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+    .demo-tab {
+      border: 1px solid var(--border-md); background: var(--s2); color: var(--text-2);
+      border-radius: 999px; padding: 8px 11px; cursor: pointer; font-weight: 800; font-size: .82rem;
+    }
+    .demo-tab.active { background: var(--blue); border-color: var(--blue); color: #fff; }
+    .demo-board { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 10px; }
+    .demo-stage { min-height: 194px; background: var(--s2); border: 1px solid var(--border); border-radius: var(--r); padding: 12px; }
+    .demo-stage h3 { display: flex; justify-content: space-between; gap: 8px; color: var(--text-2); font-size: .78rem; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 10px; }
+    .demo-unit-card, .demo-deal-card {
+      border: 1px solid var(--blue-border); border-radius: var(--r); background: var(--s1); padding: 14px; display: grid; gap: 9px;
+    }
+    .demo-unit-card { cursor: pointer; transition: transform .16s, border-color .16s; }
+    .demo-unit-card:hover { transform: translateY(-2px); border-color: var(--border-hi); }
+    .demo-title { font-size: 1.05rem; font-weight: 900; }
+    .demo-muted { color: var(--muted); font-size: .88rem; line-height: 1.45; }
+    .demo-money { display: flex; justify-content: space-between; gap: 12px; color: var(--text-2); }
+    .demo-money strong { color: var(--text); }
+    .empty-demo { color: var(--muted); font-size: .86rem; border: 1px dashed var(--border-md); border-radius: var(--r); padding: 18px; text-align: center; }
+    .demo-list table { width: 100%; border-collapse: collapse; }
+    .demo-list th, .demo-list td { text-align: left; border-bottom: 1px solid var(--border); padding: 11px 8px; font-size: .9rem; }
+    .demo-list th { color: var(--muted); text-transform: uppercase; letter-spacing: .04em; font-size: .72rem; }
+    .detail-grid { display: grid; gap: 10px; }
+    .detail-row { display: flex; justify-content: space-between; gap: 14px; padding-bottom: 9px; border-bottom: 1px solid var(--border); }
+    .detail-row span { color: var(--muted); }
+    .recon-lines { display: grid; gap: 8px; margin-top: 12px; }
+    .recon-line { display: grid; grid-template-columns: minmax(0,1fr) 92px; gap: 8px; align-items: center; }
+    .demo-form { display: grid; gap: 13px; }
+    .demo-form .form-group { margin-bottom: 0; }
+    .demo-form-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    dialog::backdrop { background: rgba(0,0,0,.62); backdrop-filter: blur(4px); }
+    @media(max-width: 1180px) {
+      .demo-home-actions { grid-template-columns: repeat(3,minmax(0,1fr)); }
+      .demo-layout { grid-template-columns: 1fr; }
+      .demo-board, .demo-summary { grid-template-columns: repeat(2,minmax(0,1fr)); }
+    }
+    @media(max-width: 720px) {
+      .demo-nav { align-items: flex-start; flex-direction: column; }
+      .demo-actions { justify-content: flex-start; }
+      .demo-home-actions, .demo-board, .demo-summary { grid-template-columns: 1fr; }
+      .demo-shell { width: min(100% - 28px, 560px); }
+      .demo-hero { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="demo-nav">
+    <a href="/"><img data-theme-logo src="/assets/unit-navigator-logo-on-dark.png" alt="Unit Navigator"></a>
+    <div class="demo-actions">
+      <div class="theme-toggle" aria-label="Theme">
+        <button type="button" data-theme-option="light" onclick="UN.setTheme('light')" aria-pressed="false">Light</button>
+        <button type="button" data-theme-option="dark" onclick="UN.setTheme('dark')" aria-pressed="true">Dark</button>
+      </div>
+      <a class="btn btn-ghost" href="/">Landing Page</a>
+      <a class="btn btn-primary" href="/login">Dealer Log In</a>
+    </div>
+  </nav>
+
+  <main class="demo-shell">
+    <header class="demo-hero">
+      <div>
+        <p class="home-kicker">Generic Sandbox Demo</p>
+        <h1>Try the dealer backend without saving anything.</h1>
+        <p>Add one vehicle, edit and move it through inventory, create one deal, and preview the workflows a dealer would use day to day.</p>
+      </div>
+      <button class="btn btn-danger" onclick="resetDemo()">Clear Demo Now</button>
+    </header>
+
+    <div class="demo-note">Demo data is temporary and never touches the real database. Refreshing, closing, or leaving this page clears the unit and deal.</div>
+
+    <section class="demo-home-actions" aria-label="Demo workflows">
+      <article class="demo-work-card green" onclick="alert('Credit pull demo: in the real app this starts a customer credit workflow. For this sandbox, use Start Deal to create a fake deal.')"><div class="orb">C</div><h2>Credit Pull</h2><p>Preview where credit and customer intake starts.</p></article>
+      <article class="demo-work-card blue" onclick="showInventoryForm()"><div class="orb">+</div><h2>Add Inventory</h2><p>Add one fake vehicle with costs and pricing.</p></article>
+      <article class="demo-work-card purple" onclick="setView('list')"><div class="orb">V</div><h2>Edit / View Inventory</h2><p>Open the list and manage the demo unit.</p></article>
+      <article class="demo-work-card orange" onclick="showDealForm()"><div class="orb">D</div><h2>Current Deals</h2><p>Add or manage one fake active deal.</p></article>
+      <article class="demo-work-card cyan" onclick="showPaperwork()"><div class="orb">P</div><h2>Paperwork</h2><p>See where packet status would live.</p></article>
+    </section>
+
+    <section class="demo-summary" id="demoSummary"></section>
+
+    <section class="demo-layout">
+      <div class="demo-panel">
+        <div class="demo-panel-header">
+          <h2>Inventory</h2>
+          <div class="demo-form-actions">
+            <button class="btn btn-ghost btn-sm" onclick="setView('board')">Board</button>
+            <button class="btn btn-ghost btn-sm" onclick="setView('list')">List</button>
+            <button class="btn btn-primary btn-sm" onclick="showInventoryForm()">+ Add Unit</button>
+          </div>
+        </div>
+        <div class="demo-panel-body">
+          <div class="demo-view-tabs" id="viewTabs"></div>
+          <div class="demo-stage-tabs" id="stageTabs"></div>
+          <div id="inventorySurface"></div>
+        </div>
+      </div>
+
+      <aside class="demo-panel">
+        <div class="demo-panel-header">
+          <h2 id="sideTitle">Unit Detail</h2>
+          <button class="btn btn-primary btn-sm" onclick="startDeal()">Start Deal</button>
+        </div>
+        <div class="demo-panel-body" id="sidePanel"></div>
+      </aside>
+    </section>
+  </main>
+
+  <dialog id="unitDialog" style="border:0;border-radius:18px;padding:0;background:transparent;width:min(760px,calc(100vw - 28px));">
+    <form class="demo-panel demo-form" method="dialog" style="padding:22px;">
+      <div class="demo-panel-header" style="padding:0 0 14px;"><h2>Demo Unit</h2><button class="btn btn-ghost btn-sm" value="cancel">Close</button></div>
+      <div class="form-row form-row-3">
+        <div class="form-group"><label class="form-label">Year</label><input class="form-input" id="uYear" type="number" value="2021"></div>
+        <div class="form-group"><label class="form-label">Make</label><input class="form-input" id="uMake" value="Toyota"></div>
+        <div class="form-group"><label class="form-label">Model</label><input class="form-input" id="uModel" value="Camry"></div>
+      </div>
+      <div class="form-row form-row-3">
+        <div class="form-group"><label class="form-label">Mileage</label><input class="form-input" id="uMileage" type="number" value="48000"></div>
+        <div class="form-group"><label class="form-label">Color</label><input class="form-input" id="uColor" value="White"></div>
+        <div class="form-group"><label class="form-label">Stage</label><select class="form-select" id="uStage"></select></div>
+      </div>
+      <div class="form-row form-row-3">
+        <div class="form-group"><label class="form-label">Acquisition</label><input class="form-input" id="uCost" type="number" value="14500"></div>
+        <div class="form-group"><label class="form-label">Transport</label><input class="form-input" id="uTransport" type="number" value="350"></div>
+        <div class="form-group"><label class="form-label">Asking Price</label><input class="form-input" id="uAsk" type="number" value="18995"></div>
+      </div>
+      <div class="recon-lines">
+        <label class="form-label">Recon Repairs</label>
+        <div class="recon-line"><input class="form-input" id="rOne" value="Battery"><input class="form-input" id="rOneCost" type="number" value="150"></div>
+        <div class="recon-line"><input class="form-input" id="rTwo" value="Detail and inspection"><input class="form-input" id="rTwoCost" type="number" value="600"></div>
+      </div>
+      <div class="demo-form-actions">
+        <button class="btn btn-primary" type="button" onclick="saveUnit()">Save Unit</button>
+        <button class="btn btn-danger" type="button" onclick="deleteUnit()">Delete Unit</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dealDialog" style="border:0;border-radius:18px;padding:0;background:transparent;width:min(620px,calc(100vw - 28px));">
+    <form class="demo-panel demo-form" method="dialog" style="padding:22px;">
+      <div class="demo-panel-header" style="padding:0 0 14px;"><h2>Demo Deal</h2><button class="btn btn-ghost btn-sm" value="cancel">Close</button></div>
+      <div class="form-group"><label class="form-label">Customer Name</label><input class="form-input" id="dName" value="Maya Collins"></div>
+      <div class="form-row form-row-2">
+        <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="dEmail" value="maya@example.com"></div>
+        <div class="form-group"><label class="form-label">Phone</label><input class="form-input" id="dPhone" value="(555) 010-2244"></div>
+      </div>
+      <div class="form-row form-row-3">
+        <div class="form-group"><label class="form-label">Deal Type</label><select class="form-select" id="dType"><option>They Finance</option><option>Cash</option><option>BHPH</option><option>We Finance</option></select></div>
+        <div class="form-group"><label class="form-label">Status</label><select class="form-select" id="dStatus"><option>Pending</option><option>Needs Follow-Up</option><option>Missing Docs</option><option>Closed</option></select></div>
+        <div class="form-group"><label class="form-label">Missing Docs</label><input class="form-input" id="dDocs" type="number" value="1"></div>
+      </div>
+      <div class="form-group"><label class="form-label">Follow-Up Date</label><input class="form-input" id="dFollow" type="date"></div>
+      <div class="demo-form-actions">
+        <button class="btn btn-primary" type="button" onclick="saveDeal()">Save Deal</button>
+        <button class="btn btn-danger" type="button" onclick="deleteDeal()">Delete Deal</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/js/nav.js"></script>
+  <script>
+    UN.syncThemeToggle();
+
+    const stages = [
+      ['acquired', 'At Auction'],
+      ['transport', 'Being Transported'],
+      ['screening', 'Needs Screening'],
+      ['recon', 'Recon'],
+      ['ready', 'Ready'],
+      ['pending', 'Pending'],
+      ['sold', 'Sold'],
+    ];
+    let unit = null;
+    let deal = null;
+    let selectedStage = 'all';
+    let currentView = 'board';
+
+    function money(value) {
+      return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(Number(value) || 0);
+    }
+    function miles(value) {
+      return `${new Intl.NumberFormat('en-US').format(Number(value) || 0)} mi`;
+    }
+    function unitName() { return unit ? `${unit.year} ${unit.make} ${unit.model}` : 'No unit'; }
+    function repairsTotal() { return unit ? unit.repairs.reduce((sum, r) => sum + (Number(r.cost) || 0), 0) : 0; }
+    function unitTotal() { return unit ? (Number(unit.cost) || 0) + (Number(unit.transport) || 0) + repairsTotal() : 0; }
+    function gross() { return unit ? (Number(unit.ask) || 0) - unitTotal() : 0; }
+
+    function render() {
+      renderSummary();
+      renderViewTabs();
+      renderStageTabs();
+      renderInventory();
+      renderSidePanel();
+    }
+
+    function renderSummary() {
+      document.getElementById('demoSummary').innerHTML = `
+        <div class="summary-tile"><span>Units in Stock</span><strong>${unit ? 1 : 0} / 1</strong></div>
+        <div class="summary-tile"><span>Active Deals</span><strong>${deal ? 1 : 0} / 1</strong></div>
+        <div class="summary-tile"><span>Total In Cost</span><strong>${money(unitTotal())}</strong></div>
+        <div class="summary-tile"><span>Est. Gross</span><strong>${money(gross())}</strong></div>
+      `;
+    }
+
+    function renderViewTabs() {
+      document.getElementById('viewTabs').innerHTML = ['board','list'].map(view =>
+        `<button class="demo-tab ${currentView === view ? 'active' : ''}" onclick="setView('${view}')">${view === 'board' ? 'Kanban Board' : 'Inventory List'}</button>`
+      ).join('');
+    }
+
+    function renderStageTabs() {
+      const tabs = [['all', 'All'], ...stages];
+      document.getElementById('stageTabs').innerHTML = tabs.map(([key, label]) =>
+        `<button class="demo-tab ${selectedStage === key ? 'active' : ''}" onclick="selectedStage='${key}';render()">${label}</button>`
+      ).join('');
+    }
+
+    function setView(view) {
+      currentView = view;
+      render();
+    }
+
+    function renderInventory() {
+      if (currentView === 'list') return renderList();
+      const visible = selectedStage === 'all' ? stages : stages.filter(([key]) => key === selectedStage);
+      document.getElementById('inventorySurface').innerHTML = `<div class="demo-board">${visible.map(([key, label]) => {
+        const hasUnit = unit && unit.stage === key;
+        return `<div class="demo-stage"><h3><span>${label}</span><span>${hasUnit ? 1 : 0}</span></h3>${hasUnit ? unitCard() : '<div class="empty-demo">No demo unit here.</div>'}</div>`;
+      }).join('')}</div>`;
+    }
+
+    function renderList() {
+      if (!unit) {
+        document.getElementById('inventorySurface').innerHTML = '<div class="empty-demo">No inventory yet. Click Add Unit to create one fake unit.</div>';
+        return;
+      }
+      document.getElementById('inventorySurface').innerHTML = `
+        <div class="demo-list">
+          <table>
+            <thead><tr><th>Unit</th><th>Stage</th><th>Mileage</th><th>In Cost</th><th>Asking</th><th>Gross</th><th></th></tr></thead>
+            <tbody>
+              <tr>
+                <td><strong>${unitName()}</strong><div class="demo-muted">Demo VIN · ${unit.color}</div></td>
+                <td><span class="badge badge-${unit.stage}">${stageLabel(unit.stage)}</span></td>
+                <td>${miles(unit.mileage)}</td>
+                <td>${money(unitTotal())}</td>
+                <td>${money(unit.ask)}</td>
+                <td>${money(gross())}</td>
+                <td><button class="btn btn-primary btn-sm" onclick="showInventoryForm()">Edit</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>`;
+    }
+
+    function unitCard() {
+      return `
+        <div class="demo-unit-card" onclick="renderSidePanel('unit')">
+          <span class="badge badge-${unit.stage}">${stageLabel(unit.stage)}</span>
+          <div class="demo-title">${unitName()}</div>
+          <div class="demo-muted">Demo VIN · ${miles(unit.mileage)} · ${unit.color}</div>
+          <div class="demo-money"><span>Total In</span><strong>${money(unitTotal())}</strong></div>
+          <div class="demo-money"><span>Asking</span><strong>${money(unit.ask)}</strong></div>
+          <div class="demo-form-actions">
+            <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();showInventoryForm()">Edit</button>
+            <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();nextStage()">Move Stage</button>
+          </div>
+        </div>`;
+    }
+
+    function renderSidePanel(mode = 'unit') {
+      const panel = document.getElementById('sidePanel');
+      if (mode === 'deal') return renderDealPanel();
+      document.getElementById('sideTitle').textContent = 'Unit Detail';
+      if (!unit) {
+        panel.innerHTML = '<div class="empty-demo">No unit yet. Add a demo vehicle to see the detail, cost stack, recon repairs, and stage controls.</div>';
+        return;
+      }
+      panel.innerHTML = `
+        <div class="detail-grid">
+          <span class="badge badge-${unit.stage}" style="width:max-content;">${stageLabel(unit.stage)}</span>
+          <h2>${unitName()}</h2>
+          <p class="demo-muted">This mirrors the unit detail page: edit details, inspect costs, manage recon repairs, and start a deal.</p>
+          <div class="detail-row"><span>Mileage</span><strong>${miles(unit.mileage)}</strong></div>
+          <div class="detail-row"><span>Acquisition</span><strong>${money(unit.cost)}</strong></div>
+          <div class="detail-row"><span>Transport</span><strong>${money(unit.transport)}</strong></div>
+          <div class="detail-row"><span>Recon Repairs</span><strong>${money(repairsTotal())}</strong></div>
+          <div class="detail-row"><span>Total In</span><strong>${money(unitTotal())}</strong></div>
+          <div class="detail-row"><span>Estimated Gross</span><strong>${money(gross())}</strong></div>
+          <h3 style="margin-top:8px;">Recon Work List</h3>
+          ${unit.repairs.length ? unit.repairs.map(r => `<div class="detail-row"><span>${r.name}</span><strong>${money(r.cost)} · Searching</strong></div>`).join('') : '<div class="empty-demo">No recon repairs listed.</div>'}
+          <div class="demo-form-actions" style="margin-top:10px;">
+            <button class="btn btn-primary btn-sm" onclick="showInventoryForm()">Edit Unit</button>
+            <button class="btn btn-ghost btn-sm" onclick="nextStage()">Move Stage</button>
+            <button class="btn btn-ghost btn-sm" onclick="startDeal()">Start Deal</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteUnit()">Delete</button>
+          </div>
+        </div>`;
+    }
+
+    function renderDealPanel() {
+      document.getElementById('sideTitle').textContent = 'Current Deal';
+      const panel = document.getElementById('sidePanel');
+      if (!deal) {
+        panel.innerHTML = '<div class="empty-demo" style="margin-bottom:12px;">No deal yet. Click Start Deal or Current Deals to create one fake deal.</div><button class="btn btn-primary w-full" style="justify-content:center;" onclick="showDealForm()">Start One Demo Deal</button>';
+        return;
+      }
+      panel.innerHTML = `
+        <article class="demo-deal-card">
+          <span class="badge badge-pending" style="width:max-content;">${deal.status}</span>
+          <h2>${deal.name}</h2>
+          <p class="demo-muted">${unit ? unitName() : 'No vehicle selected'} · ${deal.type}</p>
+          <div class="detail-row"><span>Email</span><strong>${deal.email}</strong></div>
+          <div class="detail-row"><span>Phone</span><strong>${deal.phone}</strong></div>
+          <div class="detail-row"><span>Next follow-up</span><strong>${deal.follow || 'Not set'}</strong></div>
+          <div class="detail-row"><span>Missing docs</span><strong>${deal.docs}</strong></div>
+          <div class="demo-form-actions" style="margin-top:10px;">
+            <button class="btn btn-primary btn-sm" onclick="showDealForm()">Edit Deal</button>
+            <button class="btn btn-ghost btn-sm" onclick="showPaperwork()">Prepare Paperwork</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteDeal()">Delete Deal</button>
+          </div>
+        </article>`;
+    }
+
+    function stageLabel(key) {
+      return (stages.find(([stage]) => stage === key) || [key, key])[1];
+    }
+
+    function showInventoryForm() {
+      document.getElementById('uStage').innerHTML = stages.map(([key, label]) => `<option value="${key}">${label}</option>`).join('');
+      if (unit) {
+        document.getElementById('uYear').value = unit.year;
+        document.getElementById('uMake').value = unit.make;
+        document.getElementById('uModel').value = unit.model;
+        document.getElementById('uMileage').value = unit.mileage;
+        document.getElementById('uColor').value = unit.color;
+        document.getElementById('uStage').value = unit.stage;
+        document.getElementById('uCost').value = unit.cost;
+        document.getElementById('uTransport').value = unit.transport;
+        document.getElementById('uAsk').value = unit.ask;
+        document.getElementById('rOne').value = unit.repairs[0]?.name || '';
+        document.getElementById('rOneCost').value = unit.repairs[0]?.cost || 0;
+        document.getElementById('rTwo').value = unit.repairs[1]?.name || '';
+        document.getElementById('rTwoCost').value = unit.repairs[1]?.cost || 0;
+      }
+      document.getElementById('unitDialog').showModal();
+    }
+
+    function saveUnit() {
+      const repairs = [
+        { name: document.getElementById('rOne').value.trim(), cost: Number(document.getElementById('rOneCost').value) || 0 },
+        { name: document.getElementById('rTwo').value.trim(), cost: Number(document.getElementById('rTwoCost').value) || 0 },
+      ].filter(r => r.name || r.cost);
+      unit = {
+        year: document.getElementById('uYear').value || '2021',
+        make: document.getElementById('uMake').value || 'Toyota',
+        model: document.getElementById('uModel').value || 'Camry',
+        mileage: document.getElementById('uMileage').value || 0,
+        color: document.getElementById('uColor').value || 'White',
+        stage: document.getElementById('uStage').value || 'acquired',
+        cost: document.getElementById('uCost').value || 0,
+        transport: document.getElementById('uTransport').value || 0,
+        ask: document.getElementById('uAsk').value || 0,
+        repairs,
+      };
+      selectedStage = 'all';
+      document.getElementById('unitDialog').close();
+      render();
+    }
+
+    function deleteUnit() {
+      unit = null;
+      deal = null;
+      document.getElementById('unitDialog').close();
+      render();
+    }
+
+    function nextStage() {
+      if (!unit) return;
+      const idx = stages.findIndex(([key]) => key === unit.stage);
+      unit.stage = stages[(idx + 1) % stages.length][0];
+      selectedStage = 'all';
+      render();
+    }
+
+    function startDeal() {
+      if (!unit) showInventoryForm();
+      else showDealForm();
+    }
+
+    function showDealForm() {
+      const soon = new Date();
+      soon.setDate(soon.getDate() + 3);
+      document.getElementById('dFollow').value = soon.toISOString().slice(0, 10);
+      if (deal) {
+        document.getElementById('dName').value = deal.name;
+        document.getElementById('dEmail').value = deal.email;
+        document.getElementById('dPhone').value = deal.phone;
+        document.getElementById('dType').value = deal.type;
+        document.getElementById('dStatus').value = deal.status;
+        document.getElementById('dDocs').value = deal.docs;
+        document.getElementById('dFollow').value = deal.follow;
+      }
+      document.getElementById('dealDialog').showModal();
+    }
+
+    function saveDeal() {
+      deal = {
+        name: document.getElementById('dName').value || 'Maya Collins',
+        email: document.getElementById('dEmail').value || 'maya@example.com',
+        phone: document.getElementById('dPhone').value || '(555) 010-2244',
+        type: document.getElementById('dType').value || 'They Finance',
+        status: document.getElementById('dStatus').value || 'Pending',
+        docs: document.getElementById('dDocs').value || 0,
+        follow: document.getElementById('dFollow').value || '',
+      };
+      if (unit) unit.stage = 'pending';
+      document.getElementById('dealDialog').close();
+      selectedStage = 'all';
+      render();
+      renderDealPanel();
+    }
+
+    function deleteDeal() {
+      deal = null;
+      document.getElementById('dealDialog').close();
+      render();
+    }
+
+    function showPaperwork() {
+      alert('Paperwork demo: this is where deal packets, missing docs, uploads, and generated forms will live. In the full app this connects to the paperwork workflow.');
+    }
+
+    function resetDemo() {
+      unit = null;
+      deal = null;
+      selectedStage = 'all';
+      currentView = 'board';
+      render();
+    }
+
+    render();
+  </script>
+</body>
+</html>

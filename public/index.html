@@ -1,2 +1,288 @@
 <!DOCTYPE html>
-<html><head><meta http-equiv="refresh" content="0;url=/login"></head><body></body></html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Unit Navigator — Dealer Inventory and Deal Workflow Software</title>
+  <script>(function(){var t=localStorage.getItem('un_theme')||'dark';document.documentElement.dataset.theme=t;})()</script>
+  <link rel="stylesheet" href="/css/main.css">
+  <style>
+    body {
+      background:
+        radial-gradient(circle at 82% 10%, rgba(37,99,235,0.18), transparent 34%),
+        radial-gradient(circle at 10% 40%, rgba(34,197,94,0.09), transparent 28%),
+        var(--bg);
+    }
+    .landing-nav {
+      position: sticky; top: 0; z-index: 20;
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 18px; padding: 18px clamp(18px, 4vw, 56px);
+      border-bottom: 1px solid var(--border);
+      background: rgba(10,10,16,0.84); backdrop-filter: blur(18px);
+    }
+    :root[data-theme="light"] .landing-nav { background: rgba(255,255,255,0.86); }
+    .landing-logo img { width: 230px; max-width: 48vw; display: block; }
+    .landing-nav-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+    .landing-shell { width: min(100% - 40px, 1180px); margin: 0 auto; }
+    .hero {
+      display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(340px, .95fr);
+      gap: 34px; align-items: center; padding: clamp(44px, 8vw, 92px) 0 48px;
+    }
+    .eyebrow {
+      display: inline-flex; align-items: center; gap: 8px;
+      color: var(--blue-lt); font-weight: 800; text-transform: uppercase;
+      letter-spacing: .12em; font-size: .78rem; margin-bottom: 18px;
+    }
+    .eyebrow::before { content: ""; width: 34px; height: 2px; background: var(--blue); border-radius: 99px; }
+    .hero h1 {
+      max-width: 760px; font-size: clamp(3rem, 7.6vw, 6.9rem);
+      line-height: .9; letter-spacing: -0.065em; margin-bottom: 22px;
+    }
+    .hero h1 span { color: var(--blue-lt); }
+    .hero-copy { color: var(--text-2); font-size: clamp(1.05rem, 1.7vw, 1.28rem); line-height: 1.55; max-width: 680px; }
+    .hero-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 28px; }
+    .hero-proof { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; margin-top: 34px; }
+    .proof-card {
+      border: 1px solid var(--border); border-radius: var(--r);
+      background: rgba(255,255,255,0.035); padding: 16px;
+    }
+    :root[data-theme="light"] .proof-card { background: rgba(255,255,255,0.72); }
+    .proof-card strong { display: block; font-size: 1.45rem; margin-bottom: 4px; }
+    .proof-card span { color: var(--muted); font-size: .86rem; line-height: 1.4; }
+    .hero-panel {
+      border: 1px solid var(--border-md); border-radius: 22px;
+      background: linear-gradient(145deg, rgba(17,17,24,.92), rgba(22,22,31,.76));
+      box-shadow: 0 30px 90px rgba(0,0,0,.34);
+      overflow: hidden;
+    }
+    :root[data-theme="light"] .hero-panel {
+      background: linear-gradient(145deg, rgba(255,255,255,.95), rgba(242,246,251,.88));
+      box-shadow: 0 28px 80px rgba(15,23,42,.12);
+    }
+    .hero-panel img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block; filter: saturate(.9) contrast(1.05); }
+    .panel-body { padding: 24px; display: grid; gap: 14px; }
+    .panel-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding-bottom: 13px; border-bottom: 1px solid var(--border); }
+    .panel-row:last-child { border-bottom: 0; padding-bottom: 0; }
+    .panel-row span { color: var(--muted); }
+    .panel-row strong { text-align: right; }
+    .section { padding: 54px 0; }
+    .section-header { max-width: 760px; margin-bottom: 24px; }
+    .section-header h2 { font-size: clamp(2rem, 4vw, 3.65rem); line-height: 1; letter-spacing: -0.045em; margin-bottom: 12px; }
+    .section-header p { color: var(--text-2); font-size: 1.04rem; line-height: 1.55; }
+    .audience-grid, .benefit-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 14px; }
+    .audience-card, .benefit-card {
+      border: 1px solid var(--border); border-radius: var(--r-lg);
+      background: var(--s1); padding: 22px; min-height: 180px;
+      transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+    }
+    .audience-card:hover, .benefit-card:hover {
+      transform: translateY(-4px); border-color: var(--blue-border); box-shadow: 0 20px 60px rgba(37,99,235,.14);
+    }
+    .audience-card .icon, .benefit-card .icon {
+      width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center;
+      background: var(--blue-gl); color: var(--blue-lt); font-weight: 900; margin-bottom: 16px;
+    }
+    .audience-card h3, .benefit-card h3 { font-size: 1.1rem; margin-bottom: 8px; }
+    .audience-card p, .benefit-card p { color: var(--text-2); line-height: 1.5; font-size: .95rem; }
+    .benefit-grid { grid-template-columns: repeat(3, minmax(0,1fr)); }
+    .signup-band {
+      display: grid; grid-template-columns: minmax(0, .9fr) minmax(360px, .7fr); gap: 28px;
+      align-items: start; padding: clamp(28px, 5vw, 44px);
+      border: 1px solid var(--blue-border); border-radius: 24px;
+      background: linear-gradient(135deg, rgba(37,99,235,.14), rgba(17,17,24,.72));
+      box-shadow: 0 28px 90px rgba(37,99,235,.12);
+    }
+    :root[data-theme="light"] .signup-band {
+      background: linear-gradient(135deg, rgba(18,104,232,.1), rgba(255,255,255,.86));
+    }
+    .signup-copy h2 { font-size: clamp(2rem, 4vw, 3.5rem); line-height: 1; letter-spacing: -0.045em; margin-bottom: 14px; }
+    .signup-copy p { color: var(--text-2); font-size: 1.04rem; line-height: 1.55; max-width: 620px; }
+    .signup-list { display: grid; gap: 10px; margin-top: 22px; color: var(--text-2); }
+    .signup-list li { list-style: none; display: flex; gap: 10px; align-items: flex-start; }
+    .signup-list li::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--green); margin-top: 8px; flex: 0 0 auto; }
+    .signup-form {
+      border: 1px solid var(--border); border-radius: var(--r-lg);
+      background: var(--s1); padding: 22px; display: grid; gap: 14px;
+    }
+    .signup-form .form-group { margin-bottom: 0; }
+    .footer {
+      padding: 34px 0 48px; display: flex; justify-content: space-between; gap: 18px;
+      border-top: 1px solid var(--border); color: var(--muted); flex-wrap: wrap;
+    }
+    @media(max-width: 980px) {
+      .hero, .signup-band { grid-template-columns: 1fr; }
+      .audience-grid, .benefit-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    }
+    @media(max-width: 640px) {
+      .landing-nav { align-items: flex-start; flex-direction: column; }
+      .landing-nav-actions { justify-content: flex-start; }
+      .landing-shell { width: min(100% - 28px, 560px); }
+      .hero-proof, .audience-grid, .benefit-grid { grid-template-columns: 1fr; }
+      .hero { padding-top: 34px; }
+      .signup-band { padding: 22px; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="landing-nav">
+    <a class="landing-logo" href="/" aria-label="Unit Navigator home">
+      <img data-theme-logo src="/assets/unit-navigator-logo-on-dark.png" alt="Unit Navigator">
+    </a>
+    <div class="landing-nav-actions">
+      <div class="theme-toggle" aria-label="Theme">
+        <button type="button" data-theme-option="light" onclick="UN.setTheme('light')" aria-pressed="false">Light</button>
+        <button type="button" data-theme-option="dark" onclick="UN.setTheme('dark')" aria-pressed="true">Dark</button>
+      </div>
+      <a class="btn btn-ghost" href="#signup">Request Access</a>
+      <a class="btn btn-ghost" href="/demo">Try Demo</a>
+      <a class="btn btn-primary" href="/login">Log In</a>
+    </div>
+  </nav>
+
+  <main class="landing-shell">
+    <section class="hero">
+      <div>
+        <div class="eyebrow">Dealer workflow software</div>
+        <h1>Navigate every unit. <span>Close more deals.</span></h1>
+        <p class="hero-copy">Unit Navigator helps dealerships track inventory, recon, credit, paperwork, active deals, and follow-ups in one focused command center built for real front-line sales work.</p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="#signup">Set Up a Call</a>
+          <a class="btn btn-ghost" href="/demo">Try the Demo</a>
+          <a class="btn btn-ghost" href="/login">Dealer Log In</a>
+        </div>
+        <div class="hero-proof">
+          <div class="proof-card"><strong>1 view</strong><span>Inventory, deals, docs, costs, and follow-ups.</span></div>
+          <div class="proof-card"><strong>Every unit</strong><span>Cars, motorcycles, boats, trailers, RVs, and powersports.</span></div>
+          <div class="proof-card"><strong>Fewer misses</strong><span>Know what needs attention before it costs the deal.</span></div>
+        </div>
+      </div>
+
+      <aside class="hero-panel" aria-label="Unit Navigator preview">
+        <img src="/assets/home-hero-car.png" alt="Dark vehicle detail preview">
+        <div class="panel-body">
+          <div class="panel-row"><span>Inventory stage</span><strong>Recon to Ready</strong></div>
+          <div class="panel-row"><span>Cost position</span><strong>Acquisition + transport + repairs</strong></div>
+          <div class="panel-row"><span>Deal status</span><strong>Follow-up due in 3 days</strong></div>
+          <div class="panel-row"><span>Next action</span><strong>Keep the unit moving</strong></div>
+        </div>
+      </aside>
+    </section>
+
+    <section class="section">
+      <div class="section-header">
+        <h2>Built for dealers who sell units, not spreadsheets.</h2>
+        <p>Whether your floor is full of cars, bikes, boats, side-by-sides, or mixed inventory, Unit Navigator gives your team a clearer way to move each unit from acquired to sold.</p>
+      </div>
+      <div class="audience-grid">
+        <article class="audience-card"><div class="icon">A</div><h3>Car Dealers</h3><p>Track acquisition cost, transport, recon, pricing, active deals, docs, and sold reporting.</p></article>
+        <article class="audience-card"><div class="icon">M</div><h3>Motorcycle Dealers</h3><p>Manage fast-moving inventory, service needs, buyer follow-up, and trade activity in one place.</p></article>
+        <article class="audience-card"><div class="icon">B</div><h3>Boat Dealers</h3><p>Keep larger-ticket units organized with cleaner lead, paperwork, and delivery visibility.</p></article>
+        <article class="audience-card"><div class="icon">P</div><h3>Powersports</h3><p>Side-by-sides, trailers, RVs, ATVs, and mixed-unit stores can use one workflow instead of scattered notes.</p></article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-header">
+        <h2>What dealers get back.</h2>
+        <p>The goal is simple: less hunting for status, fewer forgotten follow-ups, better gross visibility, and faster handoffs between inventory, sales, and paperwork.</p>
+      </div>
+      <div class="benefit-grid">
+        <article class="benefit-card"><div class="icon">01</div><h3>Inventory That Shows Work</h3><p>Move units through auction, transport, screening, recon, ready, pending, and sold with clear next steps.</p></article>
+        <article class="benefit-card"><div class="icon">02</div><h3>Real Cost Awareness</h3><p>Acquisition, transport, and recon repair costs roll into the unit so pricing decisions are grounded.</p></article>
+        <article class="benefit-card"><div class="icon">03</div><h3>Deal Follow-Up</h3><p>See active deals, missing documents, customer contact info, and follow-up reminders before deals go cold.</p></article>
+        <article class="benefit-card"><div class="icon">04</div><h3>Credit and Paperwork Flow</h3><p>Start with lightweight workflows now, then connect deeper credit, packet, and customer-facing tools as the store grows.</p></article>
+        <article class="benefit-card"><div class="icon">05</div><h3>Cleaner Manager View</h3><p>Know what is ready to sell, what is stuck, what is pending, and where the money is tied up.</p></article>
+        <article class="benefit-card"><div class="icon">06</div><h3>Multi-Dealer Ready</h3><p>Designed to become a shared platform where each dealer has separate users, inventory, customers, and settings.</p></article>
+      </div>
+    </section>
+
+    <section class="section" id="signup">
+      <div class="signup-band">
+        <div class="signup-copy">
+          <h2>Want to see Unit Navigator for your dealership?</h2>
+          <p>Send a quick request and we will set up a call, learn how your store works, and talk through whether Unit Navigator fits your inventory and deal flow.</p>
+          <ul class="signup-list">
+            <li>No public signup yet. Access is invite-only while the product is being shaped with real dealers.</li>
+            <li>Useful for independent auto dealers, motorcycle stores, boat dealers, and powersports sellers.</li>
+            <li>Demo setup can be tailored around your units, stages, and paperwork needs.</li>
+          </ul>
+        </div>
+
+        <form class="signup-form" onsubmit="sendSignup(event)">
+          <div class="form-group">
+            <label class="form-label" for="name">Your Name *</label>
+            <input class="form-input" id="name" name="name" required placeholder="Alex Rivera">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="store">Dealership / Store *</label>
+            <input class="form-input" id="store" name="store" required placeholder="Mountain Motors">
+          </div>
+          <div class="form-row form-row-2">
+            <div class="form-group">
+              <label class="form-label" for="email">Email *</label>
+              <input class="form-input" id="email" name="email" type="email" required placeholder="you@dealership.com">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="phone">Phone</label>
+              <input class="form-input" id="phone" name="phone" placeholder="(555) 555-1212">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="dealerType">Dealer Type</label>
+            <select class="form-select" id="dealerType" name="dealerType">
+              <option>Auto dealer</option>
+              <option>Motorcycle dealer</option>
+              <option>Boat dealer</option>
+              <option>Powersports dealer</option>
+              <option>Mixed inventory dealer</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="message">What are you trying to improve?</label>
+            <textarea class="form-textarea" id="message" name="message" placeholder="Inventory tracking, recon, credit apps, paperwork, deal follow-up..."></textarea>
+          </div>
+          <button class="btn btn-primary w-full" type="submit" style="justify-content:center;">Request a Setup Call</button>
+          <p class="text-muted text-sm" id="signupStatus">This opens an email to mail@elevatedmountain.net for now.</p>
+        </form>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <span>Unit Navigator</span>
+      <span>Navigate every unit. Close more deals.</span>
+    </footer>
+  </main>
+
+  <script src="/js/nav.js"></script>
+  <script>
+    UN.syncThemeToggle();
+
+    function sendSignup(event) {
+      event.preventDefault();
+      const values = {
+        name: document.getElementById('name').value.trim(),
+        store: document.getElementById('store').value.trim(),
+        email: document.getElementById('email').value.trim(),
+        phone: document.getElementById('phone').value.trim(),
+        dealerType: document.getElementById('dealerType').value,
+        message: document.getElementById('message').value.trim(),
+      };
+      const subject = `Unit Navigator setup call request - ${values.store}`;
+      const body = [
+        'Unit Navigator setup call request',
+        '',
+        `Name: ${values.name}`,
+        `Dealership / Store: ${values.store}`,
+        `Email: ${values.email}`,
+        `Phone: ${values.phone || 'Not provided'}`,
+        `Dealer Type: ${values.dealerType}`,
+        '',
+        'What they want to improve:',
+        values.message || 'Not provided',
+      ].join('\n');
+      document.getElementById('signupStatus').textContent = 'Opening your email app...';
+      window.location.href = `mailto:mail@elevatedmountain.net?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    }
+  </script>
+</body>
+</html>

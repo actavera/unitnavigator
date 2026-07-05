@@ -96,6 +96,33 @@
     .cost-total-line .lbl { font-weight: 700; }
     .cost-total-line .val { font-size: 1.25rem; font-weight: 800; color: var(--primary); }
 
+    /* ── Recon repair tracker ───────────────────────────────────── */
+    .recon-card {
+      border-color: rgba(168,85,247,0.35);
+      box-shadow: 0 16px 40px rgba(88,28,135,0.12);
+    }
+    .repair-summary {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; padding: 12px 14px; margin-bottom: 14px;
+      border-radius: var(--r); background: var(--s2);
+    }
+    .repair-total-label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+    .repair-total-value { font-size: 1.25rem; font-weight: 800; color: var(--primary); }
+    .repair-list { display: flex; flex-direction: column; gap: 10px; }
+    .repair-row {
+      display: grid; grid-template-columns: minmax(0,1.5fr) 110px minmax(150px,0.9fr) auto;
+      gap: 8px; align-items: center;
+      padding: 10px; border: 1px solid var(--border); border-radius: var(--r);
+      background: var(--s2);
+    }
+    .repair-remove {
+      width: 36px; height: 36px; border-radius: var(--r-sm);
+      border: 1px solid var(--border-md); background: var(--s1);
+      color: var(--muted); cursor: pointer;
+    }
+    .repair-remove:hover { color: var(--danger); border-color: var(--danger); }
+    .repair-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+
     /* ── Profit panel ────────────────────────────────────────────── */
     .profit-grid {
       display: grid; grid-template-columns: 1fr 1fr;
@@ -175,6 +202,8 @@
       .hero-photos { height: 220px; }
       .hero-body { flex-direction: column; gap: 12px; }
       .profit-grid { grid-template-columns: 1fr 1fr; }
+      .repair-row { grid-template-columns: 1fr; }
+      .repair-remove { width: 100%; }
     }
   </style>
 </head>
@@ -205,6 +234,15 @@
         </div>
         <div id="heroBadge"></div>
       </div>
+    </div>
+
+    <!-- Recon Repairs -->
+    <div class="section-card recon-card" id="reconSection" style="display:none;">
+      <div class="section-header">
+        <span class="section-title">Recon Repairs</span>
+        <button class="btn btn-ghost btn-sm" onclick="addRepairItem()">+ Add Repair</button>
+      </div>
+      <div class="section-body" id="reconPanel"></div>
     </div>
 
     <!-- Photos management -->
@@ -274,6 +312,7 @@
       <div class="section-body" style="display:flex;flex-direction:column;gap:10px;">
         <a href="/deals/new" class="btn btn-primary w-full" style="justify-content:center;">Start a Deal</a>
         <button class="btn btn-ghost w-full" onclick="archiveUnit()" style="justify-content:center;">Archive Unit</button>
+        <button class="btn btn-danger w-full" onclick="deleteUnit()" style="justify-content:center;">Delete Unit</button>
       </div>
     </div>
 
@@ -293,18 +332,45 @@ UN.renderNav();
 
 const unitId = location.pathname.split('/').pop();
 const STAGES = [
-  { key:'acquired', label:'Acquired' },
-  { key:'transport', label:'Transport' },
+  { key:'acquired', label:'At Auction' },
+  { key:'transport', label:'Being Transported' },
+  { key:'screening', label:'Needs Screening' },
   { key:'recon', label:'Recon' },
   { key:'ready', label:'Ready' },
-  { key:'pending', label:'Pending Deal' },
+  { key:'pending', label:'Pending' },
   { key:'sold', label:'Sold' },
+];
+const REPAIR_STATUSES = [
+  { value:'searching', label:'Searching for Part' },
+  { value:'ordered', label:'Ordered' },
+  { value:'working', label:'Being Worked On' },
+  { value:'completed', label:'Completed' },
 ];
 
 let unit = null;
 let editMode = false;
 let editCostMode = false;
 let photoIndex = 0;
+
+function parseMoneyInput(value) {
+  const parsed = Number(String(value ?? '').replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function promptReconRepairs() {
+  const items = [];
+  let keepGoing = true;
+  while (keepGoing) {
+    const description = prompt(items.length ? 'Next repair needed?' : 'Repair needed?') || '';
+    const costRaw = description ? (prompt('Estimated repair cost? Optional — leave blank if unknown.') || '') : '';
+    const cost = parseMoneyInput(costRaw);
+    if (description.trim() || cost) {
+      items.push({ description: description.trim(), cost, status: 'searching' });
+    }
+    keepGoing = confirm('Is there anything else needed?');
+  }
+  return items;
+}
 
 // ── Load ────────────────────────────────────────────────────────────────────
 async function load() {
@@ -325,6 +391,7 @@ function render(activity) {
   renderHero();
   renderPhotos();
   renderDetails();
+  renderReconRepairs();
   renderCosts();
   renderProfit();
   renderStages();
@@ -507,6 +574,97 @@ async function saveDetails() {
   } catch(e) { toast(e.message, 'err'); }
 }
 
+// ── Recon repairs ──────────────────────────────────────────────────────────
+function repairItems() {
+  return Array.isArray(unit.repair_items) ? unit.repair_items : [];
+}
+
+function repairTotal() {
+  return repairItems().reduce((sum, item) => sum + (Number(item.cost) || 0), 0);
+}
+
+function esc(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;',
+  }[ch]));
+}
+
+function renderReconRepairs() {
+  const section = document.getElementById('reconSection');
+  const panel = document.getElementById('reconPanel');
+  const items = repairItems();
+  const shouldShow = unit.stage === 'recon' || items.length > 0;
+  section.style.display = shouldShow ? '' : 'none';
+  if (!shouldShow) return;
+
+  panel.innerHTML = `
+    <div class="repair-summary">
+      <div>
+        <div class="repair-total-label">Repair Total</div>
+        <div class="text-muted text-sm">Automatically included in total cost.</div>
+      </div>
+      <div class="repair-total-value" id="repairTotal">${UN.fmt.money(repairTotal())}</div>
+    </div>
+    <div class="repair-list" id="repairList">
+      ${items.length ? items.map(repairRow).join('') : `<div class="text-muted text-sm" style="padding:12px 0;">No repair lines yet. Add the first repair to build the Recon work list.</div>`}
+    </div>
+    <div class="repair-actions">
+      <button class="btn btn-ghost btn-sm" onclick="addRepairItem()">+ Add Repair</button>
+      <button class="btn btn-primary btn-sm" onclick="saveRepairItems()">Save Repairs</button>
+    </div>
+  `;
+}
+
+function repairRow(item, i) {
+  return `
+    <div class="repair-row" data-repair-index="${i}">
+      <input class="form-input repair-desc" value="${esc(item.description)}" placeholder="Repair needed, e.g. Battery">
+      <input class="form-input repair-cost" type="number" min="0" step="25" value="${Number(item.cost) || 0}" placeholder="Cost" oninput="previewRepairTotal()">
+      <select class="form-select repair-status">
+        ${REPAIR_STATUSES.map(s => `<option value="${s.value}" ${s.value === item.status ? 'selected' : ''}>${s.label}</option>`).join('')}
+      </select>
+      <button class="repair-remove" onclick="removeRepairItem(${i})" title="Remove repair">Remove</button>
+    </div>`;
+}
+
+function addRepairItem() {
+  unit.repair_items = [...repairItems(), { description: '', cost: 0, status: 'searching' }];
+  renderReconRepairs();
+}
+
+function removeRepairItem(index) {
+  unit.repair_items = repairItems().filter((_, i) => i !== index);
+  renderReconRepairs();
+  renderCosts();
+  renderProfit();
+}
+
+function collectRepairItems() {
+  return Array.from(document.querySelectorAll('.repair-row')).map(row => ({
+    description: row.querySelector('.repair-desc').value.trim(),
+    cost: parseMoneyInput(row.querySelector('.repair-cost').value),
+    status: row.querySelector('.repair-status').value,
+  })).filter(item => item.description || item.cost);
+}
+
+function previewRepairTotal() {
+  const total = Array.from(document.querySelectorAll('.repair-cost'))
+    .reduce((sum, input) => sum + (Number(input.value) || 0), 0);
+  const el = document.getElementById('repairTotal');
+  if (el) el.textContent = UN.fmt.money(total);
+}
+
+async function saveRepairItems() {
+  try {
+    const data = await UN.api('PUT', `/api/inventory/${unitId}`, { repair_items: collectRepairItems() });
+    unit = data.unit;
+    renderReconRepairs();
+    renderCosts();
+    renderProfit();
+    toast('Recon repairs saved');
+  } catch(e) { toast(e.message, 'err'); }
+}
+
 // ── Cost panel ──────────────────────────────────────────────────────────────
 function renderCosts() {
   const el = document.getElementById('costPanel');
@@ -533,9 +691,10 @@ function renderCosts() {
     el.innerHTML = costFields.map(f => `
       <div class="cost-row" style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
         <span style="width:130px;font-size:0.8125rem;color:var(--text-2);flex-shrink:0;">${f.label}</span>
-        <input class="form-input" id="${f.id}" type="number" min="0" step="50" value="${f.val || 0}" oninput="previewCostTotal()">
+        <input class="form-input" id="${f.id}" type="number" min="0" step="50" value="${f.val || 0}" oninput="previewCostTotal()" ${f.id === 'cRepair' && repairItems().length ? 'disabled' : ''}>
       </div>`).join('') +
-    `<div style="font-size:1rem;font-weight:700;text-align:right;padding:10px 0;color:var(--primary);" id="previewTotal">Total: ${UN.fmt.money(unit.total_cost)}</div>
+    `${repairItems().length ? '<div class="text-muted text-sm" style="margin:-2px 0 10px;">Recon repair cost is controlled by the repair list.</div>' : ''}
+    <div style="font-size:1rem;font-weight:700;text-align:right;padding:10px 0;color:var(--primary);" id="previewTotal">Total: ${UN.fmt.money(unit.total_cost)}</div>
     <div class="flex gap-8"><button class="btn btn-primary btn-sm" onclick="saveCosts()">Save</button><button class="btn btn-ghost btn-sm" onclick="cancelCostEdit()">Cancel</button></div>`;
   }
 }
@@ -632,15 +791,42 @@ function renderStages() {
 async function setStage(stage) {
   if (stage === unit.stage) return;
   if (stage === 'archived' && !confirm('Archive this unit?')) return;
+  const body = { stage };
+  if (stage === 'transport') {
+    const costRaw = prompt('Transport cost? Optional — leave blank if unknown.') || '';
+    const cost = parseMoneyInput(costRaw);
+    if (cost) {
+      const updated = await UN.api('PUT', `/api/inventory/${unitId}`, { transport_cost: cost });
+      unit = updated.unit;
+    }
+  }
+  if (stage === 'recon') {
+    const newRepairs = promptReconRepairs();
+    if (newRepairs.length) {
+      const updated = await UN.api('PUT', `/api/inventory/${unitId}`, {
+        repair_items: [...repairItems(), ...newRepairs],
+      });
+      unit = updated.unit;
+    }
+  }
   if (stage === 'sold') {
-    const price = prompt('Enter sold price (optional):');
-    if (price) await UN.api('PUT', `/api/inventory/${unitId}`, { sold_price: Number(price) });
+    const saleType = prompt('Sale type? Retail, wholesale, trade, or other. Optional.') || '';
+    const price = prompt('Sold/trade value? Optional — leave blank if unknown.') || '';
+    const updates = {};
+    if (price) updates.sold_price = Number(price);
+    if (saleType) updates.notes = [unit.notes || '', `Sold type: ${saleType}`].filter(Boolean).join('\n');
+    if (Object.keys(updates).length) {
+      const updated = await UN.api('PUT', `/api/inventory/${unitId}`, updates);
+      unit = updated.unit;
+    }
   }
   try {
-    const data = await UN.api('PATCH', `/api/inventory/${unitId}/stage`, { stage });
+    const data = await UN.api('PATCH', `/api/inventory/${unitId}/stage`, body);
     unit = data.unit;
     renderHero();
     renderStages();
+    renderReconRepairs();
+    renderCosts();
     renderProfit();
     toast(`Stage → ${stage}`);
   } catch(e) { toast(e.message, 'err'); }
@@ -651,6 +837,15 @@ async function archiveUnit() {
   if (!confirm('Archive this unit? It will be hidden from the main board.')) return;
   await setStage('archived');
   setTimeout(() => location.href = '/inventory', 800);
+}
+
+async function deleteUnit() {
+  if (!confirm('Delete this unit permanently? This is not an archive.')) return;
+  try {
+    await UN.api('DELETE', `/api/inventory/${unitId}`);
+    toast('Unit deleted');
+    setTimeout(() => location.href = '/inventory', 500);
+  } catch(e) { toast(e.message, 'err'); }
 }
 
 // ── Activity ────────────────────────────────────────────────────────────────

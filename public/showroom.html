@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Inventory Showroom - Unit Navigator</title>
+  <link rel="stylesheet" href="/css/main.css">
+  <script>
+    document.documentElement.dataset.publicTheme = localStorage.getItem('un_public_theme') || 'dark';
+    document.documentElement.dataset.publicView = localStorage.getItem('un_public_view') || 'cards';
+  </script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --show-bg-a: #05070c;
+      --show-bg-b: #0b111d;
+      --show-text: #f8fafc;
+      --show-muted: rgba(226,232,240,.76);
+      --show-panel: rgba(255,255,255,.055);
+      --show-line: rgba(255,255,255,.12);
+      --show-tool: rgba(5,7,12,.72);
+      --show-field: rgba(255,255,255,.07);
+      --show-shadow: rgba(0,0,0,.28);
+    }
+    :root[data-public-theme="light"] {
+      color-scheme: light;
+      --show-bg-a: #f8fbff;
+      --show-bg-b: #eaf2ff;
+      --show-text: #071120;
+      --show-muted: rgba(71,85,105,.88);
+      --show-panel: rgba(255,255,255,.72);
+      --show-line: rgba(15,23,42,.12);
+      --show-tool: rgba(255,255,255,.74);
+      --show-field: rgba(241,245,249,.9);
+      --show-shadow: rgba(15,23,42,.16);
+    }
+    body {
+      background:
+        radial-gradient(circle at 12% 8%, rgba(59,130,246,.26), transparent 28%),
+        radial-gradient(circle at 88% 6%, rgba(34,211,238,.18), transparent 30%),
+        linear-gradient(180deg, var(--show-bg-a), var(--show-bg-b) 54%, var(--show-bg-a));
+      color: var(--show-text);
+    }
+    .showroom-shell { width: min(100% - 44px, 1500px); margin: 0 auto; padding: 34px 0 80px; }
+    .showroom-nav { display: flex; justify-content: space-between; align-items: center; gap: 18px; margin-bottom: 46px; }
+    .showroom-brand { display: flex; align-items: center; gap: 12px; color: var(--show-text); font-weight: 900; letter-spacing: -.035em; }
+    .showroom-brand img { width: 176px; height: auto; }
+    .showroom-nav-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    .showroom-hero { display: grid; grid-template-columns: minmax(0, .9fr) minmax(340px, .5fr); gap: 32px; align-items: end; margin-bottom: 34px; }
+    .showroom-kicker { color: #60a5fa; text-transform: uppercase; letter-spacing: .14em; font-size: .78rem; font-weight: 900; }
+    .showroom-hero h1 { font-size: clamp(3rem, 7vw, 7.5rem); line-height: .86; letter-spacing: -.075em; margin: 12px 0 18px; }
+    .showroom-hero p { color: var(--show-muted); font-size: 1.12rem; line-height: 1.55; max-width: 760px; }
+    .showroom-panel {
+      border: 1px solid var(--show-line); border-radius: 28px; padding: 22px;
+      background:
+        radial-gradient(circle at 92% 0%, rgba(59,130,246,.26), transparent 34%),
+        var(--show-panel);
+      box-shadow: 0 30px 90px var(--show-shadow);
+      backdrop-filter: blur(18px);
+    }
+    .payment-tease strong { display: block; font-size: 2.2rem; letter-spacing: -.06em; margin: 8px 0; }
+    .payment-tease span { color: rgba(226,232,240,.7); line-height: 1.45; }
+    .showroom-tools {
+      display: grid; grid-template-columns: minmax(240px,1fr) 180px 180px auto; gap: 12px;
+      margin-bottom: 22px; position: sticky; top: 10px; z-index: 20;
+      padding: 10px; margin-left: -10px; margin-right: -10px; border-radius: 24px;
+      background: var(--show-tool); backdrop-filter: blur(18px);
+    }
+    .showroom-input, .showroom-select {
+      width: 100%; border: 1px solid var(--show-line); border-radius: 16px;
+      background: var(--show-field); color: var(--show-text); padding: 13px 15px; font: inherit;
+      outline: none;
+    }
+    .showroom-input::placeholder { color: rgba(100,116,139,.72); }
+    .showroom-select option { background: #0b111d; color: #fff; }
+    :root[data-public-theme="light"] .showroom-select option { background: #fff; color: #071120; }
+    .view-toggle, .theme-toggle {
+      display: inline-flex; align-items: center; gap: 4px; padding: 4px;
+      border: 1px solid var(--show-line); border-radius: 999px; background: var(--show-panel);
+      backdrop-filter: blur(14px);
+    }
+    .toggle-btn {
+      min-height: 38px; border: 0; border-radius: 999px; padding: 0 14px;
+      color: var(--show-muted); background: transparent; font-weight: 900; cursor: pointer;
+    }
+    .toggle-btn.active { background: #2563eb; color: #fff; box-shadow: 0 12px 28px rgba(37,99,235,.28); }
+    .vehicle-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 22px; }
+    .vehicle-card {
+      position: relative; overflow: hidden; min-height: 540px; border-radius: 34px;
+      border: 1px solid rgba(255,255,255,.1);
+      background: var(--show-panel);
+      box-shadow: 0 30px 80px var(--show-shadow);
+      transform: translateY(14px); opacity: 0;
+      animation: cardIn .55s ease-out forwards;
+      cursor: pointer;
+    }
+    @keyframes cardIn { to { opacity: 1; transform: translateY(0); } }
+    .vehicle-photo {
+      position: absolute; inset: 0; background: #101827 center / cover no-repeat;
+      transition: transform .5s ease, filter .5s ease;
+    }
+    .vehicle-card:hover .vehicle-photo { transform: scale(1.045); filter: saturate(1.08); }
+    .vehicle-photo::after {
+      content: ""; position: absolute; inset: 0;
+      background:
+        linear-gradient(180deg, rgba(2,6,23,.04), rgba(2,6,23,.22) 45%, rgba(2,6,23,.9)),
+        radial-gradient(circle at 50% 32%, transparent, rgba(2,6,23,.28) 72%);
+    }
+    .vehicle-content {
+      position: absolute; inset: auto 0 0; padding: 22px; z-index: 2;
+      display: grid; gap: 14px;
+    }
+    .vehicle-title { display: flex; justify-content: space-between; gap: 16px; align-items: start; }
+    .vehicle-title h2 { font-size: 1.8rem; line-height: 1; letter-spacing: -.055em; }
+    .vehicle-title p { color: rgba(226,232,240,.76); margin-top: 7px; }
+    .price-pill {
+      flex: 0 0 auto; padding: 10px 12px; border-radius: 18px;
+      background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.14);
+      color: #fff; font-weight: 900; backdrop-filter: blur(12px); text-align: right;
+    }
+    .price-pill small { display: block; margin-top: 3px; color: rgba(226,232,240,.72); font-size: .76rem; font-weight: 800; }
+    .card-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .show-btn {
+      display: inline-flex; justify-content: center; align-items: center; min-height: 44px;
+      border-radius: 999px; border: 1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.1); color: #fff; font-weight: 900; cursor: pointer;
+      backdrop-filter: blur(12px);
+    }
+    .show-btn.primary { background: #2563eb; border-color: #3b82f6; }
+    .vehicle-grid.list-view { grid-template-columns: 1fr; }
+    .vehicle-grid.list-view .vehicle-card {
+      min-height: 210px; display: grid; grid-template-columns: 280px minmax(0,1fr);
+      border-radius: 28px; cursor: pointer;
+    }
+    .vehicle-grid.list-view .vehicle-photo { position: relative; min-height: 210px; }
+    .vehicle-grid.list-view .vehicle-photo::after { background: linear-gradient(90deg, transparent, rgba(2,6,23,.16)); }
+    .vehicle-grid.list-view .vehicle-content { position: relative; inset: auto; padding: 24px; align-content: center; }
+    .vehicle-grid.list-view .photo-count,
+    .vehicle-grid.list-view .photo-arrow { display: none; }
+    .mobile-quickbar { display: none; }
+    .photo-arrow {
+      position: absolute; z-index: 3; top: 45%; transform: translateY(-50%);
+      width: 42px; height: 42px; border-radius: 999px; border: 1px solid rgba(255,255,255,.18);
+      background: rgba(2,6,23,.42); color: #fff; cursor: pointer; backdrop-filter: blur(10px);
+      display: grid; place-items: center; font-size: 1.3rem; transition: transform .16s, background .16s;
+    }
+    .photo-arrow:hover { transform: translateY(-50%) scale(1.08); background: rgba(37,99,235,.7); }
+    .photo-arrow.prev { left: 14px; }
+    .photo-arrow.next { right: 14px; }
+    .photo-count {
+      position: absolute; z-index: 3; top: 16px; right: 16px; padding: 7px 10px; border-radius: 999px;
+      background: rgba(2,6,23,.46); border: 1px solid rgba(255,255,255,.14); color: rgba(255,255,255,.88);
+      font-size: .78rem; font-weight: 800; backdrop-filter: blur(10px);
+    }
+    .empty-showroom {
+      grid-column: 1 / -1; text-align: center; border: 1px dashed rgba(255,255,255,.16);
+      border-radius: 28px; padding: 70px 24px; color: rgba(226,232,240,.68);
+      background: rgba(255,255,255,.04);
+    }
+    @media(max-width: 1180px) {
+      .vehicle-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+      .showroom-hero { grid-template-columns: 1fr; }
+    }
+    @media(max-width: 760px) {
+      body {
+        background:
+          radial-gradient(circle at 20% 0%, rgba(59,130,246,.24), transparent 34%),
+          linear-gradient(180deg, #05070c, #0b111d 58%, #06080d);
+      }
+      .showroom-shell { width: min(100% - 24px, 560px); padding: 18px 0 92px; }
+      .showroom-brand img { width: 148px; }
+      .showroom-nav { gap: 14px; margin-bottom: 28px; }
+      .showroom-nav-actions { width: 100%; display: grid; grid-template-columns: 1fr 1fr; }
+      .showroom-nav-actions .btn { justify-content: center; padding: 10px 12px; }
+      .showroom-hero { gap: 18px; margin-bottom: 22px; }
+      .showroom-hero h1 { font-size: clamp(2.85rem, 17vw, 4.8rem); line-height: .88; margin-bottom: 14px; }
+      .showroom-hero p { font-size: .98rem; }
+      .showroom-panel { border-radius: 22px; padding: 16px; }
+      .payment-tease strong { font-size: 1.45rem; }
+      .showroom-tools, .vehicle-grid { grid-template-columns: 1fr; }
+      .showroom-tools {
+        top: 0; gap: 8px; padding: 10px 0 12px; margin: 0 0 16px;
+        border-radius: 0 0 24px 24px;
+      }
+      .showroom-input, .showroom-select { border-radius: 14px; padding: 12px 13px; font-size: .95rem; }
+      .vehicle-grid { gap: 16px; }
+      .vehicle-card { min-height: 610px; border-radius: 26px; }
+      .vehicle-content { padding: 16px; gap: 12px; }
+      .vehicle-title { display: grid; gap: 10px; }
+      .vehicle-title h2 { font-size: 1.55rem; }
+      .vehicle-title p { font-size: .92rem; margin-top: 5px; }
+      .price-pill { justify-self: start; padding: 8px 11px; }
+      .card-actions { grid-template-columns: 1fr; }
+      .show-btn { min-height: 48px; }
+      .photo-arrow {
+        top: 38%; width: 48px; height: 48px; font-size: 1.55rem;
+        background: rgba(2,6,23,.58);
+      }
+      .photo-arrow.prev { left: 10px; }
+      .photo-arrow.next { right: 10px; }
+      .photo-count { top: 12px; right: 12px; }
+      .showroom-nav { align-items: flex-start; flex-direction: column; }
+      .mobile-quickbar {
+        position: fixed; z-index: 60; left: 12px; right: 12px; bottom: 12px;
+        display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+        padding: 10px; border: 1px solid rgba(255,255,255,.12); border-radius: 22px;
+        background: rgba(2,6,23,.74); backdrop-filter: blur(18px);
+        box-shadow: 0 20px 60px rgba(0,0,0,.35);
+      }
+      .mobile-quickbar a {
+        min-height: 46px; display: grid; place-items: center; border-radius: 999px;
+        color: #fff; font-weight: 900; border: 1px solid rgba(255,255,255,.13);
+        background: rgba(255,255,255,.1);
+      }
+      .mobile-quickbar a:first-child { background: #2563eb; border-color: #3b82f6; }
+      .vehicle-grid.list-view .vehicle-card { grid-template-columns: 1fr; min-height: 430px; }
+      .vehicle-grid.list-view .vehicle-photo { min-height: 240px; }
+    }
+    @media(max-width: 390px) {
+      .vehicle-card { min-height: 520px; }
+    }
+  </style>
+</head>
+<body>
+<main class="showroom-shell">
+  <nav class="showroom-nav">
+    <a class="showroom-brand" href="/">
+      <img id="brandLogo" src="/assets/unit-navigator-logo-on-dark.png" alt="Unit Navigator">
+    </a>
+    <div class="showroom-nav-actions">
+      <div class="theme-toggle" aria-label="Theme">
+        <button class="toggle-btn" id="lightBtn" type="button" onclick="setTheme('light')">Light</button>
+        <button class="toggle-btn" id="darkBtn" type="button" onclick="setTheme('dark')">Dark</button>
+      </div>
+      <a class="btn btn-primary" href="/credit/new">Apply for Credit</a>
+    </div>
+  </nav>
+
+  <section class="showroom-hero">
+    <div>
+      <p class="showroom-kicker">Available Inventory</p>
+      <h1>Find the unit that fits the payment.</h1>
+      <p>Browse dealer inventory with quick photo switching, clean payment estimates, and a full calculator on every vehicle detail page.</p>
+    </div>
+    <aside class="showroom-panel payment-tease">
+      <span>Tap any vehicle</span>
+      <strong>Customize the payment</strong>
+      <span>Details include a simple calculator for down payment, term, APR, and estimated monthly payment.</span>
+    </aside>
+  </section>
+
+  <section class="showroom-tools">
+    <input class="showroom-input" id="search" placeholder="Search year, make, model, trim..." oninput="renderInventory()">
+    <select class="showroom-select" id="sort" onchange="renderInventory()">
+      <option value="featured">Featured</option>
+      <option value="payment_low">Payment: Low to High</option>
+      <option value="payment_high">Payment: High to Low</option>
+      <option value="miles_low">Miles: Low to High</option>
+      <option value="year_new">Year: Newest</option>
+    </select>
+    <select class="showroom-select" id="apr" onchange="renderInventory()">
+      <option value="9.99">Est. APR 9.99%</option>
+      <option value="7.99">Est. APR 7.99%</option>
+      <option value="12.99">Est. APR 12.99%</option>
+      <option value="18.99">Est. APR 18.99%</option>
+    </select>
+    <div class="view-toggle" aria-label="Inventory view">
+      <button class="toggle-btn" id="cardsBtn" type="button" onclick="setView('cards')">Cards</button>
+      <button class="toggle-btn" id="listBtn" type="button" onclick="setView('list')">List</button>
+    </div>
+  </section>
+
+  <section class="vehicle-grid" id="vehicleGrid"></section>
+</main>
+
+<div class="mobile-quickbar">
+  <a href="/credit/new">Apply</a>
+  <a href="#vehicleGrid">Inventory</a>
+</div>
+
+<script>
+let units = [];
+const photoIndex = new Map();
+const fallbackPhoto = '/assets/home-hero-car.png';
+let viewMode = localStorage.getItem('un_public_view') || 'cards';
+
+function money(n) {
+  if (!n) return 'Call for price';
+  return '$' + Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 });
+}
+
+function miles(n) {
+  if (n == null || n === '') return '-';
+  return Number(n).toLocaleString('en-US');
+}
+
+function monthly(price) {
+  if (!price) return null;
+  const principal = Number(price) * 0.8;
+  const apr = Number(document.getElementById('apr').value) / 100;
+  const r = apr / 12;
+  const months = 60;
+  return r ? principal * r / (1 - Math.pow(1 + r, -months)) : principal / months;
+}
+
+function vehicleSubtitle(unit) {
+  const bits = [];
+  if (unit.trim) bits.push(unit.trim);
+  if (unit.mileage != null && unit.mileage !== '') bits.push(`${miles(unit.mileage)} miles`);
+  return bits.join(' · ') || unit.body_style || 'Available now';
+}
+
+function setTheme(theme) {
+  document.documentElement.dataset.publicTheme = theme;
+  localStorage.setItem('un_public_theme', theme);
+  document.getElementById('lightBtn')?.classList.toggle('active', theme === 'light');
+  document.getElementById('darkBtn')?.classList.toggle('active', theme === 'dark');
+  const logo = document.getElementById('brandLogo');
+  if (logo) logo.src = theme === 'light' ? '/assets/unit-navigator-logo-transparent.png' : '/assets/unit-navigator-logo-on-dark.png';
+}
+
+function setView(mode) {
+  viewMode = mode;
+  document.documentElement.dataset.publicView = mode;
+  localStorage.setItem('un_public_view', mode);
+  document.getElementById('cardsBtn')?.classList.toggle('active', mode === 'cards');
+  document.getElementById('listBtn')?.classList.toggle('active', mode === 'list');
+  renderInventory();
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch]));
+}
+
+async function loadInventory() {
+  const res = await fetch('/api/public/inventory');
+  const data = await res.json();
+  units = data.units || [];
+  units.forEach(unit => photoIndex.set(unit.id, 0));
+  renderInventory();
+}
+
+function filteredUnits() {
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  const sort = document.getElementById('sort').value;
+  let list = units.filter(unit => {
+    const haystack = [unit.year, unit.make, unit.model, unit.trim, unit.color, unit.body_style].join(' ').toLowerCase();
+    return !q || haystack.includes(q);
+  });
+  list = [...list].sort((a, b) => {
+    if (sort === 'payment_low') return (monthly(a.price) || 999999) - (monthly(b.price) || 999999);
+    if (sort === 'payment_high') return (monthly(b.price) || 0) - (monthly(a.price) || 0);
+    if (sort === 'miles_low') return (a.mileage || 9999999) - (b.mileage || 9999999);
+    if (sort === 'year_new') return (b.year || 0) - (a.year || 0);
+    return (b.asking_price || 0) - (a.asking_price || 0);
+  });
+  return list;
+}
+
+function renderInventory() {
+  const grid = document.getElementById('vehicleGrid');
+  const list = filteredUnits();
+  grid.classList.toggle('list-view', viewMode === 'list');
+  if (!list.length) {
+    grid.innerHTML = `
+      <div class="empty-showroom">
+        <h2>No public inventory yet.</h2>
+        <p>Move units to Ready in Unit Navigator and they will appear here.</p>
+      </div>`;
+    return;
+  }
+  grid.innerHTML = list.map((unit, i) => vehicleCard(unit, i)).join('');
+}
+
+function vehicleCard(unit, i) {
+  const photos = unit.photos?.length ? unit.photos : [fallbackPhoto];
+  const index = photoIndex.get(unit.id) || 0;
+  const photo = photos[index] || photos[0];
+  const pay = monthly(unit.price);
+  const title = [unit.year, unit.make, unit.model].filter(Boolean).join(' ');
+  return `
+    <article class="vehicle-card" onclick="openVehicle(${unit.id})" style="animation-delay:${Math.min(i * 70, 420)}ms">
+      <div class="vehicle-photo" style="background-image:url('${escapeHtml(photo)}')"></div>
+      <div class="photo-count">${index + 1} / ${photos.length}</div>
+      ${photos.length > 1 ? `
+        <button class="photo-arrow prev" onclick="movePhoto(event, ${unit.id}, -1)" aria-label="Previous photo">‹</button>
+        <button class="photo-arrow next" onclick="movePhoto(event, ${unit.id}, 1)" aria-label="Next photo">›</button>
+      ` : ''}
+      <div class="vehicle-content">
+        <div class="vehicle-title">
+          <div>
+            <h2>${escapeHtml(title || 'Available Unit')}</h2>
+            <p>${escapeHtml(vehicleSubtitle(unit))}</p>
+          </div>
+          <div class="price-pill">${money(unit.price)}<small>${pay ? money(pay) + '/mo est.' : 'Payment estimate available'}</small></div>
+        </div>
+        <div class="card-actions">
+          <a class="show-btn primary" href="/credit/new" onclick="event.stopPropagation()">Apply</a>
+          <a class="show-btn" href="/showroom/${unit.id}" onclick="event.stopPropagation()">Details</a>
+        </div>
+      </div>
+    </article>
+  `;
+}
+
+function openVehicle(id) {
+  window.location.href = `/showroom/${id}`;
+}
+
+function movePhoto(event, id, dir) {
+  event.stopPropagation();
+  const unit = units.find(u => u.id === id);
+  if (!unit) return;
+  const photos = unit.photos?.length ? unit.photos : [fallbackPhoto];
+  const current = photoIndex.get(id) || 0;
+  photoIndex.set(id, (current + dir + photos.length) % photos.length);
+  renderInventory();
+}
+
+setTheme(localStorage.getItem('un_public_theme') || 'dark');
+setView(viewMode);
+loadInventory().catch(() => {
+  document.getElementById('vehicleGrid').innerHTML = `
+    <div class="empty-showroom">
+      <h2>Inventory is unavailable right now.</h2>
+      <p>Please check back soon.</p>
+    </div>`;
+});
+</script>
+</body>
+</html>

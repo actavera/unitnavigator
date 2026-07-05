@@ -3,28 +3,974 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Start Paperwork — Unit Navigator</title>
+  <title>Start Paperwork - Unit Navigator</title>
+  <script>(function(){var t=localStorage.getItem('un_theme')||'dark';document.documentElement.dataset.theme=t;})()</script>
   <link rel="stylesheet" href="/css/main.css">
+  <style>
+    .paper-shell { width: min(100% - 44px, 1480px); margin: 0 auto; padding: 30px 0 64px; }
+    .packet-focus .paper-shell { width: min(100% - 44px, 1200px); padding-top: 52px; }
+    .paper-hero {
+      position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 18px; align-items: end;
+      margin-bottom: 22px; overflow: hidden; border: 1px solid var(--border); border-radius: 26px;
+      background:
+        radial-gradient(circle at 78% 18%, rgba(59,130,246,.28), transparent 28%),
+        radial-gradient(circle at 92% 86%, rgba(34,211,238,.14), transparent 30%),
+        linear-gradient(135deg, color-mix(in srgb, var(--s1), transparent 8%), color-mix(in srgb, var(--s2), transparent 20%));
+      padding: 28px;
+      box-shadow: var(--sh);
+    }
+    .paper-hero::after {
+      content: ""; position: absolute; inset: auto 40px -90px auto; width: 360px; height: 220px; pointer-events: none;
+      border-radius: 999px; border: 1px solid rgba(255,255,255,.1);
+      background: linear-gradient(135deg, rgba(59,130,246,.18), rgba(34,211,238,.08));
+      transform: rotate(-10deg);
+    }
+    .paper-hero > * { position: relative; z-index: 1; }
+    body:not(.packet-focus) .paper-hero { display: none; }
+    .paper-hero h1 { max-width: 960px; font-size: clamp(2.25rem, 5vw, 5.35rem); line-height: .94; letter-spacing: -.055em; margin: 8px 0 12px; }
+    .paper-hero p { color: var(--text-2); max-width: 820px; line-height: 1.55; }
+    .workflow-grid { display: grid; grid-template-columns: minmax(430px, .86fr) minmax(0, 1.14fr); gap: 18px; align-items: start; }
+    .packet-focus .workflow-grid { display: block; }
+    .paper-panel { border: 1px solid var(--border); border-radius: var(--r-lg); background: color-mix(in srgb, var(--s1), transparent 3%); box-shadow: 0 18px 60px rgba(0,0,0,.14); overflow: hidden; }
+    .paper-panel-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 18px 20px; border-bottom: 1px solid var(--border); }
+    .paper-panel-header h2 { font-size: .9rem; text-transform: uppercase; letter-spacing: .055em; }
+    .paper-panel-body { padding: 20px; }
+    .packet-focus .paper-hero,
+    .packet-focus .step-strip,
+    .packet-focus .paper-panel-header,
+    .packet-focus .preview-panel { display: none; }
+    .packet-focus .paper-panel {
+      border: 0; background: transparent; box-shadow: none; border-radius: 0; overflow: visible;
+    }
+    .packet-focus .paper-panel-body { padding: 0; }
+    .step-strip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-bottom: 18px; }
+    .step-pill { border: 1px solid var(--border); border-radius: 999px; padding: 8px 10px; color: var(--muted); font-size: .76rem; font-weight: 800; text-align: center; text-transform: uppercase; letter-spacing: .04em; }
+    .step-pill.active { color: var(--blue); border-color: var(--blue-border); background: var(--blue-gl); }
+    .choice-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .packet-focus .choice-grid { gap: 28px; }
+    .choice-card {
+      --choice: var(--blue);
+      position: relative; min-height: 168px; overflow: hidden;
+      border: 1px solid color-mix(in srgb, var(--choice), transparent 56%);
+      border-radius: var(--r-lg);
+      background:
+        radial-gradient(circle at 78% 10%, color-mix(in srgb, var(--choice), transparent 76%), transparent 32%),
+        linear-gradient(180deg, color-mix(in srgb, var(--choice), transparent 91%), var(--s2));
+      color: var(--text); cursor: pointer; padding: 18px; text-align: left;
+      transition: transform .16s, border-color .16s, box-shadow .16s;
+    }
+    .packet-focus .choice-card { min-height: 430px; padding: 42px; border-radius: 30px; }
+    .choice-card.bhph { --choice: var(--orange); }
+    .choice-card:hover { transform: translateY(-3px); border-color: color-mix(in srgb, var(--choice), transparent 24%); box-shadow: 0 18px 55px color-mix(in srgb, var(--choice), transparent 84%); }
+    .choice-card.active { border-color: var(--choice); box-shadow: 0 18px 60px color-mix(in srgb, var(--choice), transparent 78%); }
+    .choice-card strong { display: block; font-size: 1.15rem; margin-bottom: 6px; letter-spacing: -.03em; }
+    .choice-card span { color: var(--text-2); font-size: .88rem; line-height: 1.42; }
+    .packet-focus .choice-card strong { font-size: clamp(2rem, 4vw, 3.1rem); line-height: .98; margin-bottom: 18px; }
+    .packet-focus .choice-card span { max-width: 430px; font-size: 1.25rem; line-height: 1.45; }
+    .choice-icon {
+      display: grid; width: 58px; height: 58px; place-items: center; border-radius: 18px;
+      background: color-mix(in srgb, var(--choice), transparent 84%);
+      color: var(--choice); margin-bottom: 16px;
+    }
+    .packet-focus .choice-icon { width: 104px; height: 104px; border-radius: 32px; margin-bottom: 42px; }
+    .packet-focus .choice-icon svg { width: 56px; height: 56px; }
+    .choice-icon svg { width: 32px; height: 32px; fill: none; stroke: currentColor; stroke-width: 2.7; stroke-linecap: round; stroke-linejoin: round; }
+    .choice-sheen {
+      position: absolute; right: -28px; bottom: -32px; width: 126px; height: 126px; border-radius: 999px;
+      border: 1px solid color-mix(in srgb, var(--choice), transparent 62%);
+      background: color-mix(in srgb, var(--choice), transparent 88%);
+    }
+    .packet-focus .choice-sheen { width: 220px; height: 220px; right: -48px; bottom: -54px; }
+    .packet-intro { display: none; text-align: center; margin-bottom: 28px; }
+    .packet-focus .packet-intro { display: block; }
+    .packet-focus [data-step="packet"] .section-heading,
+    .packet-focus [data-step="packet"] .wizard-nav { display: none; }
+    .packet-intro h1 { font-size: clamp(2.6rem, 6vw, 5rem); line-height: .94; letter-spacing: -.06em; margin: 8px 0 12px; }
+    .packet-intro p { color: var(--text-2); font-size: 1.08rem; line-height: 1.55; }
+    .builder-section { border-top: 1px solid var(--border); padding-top: 18px; margin-top: 18px; }
+    .builder-section:first-of-type { border-top: 0; padding-top: 0; margin-top: 0; }
+    .step-section { display: none; }
+    .step-section.active { display: block; animation: stepIn .18s ease-out; }
+    @keyframes stepIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .section-heading { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; }
+    .section-heading h3 { font-size: 1rem; }
+    .mini-tabs { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; padding: 3px; background: var(--s2); }
+    .mini-tabs button { border: 0; background: transparent; color: var(--muted); border-radius: 999px; padding: 6px 10px; font-weight: 800; cursor: pointer; }
+    .mini-tabs button.active { color: #fff; background: var(--blue); }
+    .selection-snapshot {
+      display: grid; grid-template-columns: 58px minmax(0,1fr); gap: 12px; align-items: center;
+      margin-bottom: 14px; border: 1px solid var(--border); border-radius: var(--r-lg);
+      background:
+        radial-gradient(circle at 92% 16%, rgba(59,130,246,.16), transparent 28%),
+        var(--s2);
+      padding: 13px;
+    }
+    .client-search { margin-bottom: 14px; }
+    .client-picker-label {
+      display: flex; justify-content: space-between; align-items: center; gap: 10px;
+      color: var(--text-2); font-size: .78rem; font-weight: 900; text-transform: uppercase;
+      letter-spacing: .055em; margin: 0 0 8px;
+    }
+    .client-picker-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; margin-bottom: 14px; }
+    .client-pick-card {
+      display: grid; grid-template-columns: 54px minmax(0,1fr); gap: 12px; align-items: center;
+      border: 1px solid var(--border); border-radius: var(--r-lg);
+      background:
+        radial-gradient(circle at 92% 12%, rgba(59,130,246,.14), transparent 30%),
+        var(--s2);
+      color: var(--text); padding: 13px; cursor: pointer; text-align: left;
+      transition: transform .16s, border-color .16s, box-shadow .16s;
+    }
+    .client-pick-card:hover,
+    .client-pick-card.active { border-color: var(--blue-border); transform: translateY(-2px); box-shadow: 0 14px 45px rgba(37,99,235,.12); }
+    .client-pick-avatar {
+      display: grid; place-items: center; width: 54px; height: 54px; border-radius: 18px;
+      background: var(--blue-gl); color: var(--blue); font-weight: 900;
+    }
+    .client-pick-card strong { display: block; color: var(--text); letter-spacing: -.025em; }
+    .client-pick-card span { display: block; color: var(--muted); font-size: .8rem; line-height: 1.4; margin-top: 3px; }
+    .client-picker-empty {
+      grid-column: 1 / -1; border: 1px dashed var(--border-md); border-radius: var(--r-lg);
+      color: var(--muted); text-align: center; padding: 22px;
+    }
+    .snapshot-icon {
+      display: grid; place-items: center; width: 58px; height: 58px; border-radius: 18px;
+      background: var(--blue-gl); color: var(--blue); font-weight: 900; font-size: 1.15rem;
+    }
+    .snapshot-title { color: var(--text); font-weight: 900; letter-spacing: -.025em; }
+    .snapshot-sub { color: var(--muted); font-size: .82rem; line-height: 1.4; margin-top: 3px; }
+    .form-row { margin-bottom: 12px; }
+    .terms-card {
+      display: grid; gap: 10px; border: 1px solid var(--blue-border); border-radius: var(--r-lg);
+      background:
+        radial-gradient(circle at 92% 0%, rgba(59,130,246,.22), transparent 32%),
+        var(--s2);
+      padding: 16px; margin-top: 14px;
+    }
+    .terms-line { display: flex; justify-content: space-between; gap: 12px; color: var(--text-2); }
+    .terms-line strong { color: var(--text); text-align: right; }
+    .terms-total { border-top: 1px solid var(--border); padding-top: 12px; margin-top: 2px; align-items: end; }
+    .terms-total strong { color: var(--blue); font-size: 1.65rem; letter-spacing: -.04em; }
+    .paper-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+    .wizard-nav { display: flex; justify-content: space-between; gap: 10px; border-top: 1px solid var(--border); margin-top: 22px; padding-top: 18px; }
+    .preview-empty {
+      border: 1px dashed var(--border-md); border-radius: var(--r-lg); padding: 44px 26px; text-align: center; color: var(--muted); line-height: 1.5;
+      background:
+        radial-gradient(circle at 50% 0%, rgba(59,130,246,.14), transparent 34%),
+        var(--s2);
+    }
+    .preview-orb { display: grid; width: 86px; height: 86px; margin: 0 auto 18px; place-items: center; border-radius: 28px; background: var(--blue-gl); color: var(--blue); }
+    .preview-orb svg { width: 44px; height: 44px; fill: none; stroke: currentColor; stroke-width: 2.7; stroke-linecap: round; stroke-linejoin: round; }
+    .packet-preview { background: #fff; color: #111827; border-radius: var(--r-lg); overflow: hidden; }
+    .packet-page { padding: 34px; border-bottom: 1px solid #d1d5db; min-height: 690px; }
+    .packet-page:last-child { border-bottom: 0; }
+    .packet-top { display: flex; justify-content: space-between; gap: 18px; align-items: flex-start; margin-bottom: 22px; }
+    .packet-brand { font-weight: 900; font-size: 1.2rem; color: #0f172a; }
+    .packet-kicker { color: #2563eb; font-size: .75rem; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; }
+    .packet-title { font-size: 1.72rem; letter-spacing: -.035em; margin: 6px 0 8px; color: #020617; }
+    .packet-sub { color: #475569; line-height: 1.45; }
+    .packet-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; margin: 16px 0; }
+    .packet-box { border: 1px solid #d1d5db; border-radius: 10px; padding: 12px; }
+    .packet-box h4 { font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; color: #475569; margin-bottom: 8px; }
+    .packet-line { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid #e5e7eb; }
+    .packet-line:last-child { border-bottom: 0; }
+    .packet-line span:first-child { color: #64748b; }
+    .packet-line strong { text-align: right; color: #0f172a; }
+    .packet-note { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a; border-radius: 10px; padding: 12px; line-height: 1.45; margin-top: 12px; }
+    .packet-warning { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; border-radius: 10px; padding: 12px; line-height: 1.45; margin-top: 12px; }
+    .packet-checklist { display: grid; gap: 8px; margin-top: 12px; }
+    .packet-check { display: grid; grid-template-columns: 18px minmax(0,1fr); gap: 8px; align-items: start; }
+    .packet-check::before { content: ""; width: 14px; height: 14px; border: 1px solid #64748b; margin-top: 2px; }
+    .signature-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-top: 34px; }
+    .signature-line { border-top: 1px solid #111827; padding-top: 7px; color: #334155; font-size: .85rem; }
+    .field-map-table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: .8rem; }
+    .field-map-table th, .field-map-table td { border-bottom: 1px solid #e5e7eb; padding: 8px 6px; text-align: left; vertical-align: top; }
+    .field-map-table th { color: #475569; text-transform: uppercase; letter-spacing: .05em; font-size: .68rem; }
+    .field-map-table code { background: #f1f5f9; color: #0f172a; border-radius: 5px; padding: 2px 4px; font-size: .75rem; }
+    details.packet-box summary { cursor: pointer; font-weight: 900; color: #0f172a; }
+    .hidden { display: none !important; }
+    @media(max-width: 1120px) {
+      .workflow-grid { grid-template-columns: 1fr; }
+      .packet-grid { grid-template-columns: 1fr; }
+    }
+    @media(max-width: 700px) {
+      .paper-shell { width: min(100% - 28px, 560px); }
+      .paper-hero { grid-template-columns: 1fr; }
+      .step-strip, .choice-grid, .signature-grid, .client-picker-grid { grid-template-columns: 1fr; }
+      .paper-panel-body { padding: 16px; }
+      .packet-focus .choice-card { min-height: 310px; padding: 28px; }
+    }
+    @media print {
+      body { background: #fff; }
+      #nav-container, .paper-hero, .paper-builder, .paper-panel-header, .no-print { display: none !important; }
+      .paper-shell { width: 100%; padding: 0; }
+      .workflow-grid { display: block; }
+      .paper-panel { box-shadow: none; border: 0; border-radius: 0; }
+      .paper-panel-body { padding: 0; }
+      .packet-preview { border-radius: 0; }
+      .packet-page { page-break-after: always; min-height: auto; padding: .45in; }
+      .packet-page:last-child { page-break-after: auto; }
+    }
+  </style>
 </head>
-<body class="workflow-page">
+<body>
 <div id="nav-container"></div>
-<main class="workflow-wrap">
-  <header class="workflow-header">
+<main class="paper-shell">
+  <header class="paper-hero">
     <div>
       <p class="home-kicker">Start Paperwork</p>
-      <h1>What kind of deal is this?</h1>
-      <p>Generate a printable HTML packet first. PDF generation can come later.</p>
+      <h1>Choose the packet, confirm the deal, then build it.</h1>
+      <p>Select outside financing or BHPH, pick a customer and vehicle, adjust the down payment and interest, then generate the pre-filled review packet.</p>
     </div>
+    <button class="btn btn-primary no-print" onclick="goToStep('packet')">Start</button>
   </header>
-  <div class="paper-source"><button class="btn active">Existing Deal</button><button class="btn btn-ghost">New Customer</button><button class="btn btn-ghost">Existing Customer</button></div>
-  <section class="packet-grid">
-    <article class="packet-option panel-glass"><span class="badge badge-ready">We Finance</span><h2 class="mt-16">In-house financing</h2><ul><li>Buyer info</li><li>Vehicle info</li><li>Financing terms</li><li>Required docs checklist</li><li>Internal notes</li></ul><button class="btn btn-primary w-full">Generate Packet</button></article>
-    <article class="packet-option panel-glass"><span class="badge badge-pending">BHPH</span><h2 class="mt-16">Buy Here Pay Here</h2><ul><li>Standard deal packet</li><li>BHPH contract</li><li>Payment schedule</li><li>Late fee terms</li><li>Repo disclosure placeholder</li></ul><button class="btn btn-primary w-full">Generate Packet</button></article>
-    <article class="packet-option panel-glass"><span class="badge badge-acquired">They Finance</span><h2 class="mt-16">Outside lender</h2><ul><li>Customer info</li><li>Vehicle info</li><li>Purchase agreement</li><li>Bank packet checklist</li></ul><button class="btn btn-primary w-full">Generate Packet</button></article>
-    <article class="packet-option panel-glass"><span class="badge badge-recon">Cash</span><h2 class="mt-16">Cash deal</h2><ul><li>Buyer info</li><li>Vehicle info</li><li>Cash receipt</li><li>Bill of sale / purchase docs</li></ul><button class="btn btn-primary w-full">Generate Packet</button></article>
+
+  <section class="workflow-grid">
+    <aside class="paper-panel paper-builder">
+      <div class="paper-panel-header">
+        <h2>Packet Setup</h2>
+        <button class="btn btn-ghost btn-sm" onclick="loadSample()">Load Sample</button>
+      </div>
+      <div class="paper-panel-body">
+        <div class="step-strip" aria-label="Paperwork steps">
+          <div class="step-pill active" data-step-pill="packet">Packet</div>
+          <div class="step-pill" data-step-pill="customer">Customer</div>
+          <div class="step-pill" data-step-pill="vehicle">Vehicle</div>
+          <div class="step-pill" data-step-pill="terms">Terms</div>
+          <div class="step-pill" data-step-pill="build">Build</div>
+        </div>
+
+        <div class="builder-section step-section active" data-step="packet">
+          <div class="packet-intro">
+            <p class="home-kicker">Start Paperwork</p>
+            <h1>Pick the packet.</h1>
+            <p>Choose how this deal is being financed. The rest of the workflow starts after this.</p>
+          </div>
+          <div class="section-heading"><h3>1. Packet Type</h3></div>
+          <div class="choice-grid">
+            <button class="choice-card active" id="packet-outside" onclick="setPacket('outside')">
+              <span class="choice-icon"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M11 14h26v20H11Z"/><path d="M16 20h12M16 27h8"/><path d="M33 26l4 4 7-8"/></svg></span>
+              <strong>Outside Financing</strong>
+              <span>Cash, customer-arranged financing, or outside lender retail sale packet.</span>
+              <span class="choice-sheen" aria-hidden="true"></span>
+            </button>
+            <button class="choice-card bhph" id="packet-bhph" onclick="setPacket('bhph')">
+              <span class="choice-icon"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M15 8h18l6 6v26H15Z"/><path d="M33 8v7h6"/><path d="M20 24h14M20 30h10"/><path d="M10 20h10M15 15v10"/></svg></span>
+              <strong>BHPH</strong>
+              <span>Retail sale package plus in-house finance terms and payment schedule.</span>
+              <span class="choice-sheen" aria-hidden="true"></span>
+            </button>
+          </div>
+          <div class="wizard-nav">
+            <span></span>
+            <button class="btn btn-primary" onclick="goToStep('customer')">Choose Client →</button>
+          </div>
+        </div>
+
+        <div class="builder-section step-section" data-step="customer">
+          <div class="section-heading">
+            <h3>2. Customer</h3>
+            <div class="mini-tabs">
+              <button id="customer-existing-tab" class="active" onclick="setCustomerMode('existing')">Select</button>
+              <button id="customer-new-tab" onclick="setCustomerMode('new')">Add New</button>
+            </div>
+          </div>
+          <div class="selection-snapshot" id="customerSnapshot"></div>
+          <div id="existingCustomerBlock">
+            <div class="form-group client-search">
+              <label class="form-label">Search Existing Clients</label>
+              <input class="form-input" id="customerSearch" placeholder="Search name, phone, email, vehicle, VIN..." autocomplete="off" oninput="renderCustomerPicker()">
+              <p class="form-hint">Searches past clients, credit pulls, and deal history.</p>
+            </div>
+            <div class="client-picker-label" id="customerPickerLabel">Recent Clients</div>
+            <div class="client-picker-grid" id="customerPicker"></div>
+          </div>
+          <div class="form-row form-row-2">
+            <div class="form-group"><label class="form-label">Customer Name</label><input class="form-input" id="buyerName" oninput="renderEstimate()"></div>
+            <div class="form-group"><label class="form-label">Co-Buyer</label><input class="form-input" id="coBuyer" placeholder="Optional" oninput="renderEstimate()"></div>
+          </div>
+          <div class="form-row form-row-2">
+            <div class="form-group"><label class="form-label">Phone</label><input class="form-input" id="buyerPhone" oninput="renderEstimate()"></div>
+            <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="buyerEmail" oninput="renderEstimate()"></div>
+          </div>
+          <div class="form-group"><label class="form-label">Address</label><input class="form-input" id="buyerAddress" oninput="renderEstimate()"></div>
+          <div class="wizard-nav">
+            <button class="btn btn-ghost" onclick="goToStep('packet')">← Packet</button>
+            <button class="btn btn-primary" onclick="goToStep('vehicle')">Choose Vehicle →</button>
+          </div>
+        </div>
+
+        <div class="builder-section step-section" data-step="vehicle">
+          <div class="section-heading"><h3>3. Vehicle</h3></div>
+          <div class="selection-snapshot" id="vehicleSnapshot"></div>
+          <div class="form-group">
+            <label class="form-label">Inventory Unit</label>
+            <select class="form-select" id="vehicleSelect" onchange="loadVehicleFromSelect()"></select>
+            <p class="form-hint">Choose from inventory, or type details manually below.</p>
+          </div>
+          <div class="form-row form-row-3">
+            <div class="form-group"><label class="form-label">Year</label><input class="form-input" id="year" type="number" oninput="renderEstimate()"></div>
+            <div class="form-group"><label class="form-label">Make</label><input class="form-input" id="make" oninput="renderEstimate()"></div>
+            <div class="form-group"><label class="form-label">Model</label><input class="form-input" id="model" oninput="renderEstimate()"></div>
+          </div>
+          <div class="form-row form-row-3">
+            <div class="form-group"><label class="form-label">VIN</label><input class="form-input" id="vin" oninput="renderEstimate()"></div>
+            <div class="form-group"><label class="form-label">Mileage</label><input class="form-input" id="mileage" type="number" oninput="renderEstimate()"></div>
+            <div class="form-group"><label class="form-label">County</label><select class="form-select" id="county" onchange="renderEstimate()"><option>Utah</option><option>Salt Lake</option><option>Davis</option><option>Weber</option><option>Cache</option><option>Other</option></select></div>
+          </div>
+          <div class="form-row form-row-3">
+            <div class="form-group"><label class="form-label">Color</label><input class="form-input" id="color" oninput="renderEstimate()"></div>
+            <div class="form-group"><label class="form-label">Fuel</label><select class="form-select" id="fuel" onchange="renderEstimate()"><option>Gas</option><option>Diesel</option><option>Hybrid</option><option>Electric</option></select></div>
+            <div class="form-group"><label class="form-label">Unit Type</label><select class="form-select" id="unitType" onchange="renderEstimate()"><option>Passenger Vehicle</option><option>Motorcycle</option><option>ATV / UTV</option><option>Trailer</option><option>Watercraft</option></select></div>
+          </div>
+          <div class="wizard-nav">
+            <button class="btn btn-ghost" onclick="goToStep('customer')">← Customer</button>
+            <button class="btn btn-primary" onclick="goToStep('terms')">Set Terms →</button>
+          </div>
+        </div>
+
+        <div class="builder-section step-section" data-step="terms">
+          <div class="section-heading"><h3>4. Deal Terms</h3></div>
+          <div class="form-row form-row-3">
+            <div class="form-group"><label class="form-label">Sale Price</label><input class="form-input" id="salePrice" type="number" oninput="renderEstimate()"></div>
+            <div class="form-group"><label class="form-label">Down Payment</label><input class="form-input" id="downPayment" type="number" oninput="renderEstimate()"></div>
+            <div class="form-group"><label class="form-label">Trade Allowance</label><input class="form-input" id="trade" type="number" oninput="renderEstimate()"></div>
+          </div>
+          <div class="form-row form-row-3">
+            <div class="form-group"><label class="form-label">APR %</label><input class="form-input" id="apr" type="number" step="0.01" oninput="renderEstimate()"></div>
+            <div class="form-group"><label class="form-label">Term Months</label><input class="form-input" id="term" type="number" oninput="renderEstimate()"></div>
+            <div class="form-group"><label class="form-label">Payment Frequency</label><select class="form-select" id="frequency" onchange="renderEstimate()"><option>Monthly</option><option>Biweekly</option><option>Weekly</option></select></div>
+          </div>
+          <div class="form-row form-row-3">
+            <div class="form-group"><label class="form-label">Doc Fee</label><input class="form-input" id="docFee" type="number" oninput="renderEstimate()"></div>
+            <div class="form-group"><label class="form-label">Tax Rate %</label><input class="form-input" id="taxRate" type="number" step="0.001" oninput="renderEstimate()"></div>
+            <div class="form-group"><label class="form-label">Reg/Title/Plate Fees</label><input class="form-input" id="dmvFees" type="number" oninput="renderEstimate()"></div>
+          </div>
+          <div id="bhphExtra" class="form-row form-row-3">
+            <div class="form-group"><label class="form-label">First Payment</label><input class="form-input" id="firstPayment" type="date" onchange="renderEstimate()"></div>
+            <div class="form-group"><label class="form-label">Late Fee</label><input class="form-input" id="lateFee" type="number" oninput="renderEstimate()"></div>
+            <div class="form-group"><label class="form-label">Grace Days</label><input class="form-input" id="graceDays" type="number" oninput="renderEstimate()"></div>
+          </div>
+
+          <div class="terms-card" id="estimateCard"></div>
+          <div class="wizard-nav">
+            <button class="btn btn-ghost" onclick="goToStep('vehicle')">← Vehicle</button>
+            <button class="btn btn-primary" onclick="buildPacket()">Go! Build It</button>
+          </div>
+        </div>
+
+        <div class="builder-section step-section" data-step="build">
+          <div class="section-heading"><h3>5. Review and Export</h3></div>
+          <div class="selection-snapshot">
+            <div class="snapshot-icon">✓</div>
+            <div>
+              <div class="snapshot-title">Packet built</div>
+              <div class="snapshot-sub">Review the preview, then print/save PDF or export for e-sign.</div>
+            </div>
+          </div>
+          <div class="paper-actions">
+            <button class="btn btn-ghost" onclick="goToStep('terms')">← Edit Terms</button>
+            <button class="btn btn-primary" onclick="window.print()">Print / Save PDF</button>
+            <button class="btn btn-ghost" onclick="downloadEsignPayload()">Export for E-Sign</button>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <section class="paper-panel preview-panel">
+      <div class="paper-panel-header">
+        <h2 id="previewTitle">Packet Preview</h2>
+        <div class="paper-actions no-print" style="margin:0;">
+          <button class="btn btn-primary btn-sm" id="printBtn" onclick="window.print()" disabled>Print / Save PDF</button>
+          <button class="btn btn-ghost btn-sm" id="esignBtn" onclick="downloadEsignPayload()" disabled>Export for E-Sign</button>
+        </div>
+      </div>
+      <div class="paper-panel-body">
+        <div id="previewEmpty" class="preview-empty">
+          <span class="preview-orb"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M13 7h16l6 6v28H13Z"/><path d="M29 7v7h6"/><path d="M18 23h12M18 30h12"/><path d="M36 29l3 3 6-8"/></svg></span>
+          Choose a packet, confirm the customer and vehicle, adjust the terms, then hit <strong>Go!</strong> to build the review packet.
+        </div>
+        <div class="packet-preview hidden" id="packetPreview"></div>
+      </div>
+    </section>
   </section>
 </main>
+
 <script src="/js/nav.js"></script>
-<script>if (UN.requireAuth()) UN.renderNav();</script>
+<script>
+if (UN.requireAuth()) UN.renderNav();
+
+let packetType = 'outside';
+let customerMode = 'existing';
+let built = false;
+let currentStep = 'packet';
+let inventoryUnits = [];
+let customers = [];
+let selectedCustomerId = null;
+
+const SAMPLE_CUSTOMERS = [
+  { id: 'sample-maya', name: 'Maya Collins', phone: '(801) 555-0142', email: 'maya@example.com', address: '123 Main St, Provo, UT 84601' },
+  { id: 'sample-robert', name: 'Robert Hayes', phone: '(385) 555-0177', email: 'robert@example.com', address: '88 Center St, Orem, UT 84057' },
+];
+
+const FIELD_MAP = [
+  { source: 'dealer.name', label: 'Dealer Name', forms: { 'TC-466': 'dealer', 'TC-120': 'dealer name' } },
+  { source: 'dealer.number', label: 'Dealer Number', forms: { 'TC-466': 'dealer number', 'TC-120': 'dealer number' } },
+  { source: 'deal.transactionDate', label: 'Transaction Date', forms: { 'TC-466': 'trans date', 'TC-123': 'Date of sale' } },
+  { source: 'buyer.name', label: 'Buyer Name', forms: { 'TC-466': 'buyer name', 'TC-656': 'primary owner name', 'TC-891': "Transferee's name", 'TC-123': 'New owner name' } },
+  { source: 'buyer.coBuyer', label: 'Co-Buyer Name', forms: { 'TC-466': 'cobuyer name', 'TC-656': 'co-owner name 1' } },
+  { source: 'buyer.email', label: 'Buyer Email', forms: { 'TC-656': "primary owner's email" } },
+  { source: 'buyer.address', label: 'Buyer Address', forms: { 'TC-656': "primary owner's address/city/state/zip", 'TC-891': "Transferee address fields", 'TC-123': "New owner address fields" } },
+  { source: 'vehicle.vin', label: 'VIN', forms: { 'TC-466': 'vin', 'TC-656': 'VIN fields', 'TC-891': 'VIN', 'TC-661': 'VSN 1-17', 'TC-814': 'VIN', 'TC-123': 'VIN', 'TC-120': 'vin' } },
+  { source: 'vehicle.year', label: 'Vehicle Year', forms: { 'TC-466': 'year', 'TC-656': 'Year', 'TC-891': 'Year', 'TC-661': 'Vehicle year', 'TC-814': 'Year', 'TC-123': 'Year', 'TC-120': 'year' } },
+  { source: 'vehicle.make', label: 'Vehicle Make', forms: { 'TC-466': 'make', 'TC-656': 'Make', 'TC-891': 'Make', 'TC-661': 'Vehicle make', 'TC-814': 'Make', 'TC-123': 'Make', 'TC-120': 'make' } },
+  { source: 'vehicle.model', label: 'Vehicle Model', forms: { 'TC-466': 'model', 'TC-656': 'Model', 'TC-891': 'Model', 'TC-661': 'Vehicle model', 'TC-814': 'Model', 'TC-123': 'Model', 'TC-120': 'model' } },
+  { source: 'vehicle.color', label: 'Vehicle Color', forms: { 'TC-814': 'color', 'TC-120': 'color' } },
+  { source: 'vehicle.odometer', label: 'Odometer', forms: { 'TC-891': 'Reading', 'TC-123': 'odometer reading', 'TC-120': 'odometer' } },
+  { source: 'pricing.salePrice', label: 'Sale Price', forms: { 'TC-466': 'line 1', 'TC-123': 'Sale price', 'TC-120': 'selling price' } },
+  { source: 'pricing.docFee', label: 'Documentary Service Fee', forms: { 'TC-466': 'line 4-a / line 4a' } },
+  { source: 'pricing.taxesAndFees', label: 'Taxes and Government Fees', forms: { 'TC-466': 'line 5' } },
+  { source: 'pricing.downPayment', label: 'Down Payment', forms: { 'TC-466': 'line 8a' } },
+  { source: 'pricing.tradeAllowance', label: 'Trade Allowance', forms: { 'TC-466': 'line 8b' } },
+  { source: 'finance.amountFinanced', label: 'Amount Financed', forms: { 'TC-466': 'line 9', 'BHPH Contract': 'amount_financed' } },
+  { source: 'finance.apr', label: 'APR', forms: { 'BHPH Contract': 'annual_percentage_rate', 'Reg Z/TILA': 'apr' } },
+  { source: 'finance.payment', label: 'Estimated Payment', forms: { 'BHPH Contract': 'payment_amount', 'Payment Schedule': 'scheduled_payment' } },
+];
+
+function $(id) { return document.getElementById(id); }
+function val(id) { return $(id)?.value || ''; }
+function num(id) { return Number(val(id)) || 0; }
+function money(n) { return UN.fmt.money(Number(n) || 0); }
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch]));
+}
+
+async function init() {
+  const firstPayment = new Date();
+  firstPayment.setDate(firstPayment.getDate() + 30);
+  $('firstPayment').value = firstPayment.toISOString().slice(0, 10);
+  loadSample();
+  await Promise.allSettled([loadInventory(), loadCustomers()]);
+  populateVehicleSelect();
+  populateCustomerSelect();
+  setPacket('outside', false);
+  goToStep('packet');
+  renderEstimate();
+}
+
+async function loadInventory() {
+  const data = await UN.api('GET', '/api/inventory');
+  inventoryUnits = data.units || [];
+}
+
+async function loadCustomers() {
+  const data = await UN.api('GET', '/api/customers?limit=100');
+  customers = (data.customers || []).map(customer => ({
+    id: `customer-${customer.id}`,
+    name: customer.name,
+    phone: customer.phone || '',
+    email: customer.email || '',
+    address: customer.address || '',
+    status: customer.last_deal_status || customer.last_credit_status || 'Client',
+    vehicle: customer.last_vehicle || '',
+    vin: customer.last_vin || '',
+  }));
+}
+
+function populateCustomerSelect() {
+  const options = (customers.length ? customers : SAMPLE_CUSTOMERS);
+  customers = options;
+  selectedCustomerId = selectedCustomerId || options[0]?.id || null;
+  renderCustomerPicker();
+  if (selectedCustomerId) selectCustomer(selectedCustomerId);
+}
+
+function populateVehicleSelect() {
+  const manual = '<option value="">Manual / not in inventory yet</option>';
+  const rows = inventoryUnits.map(unit => {
+    const label = [unit.year, unit.make, unit.model].filter(Boolean).join(' ') || 'Untitled Unit';
+    return `<option value="${unit.id}">${escapeHtml(label)}${unit.vin ? ' - ' + escapeHtml(String(unit.vin).slice(-6).toUpperCase()) : ''}</option>`;
+  }).join('');
+  $('vehicleSelect').innerHTML = manual + rows;
+}
+
+function goToStep(step) {
+  currentStep = step;
+  document.body.classList.toggle('packet-focus', step === 'packet');
+  document.querySelectorAll('.step-section').forEach(section => {
+    section.classList.toggle('active', section.dataset.step === step);
+  });
+  document.querySelectorAll('[data-step-pill]').forEach(pill => {
+    pill.classList.toggle('active', pill.dataset.stepPill === step);
+  });
+}
+
+function setPacket(type, advance = true) {
+  packetType = type;
+  $('packet-outside').classList.toggle('active', type === 'outside');
+  $('packet-bhph').classList.toggle('active', type === 'bhph');
+  $('bhphExtra').classList.toggle('hidden', type !== 'bhph');
+  $('frequency').value = type === 'bhph' ? $('frequency').value : 'Monthly';
+  $('previewTitle').textContent = type === 'bhph' ? 'BHPH Packet Preview' : 'Outside Financing Packet Preview';
+  renderEstimate();
+  if (advance) goToStep('customer');
+  if (built) renderPacket();
+}
+
+function setCustomerMode(mode) {
+  customerMode = mode;
+  $('customer-existing-tab').classList.toggle('active', mode === 'existing');
+  $('customer-new-tab').classList.toggle('active', mode === 'new');
+  $('existingCustomerBlock').classList.toggle('hidden', mode !== 'existing');
+  if (mode === 'new') {
+    ['buyerName','coBuyer','buyerPhone','buyerEmail','buyerAddress'].forEach(id => $(id).value = '');
+    selectedCustomerId = null;
+  } else {
+    renderCustomerPicker();
+    if (selectedCustomerId) selectCustomer(selectedCustomerId);
+  }
+  renderEstimate();
+}
+
+function customerPool() {
+  return customers.length ? customers : SAMPLE_CUSTOMERS;
+}
+
+function customerMatches(customer, query) {
+  if (!query) return true;
+  return [customer.name, customer.phone, customer.email, customer.address, customer.status, customer.vehicle, customer.vin]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+    .includes(query.toLowerCase());
+}
+
+function renderCustomerPicker() {
+  const picker = $('customerPicker');
+  if (!picker) return;
+  const query = val('customerSearch').trim();
+  $('customerPickerLabel').textContent = query ? 'Matching Clients' : 'Recent Clients';
+  const list = customerPool().filter(customer => customerMatches(customer, query)).slice(0, 8);
+  if (!list.length) {
+    picker.innerHTML = `<div class="client-picker-empty">No matching client. Click Add New to start this customer.</div>`;
+    return;
+  }
+  picker.innerHTML = list.map(customer => `
+    <button class="client-pick-card ${customer.id === selectedCustomerId ? 'active' : ''}" onclick="selectCustomer('${escapeHtml(customer.id)}')" type="button">
+      <span class="client-pick-avatar">${escapeHtml(initials(customer.name))}</span>
+      <span>
+        <strong>${escapeHtml(customer.name)}</strong>
+        <span>${escapeHtml(customer.phone || 'No phone')} · ${escapeHtml(customer.email || 'No email')}</span>
+        <span>${escapeHtml(customer.status || 'Client')}${customer.vehicle ? ' · ' + escapeHtml(customer.vehicle) : ''}</span>
+      </span>
+    </button>
+  `).join('');
+}
+
+function selectCustomer(id) {
+  const customer = customerPool().find(c => String(c.id) === String(id)) || customerPool()[0];
+  if (!customer) return;
+  selectedCustomerId = customer.id;
+  $('buyerName').value = customer.name || '';
+  $('buyerPhone').value = customer.phone || '';
+  $('buyerEmail').value = customer.email || '';
+  $('buyerAddress').value = customer.address || '';
+  renderCustomerPicker();
+  renderEstimate();
+}
+
+function initials(name) {
+  return String(name || 'Client').split(/\s+/).filter(Boolean).map(part => part[0]).join('').slice(0, 2).toUpperCase() || 'CL';
+}
+
+function loadVehicleFromSelect() {
+  const selected = $('vehicleSelect').value;
+  const unit = inventoryUnits.find(u => String(u.id) === String(selected));
+  if (!unit) { renderEstimate(); return; }
+  $('year').value = unit.year || '';
+  $('make').value = unit.make || '';
+  $('model').value = unit.model || '';
+  $('vin').value = unit.vin || '';
+  $('mileage').value = unit.mileage || '';
+  $('color').value = unit.color || '';
+  $('salePrice').value = unit.asking_price || unit.minimum_price || '';
+  renderEstimate();
+}
+
+function loadSample() {
+  $('buyerName').value = 'Maya Collins';
+  $('coBuyer').value = '';
+  $('buyerPhone').value = '(801) 555-0142';
+  $('buyerEmail').value = 'maya@example.com';
+  $('buyerAddress').value = '123 Main St, Provo, UT 84601';
+  $('year').value = '2019';
+  $('make').value = 'Ford';
+  $('model').value = 'F-150';
+  $('vin').value = '1FTEX1CP0KFA00000';
+  $('mileage').value = '88420';
+  $('color').value = 'White';
+  $('county').value = 'Utah';
+  $('fuel').value = 'Gas';
+  $('unitType').value = 'Passenger Vehicle';
+  $('salePrice').value = '18995';
+  $('downPayment').value = '2500';
+  $('trade').value = '0';
+  $('apr').value = packetType === 'bhph' ? '21.99' : '9.99';
+  $('term').value = packetType === 'bhph' ? '36' : '60';
+  $('frequency').value = 'Monthly';
+  $('docFee').value = '299';
+  $('taxRate').value = '7.25';
+  $('dmvFees').value = '70.25';
+  $('lateFee').value = '25';
+  $('graceDays').value = '10';
+  renderEstimate();
+}
+
+function calculations() {
+  const salePrice = num('salePrice');
+  const docFee = num('docFee');
+  const dmvFees = num('dmvFees');
+  const trade = num('trade');
+  const downPayment = num('downPayment');
+  const taxable = Math.max(0, salePrice + docFee - trade);
+  const salesTax = taxable * (num('taxRate') / 100);
+  const total = salePrice + docFee + salesTax + dmvFees;
+  const amountFinanced = Math.max(0, total - downPayment - trade);
+  const apr = num('apr') / 100;
+  const term = Math.max(1, num('term') || 1);
+  const monthlyRate = apr / 12;
+  const monthlyPayment = monthlyRate
+    ? amountFinanced * monthlyRate / (1 - Math.pow(1 + monthlyRate, -term))
+    : amountFinanced / term;
+  const frequency = val('frequency');
+  const payment = frequency === 'Weekly' ? monthlyPayment * 12 / 52 : frequency === 'Biweekly' ? monthlyPayment * 12 / 26 : monthlyPayment;
+  const paymentCount = frequency === 'Weekly' ? Math.round(term * 52 / 12) : frequency === 'Biweekly' ? Math.round(term * 26 / 12) : term;
+  return { salePrice, docFee, dmvFees, trade, downPayment, taxable, salesTax, total, amountFinanced, apr: num('apr'), term, frequency, payment, paymentCount };
+}
+
+function renderEstimate() {
+  const c = calculations();
+  renderSelectionVisuals();
+  $('estimateCard').innerHTML = `
+    <div class="terms-line"><span>Estimated out-the-door</span><strong>${money(c.total)}</strong></div>
+    <div class="terms-line"><span>Down payment / trade</span><strong>${money(c.downPayment + c.trade)}</strong></div>
+    <div class="terms-line"><span>Estimated amount financed</span><strong>${money(c.amountFinanced)}</strong></div>
+    <div class="terms-line terms-total"><span>${packetType === 'bhph' ? 'BHPH payment' : 'Outside lender payment estimate'}</span><strong>${money(c.payment)}</strong></div>
+    <p class="form-hint">${c.paymentCount} ${c.frequency.toLowerCase()} payments at ${c.apr.toFixed(2)}% APR. This is an estimate until final lender/BHPH terms are approved.</p>
+  `;
+  if (built) renderPacket();
+}
+
+function renderSelectionVisuals() {
+  const name = val('buyerName') || 'New Customer';
+  const initials = name.split(/\s+/).filter(Boolean).map(part => part[0]).join('').slice(0, 2).toUpperCase() || 'NC';
+  $('customerSnapshot').innerHTML = `
+    <div class="snapshot-icon">${escapeHtml(initials)}</div>
+    <div>
+      <div class="snapshot-title">${escapeHtml(name)}</div>
+      <div class="snapshot-sub">${escapeHtml(val('buyerPhone') || 'No phone yet')} · ${escapeHtml(val('buyerEmail') || 'No email yet')}</div>
+    </div>
+  `;
+
+  const vehicle = [val('year'), val('make'), val('model')].filter(Boolean).join(' ') || 'Vehicle not selected';
+  const vin = val('vin') ? `VIN ${val('vin').slice(-6).toUpperCase()}` : 'No VIN yet';
+  $('vehicleSnapshot').innerHTML = `
+    <div class="snapshot-icon">
+      <svg viewBox="0 0 48 48" aria-hidden="true" style="width:32px;height:32px;fill:none;stroke:currentColor;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;"><path d="M11 29h26l-3-10a5 5 0 0 0-5-4H19a5 5 0 0 0-5 4l-3 10Z"/><circle cx="17" cy="29" r="2"/><circle cx="31" cy="29" r="2"/></svg>
+    </div>
+    <div>
+      <div class="snapshot-title">${escapeHtml(vehicle)}</div>
+      <div class="snapshot-sub">${escapeHtml(vin)} · ${escapeHtml(val('mileage') ? Number(val('mileage')).toLocaleString() + ' mi' : 'No mileage yet')}</div>
+    </div>
+  `;
+}
+
+function packetData() {
+  const c = calculations();
+  return {
+    packetType,
+    packetLabel: packetType === 'bhph' ? 'BHPH Packet' : 'Outside Financing Packet',
+    dealer: { name: 'Unit Navigator Demo Dealer', number: 'TBD' },
+    customer: {
+      name: val('buyerName'),
+      coBuyer: val('coBuyer'),
+      phone: val('buyerPhone'),
+      email: val('buyerEmail'),
+      address: val('buyerAddress'),
+    },
+    vehicle: {
+      year: val('year'),
+      make: val('make'),
+      model: val('model'),
+      vin: val('vin'),
+      mileage: val('mileage'),
+      color: val('color'),
+      county: val('county'),
+      fuel: val('fuel'),
+      unitType: val('unitType'),
+    },
+    pricing: c,
+    finance: {
+      apr: c.apr,
+      termMonths: c.term,
+      frequency: c.frequency,
+      payment: c.payment,
+      paymentCount: c.paymentCount,
+      firstPayment: val('firstPayment'),
+      lateFee: num('lateFee'),
+      graceDays: num('graceDays'),
+    },
+    fieldMap: FIELD_MAP,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+function buildPacket() {
+  built = true;
+  goToStep('build');
+  $('previewEmpty').classList.add('hidden');
+  $('packetPreview').classList.remove('hidden');
+  $('printBtn').disabled = false;
+  $('esignBtn').disabled = false;
+  renderPacket();
+}
+
+function renderPacket() {
+  if (!built) return;
+  const data = packetData();
+  $('packetPreview').innerHTML = [
+    coverPage(data),
+    formChecklistPage(data),
+    termsPage(data),
+    data.packetType === 'bhph' ? bhphPage(data) : outsideFinancingPage(data),
+    advancedMapPage(data),
+  ].join('');
+}
+
+function packetTop(data, subtitle) {
+  return `
+    <div class="packet-top">
+      <div>
+        <div class="packet-kicker">Unit Navigator Draft Packet</div>
+        <div class="packet-title">${escapeHtml(data.packetLabel)}</div>
+        <p class="packet-sub">${escapeHtml(subtitle)}</p>
+      </div>
+      <div class="packet-brand">Unit Navigator</div>
+    </div>
+  `;
+}
+
+function line(label, value) {
+  return `<div class="packet-line"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value || '-')}</strong></div>`;
+}
+
+function coverPage(data) {
+  const vehicle = `${data.vehicle.year} ${data.vehicle.make} ${data.vehicle.model}`.trim();
+  return `
+    <article class="packet-page">
+      ${packetTop(data, 'Generated from the deal workflow and ready for dealer review before print or e-sign export.')}
+      <div class="packet-grid">
+        <section class="packet-box">
+          <h4>Customer</h4>
+          ${line('Buyer', data.customer.name)}
+          ${line('Co-Buyer', data.customer.coBuyer)}
+          ${line('Phone', data.customer.phone)}
+          ${line('Email', data.customer.email)}
+          ${line('Address', data.customer.address)}
+        </section>
+        <section class="packet-box">
+          <h4>Vehicle</h4>
+          ${line('Vehicle', vehicle)}
+          ${line('VIN', data.vehicle.vin)}
+          ${line('Mileage', data.vehicle.mileage ? `${Number(data.vehicle.mileage).toLocaleString()} mi` : '')}
+          ${line('County', data.vehicle.county)}
+          ${line('Fuel / Unit Type', `${data.vehicle.fuel} / ${data.vehicle.unitType}`)}
+        </section>
+        <section class="packet-box">
+          <h4>Deal Estimate</h4>
+          ${line('Sale Price', money(data.pricing.salePrice))}
+          ${line('Tax', money(data.pricing.salesTax))}
+          ${line('Doc + DMV Fees', money(data.pricing.docFee + data.pricing.dmvFees))}
+          ${line('Down Payment', money(data.pricing.downPayment))}
+          ${line('Amount Financed', money(data.pricing.amountFinanced))}
+        </section>
+        <section class="packet-box">
+          <h4>Payment Estimate</h4>
+          ${line('APR', `${data.finance.apr.toFixed(2)}%`)}
+          ${line('Term', `${data.finance.termMonths} months`)}
+          ${line('Frequency', data.finance.frequency)}
+          ${line('Estimated Payment', money(data.finance.payment))}
+        </section>
+      </div>
+      <div class="packet-warning">Draft workflow only. Official forms, contract language, finance disclosures, and Utah-specific requirements should be reviewed before live use.</div>
+      <div class="signature-grid">
+        <div class="signature-line">Dealer Review</div>
+        <div class="signature-line">Date</div>
+      </div>
+    </article>
+  `;
+}
+
+function formChecklistPage(data) {
+  const forms = [
+    'TC-466 Bill of Sale / purchase documentation',
+    'TC-656 Utah Application for Title',
+    'FTC Buyers Guide',
+    'Odometer disclosure / TC-891 as applicable',
+    'County emissions requirement check',
+    'Fee calculation worksheet',
+  ];
+  if (data.packetType === 'bhph') {
+    forms.push('Retail installment / BHPH contract draft', 'Truth in Lending / Reg Z disclosure draft', 'Payment schedule and late-fee acknowledgment');
+  } else {
+    forms.push('Outside lender funding checklist', 'Cash/down payment receipt');
+  }
+  return `
+    <article class="packet-page">
+      ${packetTop(data, 'Forms included or checked for this packet type.')}
+      <section class="packet-box">
+        <h4>Packet Checklist</h4>
+        <div class="packet-checklist">${forms.map(form => `<div class="packet-check">${escapeHtml(form)}</div>`).join('')}</div>
+      </section>
+      <div class="packet-note">The old "Build Utah Packet" workbench belongs in dealer setup/settings. This Start Paperwork screen is now the daily workflow for actual deals.</div>
+    </article>
+  `;
+}
+
+function termsPage(data) {
+  return `
+    <article class="packet-page">
+      ${packetTop(data, 'Deal math and payment estimate.')}
+      <div class="packet-grid">
+        <section class="packet-box">
+          <h4>Pricing</h4>
+          ${line('Sale Price', money(data.pricing.salePrice))}
+          ${line('Doc Fee', money(data.pricing.docFee))}
+          ${line('Taxable Amount', money(data.pricing.taxable))}
+          ${line('Sales Tax', money(data.pricing.salesTax))}
+          ${line('Registration / Title / Plate Fees', money(data.pricing.dmvFees))}
+          ${line('Out-the-Door Total', money(data.pricing.total))}
+        </section>
+        <section class="packet-box">
+          <h4>Finance Estimate</h4>
+          ${line('Down Payment', money(data.pricing.downPayment))}
+          ${line('Trade Allowance', money(data.pricing.trade))}
+          ${line('Amount Financed', money(data.pricing.amountFinanced))}
+          ${line('APR', `${data.finance.apr.toFixed(2)}%`)}
+          ${line('Estimated Payment', money(data.finance.payment))}
+          ${line('Payments', `${data.finance.paymentCount} ${data.finance.frequency.toLowerCase()} payments`)}
+        </section>
+      </div>
+      <div class="packet-note">For outside financing, this payment is a worksheet estimate. The lender approval controls the final APR, term, down payment, and payment amount.</div>
+    </article>
+  `;
+}
+
+function outsideFinancingPage(data) {
+  return `
+    <article class="packet-page">
+      ${packetTop(data, 'Outside financing handoff.')}
+      <section class="packet-box">
+        <h4>Outside Financing Tasks</h4>
+        <div class="packet-checklist">
+          <div class="packet-check">Confirm lender approval and funding instructions.</div>
+          <div class="packet-check">Collect down payment and verify cashier check/wire when required.</div>
+          <div class="packet-check">Attach title application, bill of sale, odometer disclosure, Buyers Guide, and emissions/fee worksheet.</div>
+          <div class="packet-check">Mark deal funded once lender proceeds are received.</div>
+        </div>
+      </section>
+      <div class="signature-grid">
+        <div class="signature-line">Buyer Signature</div>
+        <div class="signature-line">Dealer Signature</div>
+      </div>
+    </article>
+  `;
+}
+
+function bhphPage(data) {
+  return `
+    <article class="packet-page">
+      ${packetTop(data, 'BHPH terms and payment schedule draft.')}
+      <div class="packet-grid">
+        <section class="packet-box">
+          <h4>BHPH Terms</h4>
+          ${line('Amount Financed', money(data.pricing.amountFinanced))}
+          ${line('APR', `${data.finance.apr.toFixed(2)}%`)}
+          ${line('Payment Amount', money(data.finance.payment))}
+          ${line('Payment Count', `${data.finance.paymentCount}`)}
+          ${line('First Payment', data.finance.firstPayment)}
+          ${line('Late Fee / Grace', `${money(data.finance.lateFee)} / ${data.finance.graceDays} days`)}
+        </section>
+        <section class="packet-box">
+          <h4>BHPH Acknowledgments</h4>
+          <div class="packet-checklist">
+            <div class="packet-check">Insurance requirement reviewed.</div>
+            <div class="packet-check">Late payment and default process reviewed.</div>
+            <div class="packet-check">Repossession/default language must be counsel-reviewed before live use.</div>
+            <div class="packet-check">Payment schedule accepted by buyer.</div>
+          </div>
+        </section>
+      </div>
+      <div class="packet-warning">BHPH paperwork is higher risk. Treat this as a workflow placeholder until the dealer's attorney signs off on the contract language and disclosures.</div>
+      <div class="signature-grid">
+        <div class="signature-line">Buyer Signature</div>
+        <div class="signature-line">Dealer Signature</div>
+      </div>
+    </article>
+  `;
+}
+
+function advancedMapPage(data) {
+  const rows = FIELD_MAP.map(row => `
+    <tr>
+      <td>${escapeHtml(row.label)}</td>
+      <td><code>${escapeHtml(row.source)}</code></td>
+      <td>${Object.entries(row.forms).map(([form, field]) => `<strong>${escapeHtml(form)}:</strong> ${escapeHtml(field)}`).join('<br>')}</td>
+    </tr>
+  `).join('');
+  return `
+    <article class="packet-page">
+      ${packetTop(data, 'Advanced setup reference for future official PDF auto-fill and e-sign templates.')}
+      <details class="packet-box" open>
+        <summary>Advanced PDF Field Map</summary>
+        <table class="field-map-table">
+          <thead><tr><th>Field</th><th>Data Source</th><th>Mapped PDF Fields</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </details>
+    </article>
+  `;
+}
+
+function downloadJson(filename, data) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function downloadEsignPayload() {
+  if (!built) buildPacket();
+  const data = packetData();
+  downloadJson(`unit-navigator-${data.packetType}-esign-payload.json`, {
+    provider_note: 'Use this payload to seed Dropbox Sign, DocuSign, SignWell, or eSignatures.com templates.',
+    recommended_low_cost_provider: 'eSignatures.com API-first export, or SignWell for simple low-volume manual sending.',
+    packet: data,
+  });
+}
+
+init().catch(err => {
+  console.error(err);
+  toast('Paperwork setup loaded with sample data. Live inventory/customers were not available.', 'warn');
+  populateCustomerSelect();
+  populateVehicleSelect();
+  renderEstimate();
+});
+</script>
 </body>
 </html>

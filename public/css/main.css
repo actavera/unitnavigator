@@ -321,6 +321,7 @@ a:hover { color: var(--blue-lt); }
 }
 .badge-acquired  { background: var(--blue-gl);   color: var(--c-acquired);  border: 1px solid var(--blue-border);   }
 .badge-transport { background: var(--purple-gl);  color: var(--c-transport); border: 1px solid var(--purple-border); }
+.badge-screening { background: var(--yellow-gl);  color: var(--c-pending);   border: 1px solid var(--yellow-border); }
 .badge-recon     { background: var(--orange-gl);  color: var(--c-recon);     border: 1px solid var(--orange-border); }
 .badge-ready     { background: var(--green-gl);   color: var(--c-ready);     border: 1px solid var(--green-border);  }
 .badge-pending   { background: var(--yellow-gl);  color: var(--c-pending);   border: 1px solid var(--yellow-border); }
@@ -330,6 +331,7 @@ a:hover { color: var(--blue-lt); }
 .stage-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
 .dot-acquired  { background: var(--c-acquired);  }
 .dot-transport { background: var(--c-transport); }
+.dot-screening { background: var(--c-pending);   }
 .dot-recon     { background: var(--c-recon);     }
 .dot-ready     { background: var(--c-ready);     }
 .dot-pending   { background: var(--c-pending);   }

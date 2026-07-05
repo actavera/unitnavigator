@@ -6,6 +6,40 @@
   <title>Home — Unit Navigator</title>
   <script>(function(){var t=localStorage.getItem('un_theme')||'dark';document.documentElement.dataset.theme=t;})()</script>
   <link rel="stylesheet" href="/css/main.css">
+  <style>
+    .attention-modal {
+      position: fixed; inset: 0; z-index: 1000; display: none; place-items: center;
+      background: rgba(2,6,23,.48); backdrop-filter: blur(10px); padding: 18px;
+    }
+    .attention-modal.show { display: grid; }
+    .attention-card {
+      width: min(100%, 560px); overflow: hidden; border: 1px solid var(--border);
+      border-radius: 24px; background: var(--s1); box-shadow: 0 28px 90px rgba(0,0,0,.32);
+    }
+    .attention-head {
+      padding: 22px; border-bottom: 1px solid var(--border);
+      background:
+        radial-gradient(circle at 90% 0%, rgba(59,130,246,.18), transparent 32%),
+        var(--s2);
+    }
+    .attention-head h2 { font-size: 1.45rem; letter-spacing: -.035em; margin-bottom: 6px; }
+    .attention-head p { color: var(--text-2); line-height: 1.45; }
+    .attention-body { padding: 22px; display: grid; gap: 14px; }
+    .attention-fact {
+      display: grid; grid-template-columns: 58px minmax(0,1fr); gap: 12px; align-items: center;
+      border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--s2); padding: 14px;
+    }
+    .attention-icon {
+      display: grid; place-items: center; width: 58px; height: 58px; border-radius: 18px;
+      background: var(--blue-gl); color: var(--blue); font-weight: 900;
+    }
+    .attention-fact strong { display: block; color: var(--text); }
+    .attention-fact span { display: block; color: var(--muted); font-size: .85rem; margin-top: 3px; }
+    .attention-actions { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; }
+    .attention-actions .wide { grid-column: 1 / -1; }
+    .sold-fields { display: none; gap: 10px; border-top: 1px solid var(--border); padding-top: 14px; }
+    .sold-fields.show { display: grid; }
+  </style>
 </head>
 <body>
 <div id="nav-container"></div>
@@ -36,7 +70,7 @@
         <span class="action-link">Add Vehicle <span>→</span></span>
       </a>
 
-      <a class="home-action-card purple" href="/inventory">
+      <a class="home-action-card purple" href="/inventory/list">
         <span class="action-orb">
           <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M11 29h26l-3-10a5 5 0 0 0-5-4H19a5 5 0 0 0-5 4l-3 10Z"/><path d="M14 29v6m20-6v6M18 35h12"/><circle cx="17" cy="29" r="2"/><circle cx="31" cy="29" r="2"/></svg>
         </span>
@@ -49,8 +83,8 @@
         <span class="action-orb">
           <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M17 26l5 5a4 4 0 0 0 6 0l7-7"/><path d="M18 18l-5 5 12 12 12-12-5-5"/><path d="M21 21l5-5 6 6"/></svg>
         </span>
-        <h2>Current Deals</h2>
-        <p>View pending deals, follow-ups, missing docs, and status.</p>
+        <h2>Deals</h2>
+        <p>Search clients and manage current or past deals.</p>
         <span class="action-link">Open Deals <span>→</span></span>
       </a>
 
@@ -65,19 +99,184 @@
     </div>
 
     <section class="home-metrics" aria-label="Needs attention">
-      <a href="/deals" class="metric green"><span>$</span><div><p>Deals Need Follow-Up</p><strong>4</strong><small>Ask if still active</small></div></a>
-      <a href="/inventory" class="metric blue"><span>▣</span><div><p>Units Missing Photos</p><strong>7</strong><small>Ready to clean up</small></div></a>
-      <a href="/inventory" class="metric purple"><span>✓</span><div><p>Missing Acquisition Cost</p><strong>3</strong><small>Profit needs cost stack</small></div></a>
-      <a href="/paperwork/start" class="metric orange"><span>!</span><div><p>Paperwork Incomplete</p><strong>5</strong><small>Finish started packets</small></div></a>
+      <a href="/deals" class="metric green"><span>$</span><div><p>Deals Need Follow-Up</p><strong id="mDealsFollow">0</strong><small>Ask if still active</small></div></a>
+      <a href="/inventory" class="metric blue"><span>▣</span><div><p>Units Missing Photos</p><strong id="mMissingPhotos">0</strong><small>Ready to clean up</small></div></a>
+      <a href="/inventory" class="metric purple"><span>✓</span><div><p>Missing Acquisition Cost</p><strong id="mMissingCost">0</strong><small>Profit needs cost stack</small></div></a>
+      <a href="/paperwork/start" class="metric orange"><span>!</span><div><p>Paperwork Incomplete</p><strong id="mPaperwork">0</strong><small>Finish started packets</small></div></a>
     </section>
   </section>
 </main>
+
+<div class="attention-modal" id="attentionModal" role="dialog" aria-modal="true"></div>
+
 <script src="/js/nav.js"></script>
 <script>
 if (UN.requireAuth()) {
   UN.renderNav();
   const user = UN.getUser();
   document.getElementById('firstName').textContent = (user?.name || 'Alex').split(' ')[0];
+  loadDashboard();
+}
+
+let dashboardAlerts = [];
+let activeAlert = null;
+let dashboardCustomers = [];
+
+async function loadDashboard() {
+  try {
+    const [dashboard, customers] = await Promise.all([
+      UN.api('GET', '/api/dashboard'),
+      UN.api('GET', '/api/customers?limit=100'),
+    ]);
+    dashboardCustomers = customers.customers || [];
+    renderMetrics(dashboard.metrics || {});
+    dashboardAlerts = dashboard.alerts || [];
+    showNextAlert();
+  } catch (err) {
+    toast(err.message, 'err');
+  }
+}
+
+function renderMetrics(metrics) {
+  document.getElementById('mDealsFollow').textContent = metrics.deals_need_follow_up || 0;
+  document.getElementById('mMissingPhotos').textContent = metrics.units_missing_photos || 0;
+  document.getElementById('mMissingCost').textContent = metrics.missing_acquisition_cost || 0;
+  document.getElementById('mPaperwork').textContent = metrics.paperwork_incomplete || 0;
+}
+
+function showNextAlert() {
+  activeAlert = dashboardAlerts.shift();
+  const modal = document.getElementById('attentionModal');
+  if (!activeAlert) {
+    modal.classList.remove('show');
+    modal.innerHTML = '';
+    return;
+  }
+  modal.innerHTML = activeAlert.type === 'deal' ? dealAlertHtml(activeAlert) : unitAlertHtml(activeAlert);
+  modal.classList.add('show');
+}
+
+function dealAlertHtml(alert) {
+  return `
+    <section class="attention-card">
+      <div class="attention-head">
+        <h2>Is this deal still pending?</h2>
+        <p>This deal has been pending for ${alert.age_days} days. Update it now so the board stays honest.</p>
+      </div>
+      <div class="attention-body">
+        <div class="attention-fact">
+          <div class="attention-icon">$</div>
+          <div><strong>${esc(alert.customer_name)}</strong><span>${esc(alert.vehicle)} · ${esc(alert.phone || alert.email || 'No contact')}</span></div>
+        </div>
+        <div class="attention-actions">
+          <button class="btn btn-ghost" onclick="resolveDealAlert('still_pending')">Still Pending</button>
+          <button class="btn btn-ghost" onclick="resolveDealAlert('vehicle_changed')">Switch Vehicle</button>
+          <button class="btn btn-danger" onclick="resolveDealAlert('dead')">Dead Deal</button>
+          <button class="btn btn-primary" onclick="resolveDealAlert('closed')">Sold</button>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function unitAlertHtml(alert) {
+  return `
+    <section class="attention-card">
+      <div class="attention-head">
+        <h2>${esc(alert.vehicle)} has been in inventory ${alert.milestone} days.</h2>
+        <p>It is currently marked ${stageLabel(alert.stage)}. Confirm that status or move it forward now.</p>
+      </div>
+      <div class="attention-body">
+        <div class="attention-fact">
+          <div class="attention-icon">▣</div>
+          <div><strong>${esc(alert.vehicle)}</strong><span>${esc(alert.vin || 'No VIN')} · ${stageLabel(alert.stage)}</span></div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Move vehicle to</label>
+          <select class="form-select" id="unitStageChoice" onchange="toggleSoldFields()">
+            <option value="${esc(alert.stage)}">Still ${stageLabel(alert.stage)}</option>
+            <option value="transport">Being Transported</option>
+            <option value="screening">Needs Screening</option>
+            <option value="recon">Recon</option>
+            <option value="ready">Ready</option>
+            <option value="pending">Pending</option>
+            <option value="sold">Sold</option>
+            <option value="archived">Archived</option>
+          </select>
+        </div>
+        <div class="sold-fields" id="soldFields">
+          <div class="form-group">
+            <label class="form-label">Sold to customer</label>
+            <select class="form-select" id="soldCustomer">${customerOptions()}</select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Sold price</label>
+            <input class="form-input" id="soldPrice" type="number" placeholder="Optional">
+          </div>
+        </div>
+        <div class="attention-actions">
+          <button class="btn btn-ghost" onclick="showNextAlert()">Skip</button>
+          <button class="btn btn-primary" onclick="resolveUnitAlert()">Update Vehicle</button>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function customerOptions() {
+  if (!dashboardCustomers.length) return '<option value="">No customers yet</option>';
+  return dashboardCustomers.map(c => `<option value="${c.id}">${esc(c.name)}${c.phone ? ' - ' + esc(c.phone) : ''}</option>`).join('');
+}
+
+function toggleSoldFields() {
+  const stage = document.getElementById('unitStageChoice')?.value;
+  document.getElementById('soldFields')?.classList.toggle('show', stage === 'sold');
+}
+
+async function resolveDealAlert(action) {
+  try {
+    await UN.api('POST', `/api/dashboard/deal-alert/${activeAlert.id}/action`, { action });
+    await refreshAfterAlert();
+  } catch (err) {
+    toast(err.message, 'err');
+  }
+}
+
+async function resolveUnitAlert() {
+  try {
+    const stage = document.getElementById('unitStageChoice').value;
+    await UN.api('POST', `/api/dashboard/unit-alert/${activeAlert.id}/action`, {
+      stage,
+      customer_id: document.getElementById('soldCustomer')?.value || null,
+      sold_price: document.getElementById('soldPrice')?.value || null,
+    });
+    await refreshAfterAlert();
+  } catch (err) {
+    toast(err.message, 'err');
+  }
+}
+
+async function refreshAfterAlert() {
+  const dashboard = await UN.api('GET', '/api/dashboard');
+  renderMetrics(dashboard.metrics || {});
+  showNextAlert();
+}
+
+function stageLabel(stage) {
+  return {
+    acquired: 'At Auction',
+    transport: 'Being Transported',
+    screening: 'Needs Screening',
+    recon: 'Recon',
+    ready: 'Ready',
+    pending: 'Pending',
+    sold: 'Sold',
+    archived: 'Archived',
+  }[stage] || stage;
+}
+
+function esc(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch]));
 }
 </script>
 </body>

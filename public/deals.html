@@ -3,50 +3,548 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Current Deals — Unit Navigator</title>
+  <title>Deals - Unit Navigator</title>
+  <script>(function(){var t=localStorage.getItem('un_theme')||'dark';document.documentElement.dataset.theme=t;})()</script>
   <link rel="stylesheet" href="/css/main.css">
+  <style>
+    .deals-shell { width: min(100% - 48px, 1380px); margin: 0 auto; padding: 44px 0 64px; }
+    .deals-hero {
+      display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 24px; align-items: end;
+      margin-bottom: 24px;
+    }
+    .deals-hero h1 {
+      max-width: 760px; font-size: clamp(2.35rem, 5vw, 5rem);
+      line-height: .96; letter-spacing: -0.05em; margin: 10px 0 14px;
+    }
+    .deals-hero p { color: var(--text-2); font-size: 1.05rem; max-width: 720px; }
+    .deal-toolbar {
+      display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+      padding: 14px; border: 1px solid var(--border); border-radius: var(--r-lg);
+      background: var(--s1); margin-bottom: 18px;
+    }
+    .deal-toolbar .search-input { min-width: min(100%, 320px); flex: 1; }
+    .client-results-strip { display: none; margin-bottom: 18px; }
+    .client-results-strip.show { display: block; }
+    .client-results-head {
+      display: flex; justify-content: space-between; align-items: center; gap: 12px;
+      margin-bottom: 10px; color: var(--text-2); font-size: .86rem;
+    }
+    .client-search-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; }
+    .client-mini-card {
+      position: relative; overflow: hidden; display: grid; grid-template-columns: 54px minmax(0,1fr); gap: 12px;
+      align-items: center; border: 1px solid var(--border); border-radius: var(--r-lg);
+      background:
+        radial-gradient(circle at 90% 0%, rgba(59,130,246,.15), transparent 28%),
+        var(--s1);
+      padding: 14px; cursor: pointer; transition: transform .16s, border-color .16s, box-shadow .16s;
+    }
+    .client-mini-card:hover {
+      transform: translateY(-2px); border-color: var(--blue-border);
+      box-shadow: 0 18px 55px rgba(37,99,235,.12);
+    }
+    .client-mini-avatar {
+      display: grid; place-items: center; width: 54px; height: 54px; border-radius: 18px;
+      background: linear-gradient(135deg, var(--blue-gl), var(--yellow-gl));
+      border: 1px solid var(--blue-border); color: var(--blue); font-weight: 900;
+    }
+    .client-mini-card h3 { font-size: 1rem; letter-spacing: -.025em; margin-bottom: 4px; }
+    .client-mini-card p { color: var(--muted); font-size: .8rem; line-height: 1.35; }
+    .client-mini-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+    .deal-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
+    .deal-tab {
+      border: 1px solid var(--border-md); background: var(--s1); color: var(--text-2);
+      padding: 10px 14px; border-radius: 999px; font-weight: 700; cursor: pointer;
+      transition: transform .18s, border-color .18s, background .18s, color .18s;
+    }
+    .deal-tab:hover { transform: translateY(-1px); border-color: var(--primary); color: var(--text); }
+    .deal-tab.active { background: var(--primary); border-color: var(--primary); color: white; }
+    .deal-summary { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 12px; margin-bottom: 18px; }
+    .deal-stat {
+      padding: 16px; border: 1px solid var(--border); border-radius: var(--r-lg);
+      background: linear-gradient(140deg, var(--s1), var(--s2));
+    }
+    .deal-stat span { color: var(--muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; }
+    .deal-stat strong { display: block; font-size: 1.85rem; margin-top: 4px; }
+    .deal-board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+    .deal-card {
+      position: relative; padding: 22px; overflow: hidden;
+      border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--s1);
+      box-shadow: 0 16px 45px rgba(0,0,0,.12);
+      transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+    }
+    .deal-card::before {
+      content: ""; position: absolute; inset: 0; opacity: 0; pointer-events: none;
+      background: radial-gradient(circle at var(--mx,50%) var(--my,0%), rgba(37,99,235,.2), transparent 34%);
+      transition: opacity .18s ease;
+    }
+    .deal-card:hover {
+      transform: translateY(-4px); border-color: rgba(37,99,235,.55);
+      box-shadow: 0 24px 70px rgba(37,99,235,.14);
+    }
+    .deal-card:hover::before { opacity: 1; }
+    .deal-card > * { position: relative; z-index: 1; }
+    .deal-card h2 { font-size: 1.35rem; margin: 14px 0 6px; }
+    .deal-sub { color: var(--text-2); line-height: 1.45; }
+    .contact-line { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 10px; color: var(--muted); font-size: .88rem; }
+    .deal-meta { display: grid; gap: 10px; margin: 20px 0; }
+    .deal-meta div {
+      display: flex; justify-content: space-between; gap: 16px;
+      padding-bottom: 9px; border-bottom: 1px solid var(--border);
+    }
+    .deal-meta span:first-child { color: var(--muted); }
+    .deal-actions {
+      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;
+    }
+    .deal-actions .wide { grid-column: 1 / -1; }
+    .deal-card.due { border-color: rgba(245,158,11,.5); }
+    .deal-card.overdue { border-color: rgba(239,68,68,.55); }
+    .deal-follow {
+      display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; margin-top: 10px;
+    }
+    .deal-alert {
+      position: fixed; top: 92px; right: 24px; width: min(420px, calc(100vw - 32px));
+      z-index: 50; padding: 18px; border-radius: var(--r-lg);
+      border: 1px solid rgba(245,158,11,.35);
+      background: var(--s1); box-shadow: 0 24px 80px rgba(0,0,0,.28);
+      display: none;
+    }
+    .deal-alert.show { display: block; animation: alertIn .22s ease-out; }
+    @keyframes alertIn { from { transform: translateY(-10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    .deal-alert h3 { margin-bottom: 6px; }
+    .deal-alert-list { display: grid; gap: 8px; margin: 12px 0; }
+    .deal-alert-row {
+      display: flex; justify-content: space-between; gap: 12px; align-items: center;
+      padding: 10px; border-radius: var(--r); background: var(--s2);
+    }
+    .deal-empty {
+      grid-column: 1 / -1; padding: 44px; text-align: center; color: var(--muted);
+      border: 1px dashed var(--border-md); border-radius: var(--r-lg); background: var(--s1);
+    }
+    .badge.status-pending { color: var(--green); border-color: rgba(34,197,94,.35); background: rgba(34,197,94,.1); }
+    .badge.status-closed { color: var(--blue); border-color: rgba(59,130,246,.35); background: rgba(59,130,246,.1); }
+    .badge.status-dead { color: var(--red); border-color: rgba(239,68,68,.35); background: rgba(239,68,68,.1); }
+    .badge.status-vehicle_changed { color: var(--orange); border-color: rgba(249,115,22,.35); background: rgba(249,115,22,.1); }
+    @media(max-width: 1080px) {
+      .deal-board, .deal-summary, .client-search-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+      .deals-hero { grid-template-columns: 1fr; }
+    }
+    @media(max-width: 720px) {
+      .deals-shell { width: min(100% - 28px, 560px); padding-top: 28px; }
+      .deal-board, .deal-summary, .client-search-grid { grid-template-columns: 1fr; }
+      .deal-actions { grid-template-columns: 1fr; }
+      .deal-alert { top: 82px; right: 16px; }
+    }
+  </style>
 </head>
-<body class="workflow-page">
+<body>
 <div id="nav-container"></div>
-<main class="workflow-wrap">
-  <header class="workflow-header">
+
+<main class="deals-shell">
+  <header class="deals-hero">
     <div>
-      <p class="home-kicker">Current Deals</p>
-      <h1>Keep every active deal moving.</h1>
-      <p>Pending deals, follow-ups, missing docs, and status changes in one clean view.</p>
+      <p class="home-kicker">Deals</p>
+      <h1>Search clients and manage every deal.</h1>
+      <p>Find a past client, a credit pull, a dead deal, a closed deal, or the pending deals that need attention.</p>
     </div>
-    <a href="/paperwork/start" class="btn btn-primary">Start Paperwork</a>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end;">
+      <a class="btn btn-ghost" href="/paperwork/start">Start Paperwork</a>
+      <button class="btn btn-primary" onclick="exportContacts()">Export Contacts</button>
+    </div>
   </header>
-  <div class="filter-row">
-    <button class="btn active">Pending</button>
-    <button class="btn btn-ghost">Needs Follow-Up</button>
-    <button class="btn btn-ghost">Missing Docs</button>
+
+  <div class="deal-toolbar">
+    <input class="search-input" id="searchDeals" placeholder="Search client, phone, email, credit pull, deal, vehicle, VIN…" oninput="handleSearchInput()">
+    <button class="btn btn-ghost btn-sm" onclick="copyContacts('email')">Copy Emails</button>
+    <button class="btn btn-ghost btn-sm" onclick="copyContacts('phone')">Copy Phones</button>
+    <button class="btn btn-ghost btn-sm" onclick="emailDueList()">Email Due List</button>
   </div>
-  <section class="deal-list">
-    <article class="deal-card-home panel-glass">
-      <span class="badge badge-pending">Needs Follow-Up</span>
-      <h2 class="mt-16">Maya Collins</h2>
-      <p>2021 Toyota Camry · They Finance</p>
-      <div class="deal-meta"><div><span>Last activity</span><strong>Credit pulled today</strong></div><div><span>Next follow-up</span><strong>Jun 26</strong></div><div><span>Missing docs</span><strong>1</strong></div></div>
-      <div class="deal-actions-mini"><button class="btn btn-ghost btn-sm">Open Deal</button><button class="btn btn-ghost btn-sm">Upload Docs</button><a class="btn btn-primary btn-sm" href="/paperwork/start">Start Packet</a><button class="btn btn-ghost btn-sm">Mark Closed</button></div>
-    </article>
-    <article class="deal-card-home panel-glass">
-      <span class="badge badge-recon">Missing Docs</span>
-      <h2 class="mt-16">Robert Hayes</h2>
-      <p>2019 Ford F-150 · BHPH</p>
-      <div class="deal-meta"><div><span>Last activity</span><strong>Packet started</strong></div><div><span>Next follow-up</span><strong>Jun 25</strong></div><div><span>Missing docs</span><strong>3</strong></div></div>
-      <div class="deal-actions-mini"><button class="btn btn-ghost btn-sm">Open Deal</button><button class="btn btn-ghost btn-sm">Upload Docs</button><a class="btn btn-primary btn-sm" href="/paperwork/start">Start Packet</a><button class="btn btn-ghost btn-sm">Change Vehicle</button></div>
-    </article>
-    <article class="deal-card-home panel-glass">
-      <span class="badge badge-ready">Pending</span>
-      <h2 class="mt-16">Lena Torres</h2>
-      <p>2020 Honda CR-V · Cash</p>
-      <div class="deal-meta"><div><span>Last activity</span><strong>Vehicle changed</strong></div><div><span>Next follow-up</span><strong>Jun 27</strong></div><div><span>Missing docs</span><strong>0</strong></div></div>
-      <div class="deal-actions-mini"><button class="btn btn-ghost btn-sm">Open Deal</button><button class="btn btn-ghost btn-sm">Mark Dead</button><a class="btn btn-primary btn-sm" href="/paperwork/start">Start Packet</a><button class="btn btn-ghost btn-sm">Mark Closed</button></div>
-    </article>
+
+  <section class="deal-summary" id="dealSummary"></section>
+
+  <section class="client-results-strip" id="clientResultsStrip">
+    <div class="client-results-head">
+      <strong>Matching Clients</strong>
+      <span>Shows credit-only clients plus current and past deal history.</span>
+    </div>
+    <div class="client-search-grid" id="clientSearchGrid"></div>
   </section>
+
+  <div class="deal-tabs">
+    <button class="deal-tab active" data-filter="active" onclick="setDealFilter('active', this)">Active</button>
+    <button class="deal-tab" data-filter="followup" onclick="setDealFilter('followup', this)">Needs Follow-Up</button>
+    <button class="deal-tab" data-filter="docs" onclick="setDealFilter('docs', this)">Missing Docs</button>
+    <button class="deal-tab" data-filter="closed" onclick="setDealFilter('closed', this)">Closed</button>
+    <button class="deal-tab" data-filter="dead" onclick="setDealFilter('dead', this)">Dead</button>
+    <button class="deal-tab" data-filter="all" onclick="setDealFilter('all', this)">All</button>
+  </div>
+
+  <section class="deal-board" id="dealBoard"></section>
 </main>
+
+<aside class="deal-alert" id="dealAlert"></aside>
+
 <script src="/js/nav.js"></script>
-<script>if (UN.requireAuth()) UN.renderNav();</script>
+<script>
+if (UN.requireAuth()) UN.renderNav();
+
+let deals = [];
+let clients = [];
+let currentFilter = 'active';
+let alertDismissed = sessionStorage.getItem('un_deal_alert_dismissed') === '1';
+let searchTimer = null;
+
+async function loadDeals() {
+  try {
+    const [dealData, clientData] = await Promise.all([
+      UN.api('GET', '/api/deals?status=all'),
+      UN.api('GET', '/api/customers?limit=75'),
+    ]);
+    const data = dealData;
+    deals = data.deals || [];
+    clients = clientData.customers || [];
+    renderSummary();
+    renderClientMatches();
+    renderDeals();
+    renderFollowUpAlert();
+  } catch (e) {
+    toast(e.message, 'err');
+  }
+}
+
+async function searchClients() {
+  const q = document.getElementById('searchDeals').value.trim();
+  try {
+    const data = await UN.api('GET', `/api/customers?limit=75${q ? `&q=${encodeURIComponent(q)}` : ''}`);
+    clients = data.customers || [];
+    renderClientMatches();
+  } catch (e) {
+    console.warn(e);
+  }
+}
+
+function handleSearchInput() {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(searchClients, 220);
+  renderDeals();
+  renderClientMatches();
+}
+
+function daysUntil(dateValue) {
+  if (!dateValue) return null;
+  const due = new Date(dateValue);
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  due.setHours(0,0,0,0);
+  return Math.ceil((due - today) / 86400000);
+}
+
+function isActive(deal) {
+  return !['closed','dead'].includes(deal.status);
+}
+
+function needsFollowUp(deal) {
+  const days = daysUntil(deal.next_follow_up_at);
+  return isActive(deal) && days !== null && days <= 3;
+}
+
+function filteredDeals() {
+  const q = document.getElementById('searchDeals').value.trim().toLowerCase();
+  return deals.filter(deal => {
+    const matchesSearch = !q || `${deal.customer_name} ${deal.email || ''} ${deal.phone || ''} ${deal.vehicle} ${deal.vin || ''}`.toLowerCase().includes(q);
+    if (!matchesSearch) return false;
+    if (currentFilter === 'active') return isActive(deal);
+    if (currentFilter === 'followup') return needsFollowUp(deal);
+    if (currentFilter === 'docs') return isActive(deal) && deal.missing_docs > 0;
+    if (currentFilter === 'closed') return deal.status === 'closed';
+    if (currentFilter === 'dead') return deal.status === 'dead';
+    return true;
+  });
+}
+
+function renderSummary() {
+  const active = deals.filter(isActive);
+  const followups = deals.filter(needsFollowUp);
+  const missing = active.reduce((sum, deal) => sum + Number(deal.missing_docs || 0), 0);
+  const contacts = new Set(deals.flatMap(d => [d.email, d.phone]).filter(Boolean));
+  document.getElementById('dealSummary').innerHTML = `
+    <div class="deal-stat"><span>Active Deals</span><strong>${active.length}</strong></div>
+    <div class="deal-stat"><span>Due in 3 Days</span><strong>${followups.length}</strong></div>
+    <div class="deal-stat"><span>Missing Docs</span><strong>${missing}</strong></div>
+    <div class="deal-stat"><span>Marketable Contacts</span><strong>${contacts.size}</strong></div>
+  `;
+}
+
+function renderDeals() {
+  const board = document.getElementById('dealBoard');
+  const list = filteredDeals();
+  if (!list.length) {
+    board.innerHTML = `<div class="deal-empty">No deals match this view yet.</div>`;
+    return;
+  }
+  board.innerHTML = list.map(dealCard).join('');
+  document.querySelectorAll('.deal-card').forEach(card => {
+    card.addEventListener('pointermove', e => {
+      const r = card.getBoundingClientRect();
+      card.style.setProperty('--mx', `${e.clientX - r.left}px`);
+      card.style.setProperty('--my', `${e.clientY - r.top}px`);
+    });
+  });
+}
+
+function renderClientMatches() {
+  const q = document.getElementById('searchDeals').value.trim();
+  const strip = document.getElementById('clientResultsStrip');
+  const grid = document.getElementById('clientSearchGrid');
+  if (!q) {
+    strip.classList.remove('show');
+    grid.innerHTML = '';
+    return;
+  }
+  const list = clients.slice(0, 6);
+  strip.classList.add('show');
+  if (!list.length) {
+    grid.innerHTML = '<div class="deal-empty">No matching clients yet.</div>';
+    return;
+  }
+  grid.innerHTML = list.map(clientCard).join('');
+}
+
+function clientCard(client) {
+  const status = client.last_deal_status ? statusLabel(client.last_deal_status) : client.last_credit_status ? `${client.last_credit_status} Credit` : 'Client';
+  const vehicle = client.last_vehicle || 'No vehicle yet';
+  return `
+    <article class="client-mini-card" onclick="openClient(${client.id})">
+      <div class="client-mini-avatar">${esc(initials(client.name))}</div>
+      <div>
+        <h3>${esc(client.name)}</h3>
+        <p>${esc(client.phone || 'No phone')} · ${esc(client.email || 'No email')}</p>
+        <p>${esc(vehicle)}${client.last_vin ? ` · VIN ${esc(client.last_vin.slice(-6).toUpperCase())}` : ''}</p>
+        <div class="client-mini-badges">
+          ${client.last_credit_status ? `<span class="badge status-pending">${esc(client.last_credit_status)} Credit</span>` : ''}
+          <span class="badge status-${client.last_deal_status || 'pending'}">${esc(status)}</span>
+        </div>
+      </div>
+    </article>
+  `;
+}
+
+function dealCard(deal) {
+  const days = daysUntil(deal.next_follow_up_at);
+  const dueClass = days !== null && days < 0 ? 'overdue' : days !== null && days <= 3 ? 'due' : '';
+  const followText = followUpText(deal.next_follow_up_at);
+  return `
+    <article class="deal-card ${dueClass}">
+      <span class="badge status-${deal.status}">${statusLabel(deal.status)}</span>
+      <h2>${esc(deal.customer_name)}</h2>
+      <p class="deal-sub">${esc(deal.vehicle)} &middot; ${esc(deal.deal_type_label)}</p>
+      <div class="contact-line">
+        ${deal.email ? `<span>${esc(deal.email)}</span>` : ''}
+        ${deal.phone ? `<span>${esc(deal.phone)}</span>` : ''}
+      </div>
+      <div class="deal-meta">
+        <div><span>Last activity</span><strong>${esc(deal.last_activity)}</strong></div>
+        <div><span>Next follow-up</span><strong>${followText}</strong></div>
+        <div><span>Missing docs</span><strong>${deal.missing_docs}</strong></div>
+      </div>
+      <div class="deal-actions">
+        <button class="btn btn-ghost btn-sm" onclick="openDeal(${deal.id})">Open Deal</button>
+        <a class="btn btn-ghost btn-sm" href="/paperwork/start">Prepare Paperwork</a>
+        <button class="btn btn-ghost btn-sm" onclick="markStatus(${deal.id}, 'dead')">Mark Dead</button>
+        <button class="btn btn-ghost btn-sm" onclick="markStatus(${deal.id}, 'closed')">Mark Closed</button>
+        <button class="btn btn-ghost btn-sm" onclick="emailReminder(${deal.id})">Email Dealer</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteDeal(${deal.id})">Delete Test Deal</button>
+      </div>
+      <div class="deal-follow">
+        <input class="form-input" id="follow-${deal.id}" type="date" value="${dateInputValue(deal.next_follow_up_at)}">
+        <button class="btn btn-primary btn-sm" onclick="saveFollowUp(${deal.id})">Save Follow-Up</button>
+      </div>
+    </article>
+  `;
+}
+
+function renderFollowUpAlert() {
+  const alert = document.getElementById('dealAlert');
+  const due = deals.filter(needsFollowUp);
+  if (!due.length || alertDismissed) {
+    alert.classList.remove('show');
+    return;
+  }
+  alert.innerHTML = `
+    <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">
+      <div>
+        <h3>Follow-ups due soon</h3>
+        <p class="text-muted text-sm">${due.length} deal${due.length === 1 ? '' : 's'} need attention in the next 3 days.</p>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="dismissAlert()">Dismiss</button>
+    </div>
+    <div class="deal-alert-list">
+      ${due.slice(0, 4).map(deal => `
+        <div class="deal-alert-row">
+          <div><strong>${esc(deal.customer_name)}</strong><div class="text-muted text-sm">${followUpText(deal.next_follow_up_at)}</div></div>
+          <button class="btn btn-primary btn-sm" onclick="emailReminder(${deal.id})">Email</button>
+        </div>
+      `).join('')}
+    </div>
+  `;
+  alert.classList.add('show');
+}
+
+function setDealFilter(filter, btn) {
+  currentFilter = filter;
+  document.querySelectorAll('.deal-tab').forEach(tab => tab.classList.remove('active'));
+  btn.classList.add('active');
+  renderDeals();
+}
+
+function statusLabel(status) {
+  return {
+    pending: 'Pending',
+    closed: 'Closed',
+    dead: 'Dead',
+    vehicle_changed: 'Vehicle Changed',
+  }[status] || status;
+}
+
+function followUpText(value) {
+  const days = daysUntil(value);
+  if (days === null) return 'Not set';
+  const formatted = UN.fmt.date(value);
+  if (days < 0) return `${formatted} (overdue)`;
+  if (days === 0) return `${formatted} (today)`;
+  if (days <= 3) return `${formatted} (${days}d)`;
+  return formatted;
+}
+
+function dateInputValue(value) {
+  if (!value) return '';
+  return new Date(value).toISOString().slice(0, 10);
+}
+
+function esc(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;',
+  }[ch]));
+}
+
+function openDeal(id) {
+  const deal = deals.find(d => d.id === id);
+  if (!deal) return;
+  alert([
+    deal.customer_name,
+    deal.vehicle,
+    deal.deal_type_label,
+    deal.email || 'No email',
+    deal.phone || 'No phone',
+    `Missing docs: ${deal.missing_docs}`,
+  ].join('\\n'));
+}
+
+async function openClient(id) {
+  try {
+    const data = await UN.api('GET', `/api/customers/${id}`);
+    const customer = data.customer;
+    const credit = data.credit_pulls || [];
+    const clientDeals = data.deals || [];
+    alert([
+      customer.name,
+      customer.phone || 'No phone',
+      customer.email || 'No email',
+      '',
+      `Credit pulls: ${credit.length}`,
+      credit[0] ? `Last credit: ${credit[0].provider_status || 'Pending'} ${credit[0].score_placeholder ? 'Score ' + credit[0].score_placeholder : ''}` : 'Last credit: none',
+      `Deals: ${clientDeals.length}`,
+      clientDeals[0] ? `Last deal: ${statusLabel(clientDeals[0].status)} · ${clientDeals[0].vehicle || 'No vehicle'}` : 'Last deal: none',
+    ].join('\\n'));
+  } catch (e) {
+    toast(e.message, 'err');
+  }
+}
+
+function initials(name) {
+  return String(name || 'Client').split(/\\s+/).filter(Boolean).map(part => part[0]).join('').slice(0, 2).toUpperCase() || 'CL';
+}
+
+async function markStatus(id, status) {
+  if (status === 'dead' && !confirm('Mark this deal dead?')) return;
+  if (status === 'closed' && !confirm('Mark this deal closed?')) return;
+  try {
+    const data = await UN.api('PATCH', `/api/deals/${id}/status`, { status });
+    deals = deals.map(deal => deal.id === id ? data.deal : deal);
+    renderSummary(); renderDeals(); renderFollowUpAlert();
+    toast(`Deal marked ${statusLabel(status)}`);
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+async function saveFollowUp(id) {
+  const value = document.getElementById(`follow-${id}`).value;
+  try {
+    const data = await UN.api('PATCH', `/api/deals/${id}/follow-up`, { next_follow_up_at: value || null });
+    deals = deals.map(deal => deal.id === id ? data.deal : deal);
+    renderSummary(); renderDeals(); renderFollowUpAlert();
+    toast('Follow-up saved');
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+async function deleteDeal(id) {
+  const deal = deals.find(d => d.id === id);
+  if (!confirm(`Delete ${deal?.customer_name || 'this deal'} permanently? This is for removing test deals, not closing real deals.`)) return;
+  try {
+    await UN.api('DELETE', `/api/deals/${id}`);
+    deals = deals.filter(deal => deal.id !== id);
+    renderSummary(); renderDeals(); renderFollowUpAlert();
+    toast('Deal deleted');
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+async function emailReminder(id) {
+  try {
+    const data = await UN.api('POST', `/api/deals/${id}/email-reminder`, {});
+    window.location.href = data.mailto;
+    toast(data.message || 'Reminder email ready');
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+function emailDueList() {
+  const user = UN.getUser();
+  const due = deals.filter(needsFollowUp);
+  if (!due.length) return toast('No follow-ups due in the next 3 days');
+  const subject = 'Unit Navigator follow-ups due soon';
+  const body = due.map(deal => `${deal.customer_name} — ${deal.vehicle} — ${followUpText(deal.next_follow_up_at)} — ${deal.phone || deal.email || 'no contact'}`).join('\\n');
+  window.location.href = `mailto:${encodeURIComponent(user?.email || '')}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
+async function exportContacts() {
+  try {
+    const res = await fetch('/api/deals/export/contacts.csv', {
+      headers: { Authorization: `Bearer ${UN.getToken()}` },
+    });
+    if (!res.ok) throw new Error('Export failed');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'unit-navigator-contacts.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+async function copyContacts(kind) {
+  const values = [...new Set(deals.map(deal => deal[kind]).filter(Boolean))];
+  if (!values.length) return toast(`No ${kind}s to copy`);
+  await navigator.clipboard.writeText(values.join(kind === 'email' ? ', ' : '\\n'));
+  toast(`${values.length} ${kind}${values.length === 1 ? '' : 's'} copied`);
+}
+
+function dismissAlert() {
+  alertDismissed = true;
+  sessionStorage.setItem('un_deal_alert_dismissed', '1');
+  document.getElementById('dealAlert').classList.remove('show');
+}
+
+loadDeals();
+</script>
 </body>
 </html>
