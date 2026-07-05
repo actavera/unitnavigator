@@ -138,6 +138,18 @@
     .scan-unsupported {
       display: none; padding: 24px 20px; text-align: center; color: rgba(255,255,255,0.7);
     }
+    .scan-debug {
+      display: none; padding: 10px 14px; background: rgba(30,41,59,0.92);
+      color: rgba(255,255,255,0.72); font-size: 0.75rem; line-height: 1.45;
+      border-top: 1px solid rgba(255,255,255,0.08); word-break: break-word;
+    }
+    .scan-file-fallback { display: none; margin-top: 18px; }
+    .scan-file-fallback label {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-height: 44px; padding: 0 18px; border-radius: 12px; cursor: pointer;
+      background: #2563eb; color: #fff; font-weight: 700;
+    }
+    .scan-file-fallback input { display: none; }
 
     /* ── Cost stack ──────────────────────────────────────────────── */
     .cost-stack { background: var(--s2); border-radius: var(--r); padding: 20px; }
@@ -426,6 +438,12 @@
       <p style="font-size:1.5rem;margin-bottom:12px;">📵</p>
       <p>Camera scanning could not start on this browser.</p>
       <p style="margin-top:8px;">Please allow camera access or type the VIN manually.</p>
+      <div class="scan-file-fallback" id="scanFileFallback">
+        <label>
+          Take VIN Photo
+          <input type="file" accept="image/*" capture="environment" onchange="handleVinPhoto(this.files)">
+        </label>
+      </div>
       <button class="btn btn-ghost" onclick="closeScanner()" style="margin-top:20px;">Close</button>
     </div>
   </div>
@@ -434,10 +452,10 @@
     <b>Point camera at the VIN barcode</b>
     Found on dashboard (driver side), door jamb sticker, or title
   </div>
+  <div class="scan-debug" id="scanDebug"></div>
 </div>
 
 <script src="/js/nav.js"></script>
-<script src="https://unpkg.com/@zxing/browser@0.1.5/umd/zxing-browser.min.js"></script>
 <script>
 UN.requireAuth();
 UN.renderNav();
@@ -549,6 +567,7 @@ let _scanInterval = null;
 let _scanDetector = null;
 let _scanControls = null;
 let _zxingReader = null;
+let _zxingLoadPromise = null;
 
 async function openScanner() {
   const modal = document.getElementById('scanModal');
@@ -556,7 +575,9 @@ async function openScanner() {
   const unsupported = document.getElementById('scanUnsupported');
 
   document.getElementById('scanFoundBanner').style.display = 'none';
+  _setScannerDebug('');
   unsupported.style.display = 'none';
+  document.getElementById('scanFileFallback').style.display = 'none';
   video.style.display = '';
   document.querySelector('.scan-guide').style.display = '';
   document.querySelector('.scan-hint').style.display = '';
@@ -581,12 +602,13 @@ async function openScanner() {
 
     _scanInterval = setInterval(_scanFrame, 200);
   } catch (e) {
-    _showScannerUnsupported();
+    await _showScannerUnsupported(e);
     toast(e.name === 'NotAllowedError' ? 'Camera permission denied — please allow camera access' : 'Could not open camera', 'err');
   }
 }
 
 async function _startZxingScanner(video) {
+  await _ensureZxing();
   if (!window.ZXingBrowser?.BrowserMultiFormatReader) {
     throw new Error('Scanner library unavailable');
   }
@@ -618,6 +640,47 @@ async function _startZxingScanner(video) {
   }
 }
 
+function _ensureZxing() {
+  if (window.ZXingBrowser?.BrowserMultiFormatReader) return Promise.resolve();
+  if (_zxingLoadPromise) return _zxingLoadPromise;
+
+  const urls = [
+    'https://unpkg.com/@zxing/browser@0.1.5',
+    'https://unpkg.com/@zxing/browser@0.1.5/umd/zxing-browser.min.js',
+    'https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5'
+  ];
+
+  _zxingLoadPromise = urls.reduce((chain, url) => {
+    return chain.catch(() => _loadScript(url));
+  }, Promise.reject()).then(() => {
+    if (!window.ZXingBrowser?.BrowserMultiFormatReader) {
+      throw new Error('ZXing loaded but did not expose BrowserMultiFormatReader');
+    }
+  }).catch(err => {
+    _zxingLoadPromise = null;
+    throw err;
+  });
+
+  return _zxingLoadPromise;
+}
+
+function _loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector(`script[src="${src}"]`);
+    if (existing) {
+      existing.addEventListener('load', resolve, { once: true });
+      existing.addEventListener('error', () => reject(new Error(`Could not load ${src}`)), { once: true });
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = true;
+    script.onload = resolve;
+    script.onerror = () => reject(new Error(`Could not load ${src}`));
+    document.head.appendChild(script);
+  });
+}
+
 async function _scanFrame() {
   const video = document.getElementById('scanVideo');
   if (!_scanDetector || video.readyState < 2) return;
@@ -635,13 +698,16 @@ async function _scanFrame() {
   } catch { /* ignore per-frame errors */ }
 }
 
-function _showScannerUnsupported() {
+async function _showScannerUnsupported(error) {
+  closeScanner(false);
   const video = document.getElementById('scanVideo');
   video.style.display = 'none';
   const guide = document.querySelector('.scan-guide');
   if (guide) guide.style.display = 'none';
   const hint = document.querySelector('.scan-hint');
   if (hint) hint.style.display = 'none';
+  _setScannerDebug(error ? `${error.name || 'ScannerError'}: ${error.message || error}` : '');
+  document.getElementById('scanFileFallback').style.display = 'block';
   document.getElementById('scanUnsupported').style.display = 'block';
 }
 
@@ -663,7 +729,7 @@ function _onVinDetected(vin) {
   }, 700);
 }
 
-function closeScanner() {
+function closeScanner(hideModal = true) {
   clearInterval(_scanInterval);
   _scanInterval = null;
   _scanDetector = null;
@@ -684,7 +750,35 @@ function closeScanner() {
   if (guide) guide.style.display = '';
   const hint = document.querySelector('.scan-hint');
   if (hint) hint.style.display = '';
-  document.getElementById('scanModal').classList.remove('open');
+  if (hideModal) document.getElementById('scanModal').classList.remove('open');
+}
+
+function _setScannerDebug(message) {
+  const el = document.getElementById('scanDebug');
+  if (!el) return;
+  el.textContent = message ? `Scanner detail: ${message}` : '';
+  el.style.display = message ? 'block' : 'none';
+}
+
+async function handleVinPhoto(files) {
+  const file = files && files[0];
+  if (!file) return;
+  try {
+    await _ensureZxing();
+    const img = new Image();
+    img.src = URL.createObjectURL(file);
+    await img.decode();
+    _zxingReader = new ZXingBrowser.BrowserMultiFormatReader();
+    const result = await _zxingReader.decodeFromImageElement(img);
+    URL.revokeObjectURL(img.src);
+    const text = typeof result.getText === 'function' ? result.getText() : (result.text || String(result));
+    const vin = _extractVin(text);
+    if (!vin) throw new Error('No VIN barcode found in photo');
+    _onVinDetected(vin);
+  } catch (e) {
+    _setScannerDebug(`${e.name || 'PhotoScanError'}: ${e.message || e}`);
+    toast('Could not read a VIN from that photo. Try a closer, brighter photo or type it manually.', 'err');
+  }
 }
 
 // ── Cost total ──────────────────────────────────────────────────────────────
