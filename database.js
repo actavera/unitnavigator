@@ -226,6 +226,11 @@ if (!dealColumns.includes('last_status_check_at')) {
   db.exec("ALTER TABLE deals ADD COLUMN last_status_check_at TEXT");
 }
 
+const customerColumns = db.prepare("PRAGMA table_info(customers)").all().map(col => col.name);
+if (!customerColumns.includes('id_number')) {
+  db.exec("ALTER TABLE customers ADD COLUMN id_number TEXT");
+}
+
 const userSchema = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'").get()?.sql || '';
 const userColumns = db.prepare("PRAGMA table_info(users)").all().map(col => col.name);
 if (userSchema && (!userSchema.includes("'super_admin'") || !userColumns.includes('status'))) {

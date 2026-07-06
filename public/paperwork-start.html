@@ -300,7 +300,10 @@
             <div class="form-group"><label class="form-label">Phone</label><input class="form-input" id="buyerPhone" oninput="renderEstimate()"></div>
             <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="buyerEmail" oninput="renderEstimate()"></div>
           </div>
-          <div class="form-group"><label class="form-label">Address</label><input class="form-input" id="buyerAddress" oninput="renderEstimate()"></div>
+          <div class="form-row form-row-2">
+            <div class="form-group"><label class="form-label">ID Number (DL / Passport / ID)</label><input class="form-input" id="buyerIdNumber" oninput="renderEstimate()"></div>
+            <div class="form-group"><label class="form-label">Address</label><input class="form-input" id="buyerAddress" oninput="renderEstimate()"></div>
+          </div>
           <div class="wizard-nav">
             <button class="btn btn-ghost" onclick="goToStep('packet')">← Packet</button>
             <button class="btn btn-primary" onclick="goToStep('vehicle')">Choose Vehicle →</button>
@@ -436,8 +439,8 @@ let customers = [];
 let selectedCustomerId = null;
 
 const SAMPLE_CUSTOMERS = [
-  { id: 'sample-maya', name: 'Maya Collins', phone: '(801) 555-0142', email: 'maya@example.com', address: '123 Main St, Provo, UT 84601' },
-  { id: 'sample-robert', name: 'Robert Hayes', phone: '(385) 555-0177', email: 'robert@example.com', address: '88 Center St, Orem, UT 84057' },
+  { id: 'sample-maya', name: 'Maya Collins', phone: '(801) 555-0142', email: 'maya@example.com', id_number: 'D123456789', address: '123 Main St, Provo, UT 84601' },
+  { id: 'sample-robert', name: 'Robert Hayes', phone: '(385) 555-0177', email: 'robert@example.com', id_number: 'P987654321', address: '88 Center St, Orem, UT 84057' },
 ];
 
 const FIELD_MAP = [
@@ -447,6 +450,7 @@ const FIELD_MAP = [
   { source: 'buyer.name', label: 'Buyer Name', forms: { 'TC-466': 'buyer name', 'TC-656': 'primary owner name', 'TC-891': "Transferee's name", 'TC-123': 'New owner name' } },
   { source: 'buyer.coBuyer', label: 'Co-Buyer Name', forms: { 'TC-466': 'cobuyer name', 'TC-656': 'co-owner name 1' } },
   { source: 'buyer.email', label: 'Buyer Email', forms: { 'TC-656': "primary owner's email" } },
+  { source: 'buyer.idNumber', label: 'Buyer ID Number', forms: { 'TC-656': "primary owner's driver license / ID number", 'Credit Application': 'identification number' } },
   { source: 'buyer.address', label: 'Buyer Address', forms: { 'TC-656': "primary owner's address/city/state/zip", 'TC-891': "Transferee address fields", 'TC-123': "New owner address fields" } },
   { source: 'vehicle.vin', label: 'VIN', forms: { 'TC-466': 'vin', 'TC-656': 'VIN fields', 'TC-891': 'VIN', 'TC-661': 'VSN 1-17', 'TC-814': 'VIN', 'TC-123': 'VIN', 'TC-120': 'vin' } },
   { source: 'vehicle.year', label: 'Vehicle Year', forms: { 'TC-466': 'year', 'TC-656': 'Year', 'TC-891': 'Year', 'TC-661': 'Vehicle year', 'TC-814': 'Year', 'TC-123': 'Year', 'TC-120': 'year' } },
@@ -497,6 +501,7 @@ async function loadCustomers() {
     name: customer.name,
     phone: customer.phone || '',
     email: customer.email || '',
+    id_number: customer.id_number || '',
     address: customer.address || '',
     status: customer.last_deal_status || customer.last_credit_status || 'Client',
     vehicle: customer.last_vehicle || '',
@@ -553,7 +558,7 @@ function setCustomerMode(mode) {
   $('customer-new-tab').classList.toggle('active', mode === 'new');
   $('existingCustomerBlock').classList.toggle('hidden', mode !== 'existing');
   if (mode === 'new') {
-    ['buyerName','coBuyer','buyerPhone','buyerEmail','buyerAddress'].forEach(id => $(id).value = '');
+    ['buyerName','coBuyer','buyerPhone','buyerEmail','buyerIdNumber','buyerAddress'].forEach(id => $(id).value = '');
     selectedCustomerId = null;
   } else {
     renderCustomerPicker();
@@ -568,7 +573,7 @@ function customerPool() {
 
 function customerMatches(customer, query) {
   if (!query) return true;
-  return [customer.name, customer.phone, customer.email, customer.address, customer.status, customer.vehicle, customer.vin]
+  return [customer.name, customer.phone, customer.email, customer.id_number, customer.address, customer.status, customer.vehicle, customer.vin]
     .filter(Boolean)
     .join(' ')
     .toLowerCase()
@@ -604,6 +609,7 @@ function selectCustomer(id) {
   $('buyerName').value = customer.name || '';
   $('buyerPhone').value = customer.phone || '';
   $('buyerEmail').value = customer.email || '';
+  $('buyerIdNumber').value = customer.id_number || '';
   $('buyerAddress').value = customer.address || '';
   renderCustomerPicker();
   renderEstimate();
@@ -632,6 +638,7 @@ function loadSample() {
   $('coBuyer').value = '';
   $('buyerPhone').value = '(801) 555-0142';
   $('buyerEmail').value = 'maya@example.com';
+  $('buyerIdNumber').value = 'D123456789';
   $('buyerAddress').value = '123 Main St, Provo, UT 84601';
   $('year').value = '2019';
   $('make').value = 'Ford';
@@ -792,6 +799,7 @@ function packetData() {
       coBuyer: val('coBuyer'),
       phone: val('buyerPhone'),
       email: val('buyerEmail'),
+      idNumber: val('buyerIdNumber'),
       address: val('buyerAddress'),
     },
     vehicle: {
@@ -875,6 +883,7 @@ function coverPage(data) {
           ${line('Co-Buyer', data.customer.coBuyer)}
           ${line('Phone', data.customer.phone)}
           ${line('Email', data.customer.email)}
+          ${line('ID Number', data.customer.idNumber)}
           ${line('Address', data.customer.address)}
         </section>
         <section class="packet-box">

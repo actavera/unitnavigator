@@ -23,6 +23,7 @@ function customerSelect() {
       c.phone,
       c.email,
       c.address,
+      c.id_number,
       c.employer,
       c.monthly_income,
       c.created_at,
@@ -105,10 +106,10 @@ router.get('/', requireAuth, (req, res) => {
       c.first_name LIKE ? OR c.last_name LIKE ? OR
       (c.first_name || ' ' || c.last_name) LIKE ? OR
       c.phone LIKE ? OR c.email LIKE ? OR c.address LIKE ? OR
-      c.employer LIKE ? OR cp.vehicle_interest LIKE ? OR cp.result_summary LIKE ? OR
+      c.id_number LIKE ? OR c.employer LIKE ? OR cp.vehicle_interest LIKE ? OR cp.result_summary LIKE ? OR
       u_search.make LIKE ? OR u_search.model LIKE ? OR u_search.vin LIKE ?
     )`;
-    params.push(term, term, term, term, term, term, term, term, term, term, term, term);
+    params.push(term, term, term, term, term, term, term, term, term, term, term, term, term);
   }
 
   if (credit && credit !== 'all') {

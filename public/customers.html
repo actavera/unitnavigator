@@ -114,7 +114,7 @@
     <div>
       <p class="home-kicker">Client Search</p>
       <h1>Find past clients fast.</h1>
-      <p>Search by name, phone, email, vehicle, VIN, employer, or credit notes. This is where old credit pulls and dead deals stay useful instead of disappearing.</p>
+      <p>Search by name, phone, email, ID number, vehicle, VIN, employer, or credit notes. This is where old credit pulls and dead deals stay useful instead of disappearing.</p>
     </div>
     <a class="btn btn-primary" href="/credit/new">New Credit Pull</a>
   </header>
@@ -299,6 +299,7 @@ function renderDetail(customer, creditPulls, deals) {
       <div class="detail-block">
         <h3>Client Info</h3>
         ${detailLine('Address', customer.address)}
+        ${detailLine('ID Number', customer.id_number)}
         ${detailLine('Employer', customer.employer)}
         ${detailLine('Monthly Income', customer.monthly_income ? UN.fmt.money(customer.monthly_income) : null)}
         ${detailLine('Created', fmtDate(customer.created_at))}

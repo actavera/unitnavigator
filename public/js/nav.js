@@ -58,7 +58,7 @@ const UN = {
     if (!el) return;
     const initials = user?.name ? user.name.split(' ').map(n => n[0]).join('').slice(0,2).toUpperCase() : '?';
     const canSeeAdmin = user?.role === 'super_admin' || String(user?.email || '').toLowerCase() === 'admin@unitnavigator.com';
-    const adminLink = canSeeAdmin ? '<a class="nav-logout" href="/admin">Admin</a>' : '';
+    const adminLink = canSeeAdmin ? '<a class="nav-menu-item" href="/admin">Admin</a>' : '';
     el.innerHTML = `
       <nav class="nav">
         <a href="/home" class="nav-logo" aria-label="Unit Navigator home">
@@ -69,13 +69,32 @@ const UN = {
             <button type="button" data-theme-option="light" onclick="UN.setTheme('light')" aria-pressed="false">Light</button>
             <button type="button" data-theme-option="dark" onclick="UN.setTheme('dark')" aria-pressed="true">Dark</button>
           </div>
-          ${adminLink}
-          <span class="nav-user">${user?.name || ''}</span>
-          <div class="nav-avatar">${initials}</div>
-          <button class="nav-logout" onclick="UN.logout()">Log out</button>
+          <div class="nav-account">
+            <button class="nav-account-trigger" type="button" aria-haspopup="menu" aria-expanded="false" onclick="UN.toggleAccountMenu(event)">
+              <span class="nav-user">${user?.name || ''}</span>
+              <span class="nav-avatar">${initials}</span>
+            </button>
+            <div class="nav-account-menu" role="menu">
+              ${adminLink}
+              <button class="nav-menu-item danger" type="button" onclick="UN.logout()">Log out</button>
+            </div>
+          </div>
         </div>
       </nav>`;
     UN.syncThemeToggle();
+  },
+
+  toggleAccountMenu(event) {
+    event.stopPropagation();
+    const account = event.currentTarget.closest('.nav-account');
+    document.querySelectorAll('.nav-account.open').forEach(openAccount => {
+      if (openAccount !== account) {
+        openAccount.classList.remove('open');
+        openAccount.querySelector('.nav-account-trigger')?.setAttribute('aria-expanded', 'false');
+      }
+    });
+    const isOpen = account?.classList.toggle('open');
+    event.currentTarget.setAttribute('aria-expanded', String(Boolean(isOpen)));
   },
 
   fmt: {
@@ -114,6 +133,14 @@ const UN = {
 };
 
 UN.applyTheme();
+
+document.addEventListener('click', event => {
+  if (event.target.closest('.nav-account')) return;
+  document.querySelectorAll('.nav-account.open').forEach(account => {
+    account.classList.remove('open');
+    account.querySelector('.nav-account-trigger')?.setAttribute('aria-expanded', 'false');
+  });
+});
 
 // Global toast
 function toast(msg, type = 'ok') {
