@@ -184,6 +184,12 @@
     .preview-orb { display: grid; width: 86px; height: 86px; margin: 0 auto 18px; place-items: center; border-radius: 28px; background: var(--blue-gl); color: var(--blue); }
     .preview-orb svg { width: 44px; height: 44px; fill: none; stroke: currentColor; stroke-width: 2.7; stroke-linecap: round; stroke-linejoin: round; }
     .packet-preview { background: #fff; color: #111827; border-radius: var(--r-lg); overflow: hidden; }
+    .official-pdf-frame { display: block; width: 100%; height: min(82vh, 980px); border: 0; background: #fff; }
+    .official-pdf-loading {
+      border: 1px dashed var(--border-md); border-radius: var(--r-lg);
+      color: var(--muted); text-align: center; padding: 46px 24px; line-height: 1.5;
+      background: var(--s2);
+    }
     .packet-page { padding: 34px; border-bottom: 1px solid #d1d5db; min-height: 690px; }
     .packet-page:last-child { border-bottom: 0; }
     .packet-top { display: flex; justify-content: space-between; gap: 18px; align-items: flex-start; margin-bottom: 22px; }
@@ -498,7 +504,7 @@
           </div>
           <div class="paper-actions">
             <button class="btn btn-ghost" onclick="goToStep('terms')">← Edit Terms</button>
-            <button class="btn btn-primary" onclick="window.print()">Print / Save PDF</button>
+            <button class="btn btn-primary" onclick="downloadOfficialPacket()">Print / Save Official PDF</button>
             <button class="btn btn-primary" onclick="downloadOfficialPacket()">Download Official PDFs</button>
             <button class="btn btn-ghost" onclick="downloadEsignPayload()">Export for E-Sign</button>
           </div>
@@ -511,14 +517,14 @@
       <div class="paper-panel-header">
         <h2 id="previewTitle">Packet Preview</h2>
         <div class="paper-actions no-print" style="margin:0;">
-          <button class="btn btn-primary btn-sm" id="printBtn" onclick="window.print()" disabled>Print / Save PDF</button>
+          <button class="btn btn-primary btn-sm" id="printBtn" onclick="downloadOfficialPacket()" disabled>Print / Save Official PDF</button>
           <button class="btn btn-ghost btn-sm" id="esignBtn" onclick="downloadEsignPayload()" disabled>Export for E-Sign</button>
         </div>
       </div>
       <div class="paper-panel-body">
         <div id="previewEmpty" class="preview-empty">
           <span class="preview-orb"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M13 7h16l6 6v28H13Z"/><path d="M29 7v7h6"/><path d="M18 23h12M18 30h12"/><path d="M36 29l3 3 6-8"/></svg></span>
-          Choose a packet, confirm the customer and vehicle, adjust the terms, then hit <strong>Go!</strong> to build the review packet.
+          Choose a packet, confirm the customer and vehicle, answer the questions, then hit <strong>Go!</strong> to build the official PDF packet.
         </div>
         <div class="packet-preview hidden" id="packetPreview"></div>
       </div>
@@ -540,6 +546,8 @@ let officialTemplates = [];
 let selectedCustomerId = null;
 let savedDealId = null;
 let questionIndex = 0;
+let officialPacketUrl = null;
+let packetRenderToken = 0;
 const DEFAULT_EMISSIONS_FEE = 30;
 
 const SAMPLE_CUSTOMERS = [
@@ -824,7 +832,7 @@ function setPacket(type, advance = true) {
   $('previewTitle').textContent = type === 'bhph' ? 'BHPH Packet Preview' : type === 'cash' ? 'Cash Packet Preview' : 'Outside Financing Packet Preview';
   renderEstimate();
   if (advance) goToStep('customer');
-  if (built) renderPacket();
+  if (built && currentStep === 'build') renderPacket();
 }
 
 function setCustomerMode(mode) {
@@ -1018,7 +1026,7 @@ function renderEstimate() {
     <p class="form-hint">${packetType === 'cash' ? 'Cash packet skips APR, months, lender processing fee, and payment schedule.' : `${c.paymentCount} ${c.frequency.toLowerCase()} payments at ${c.apr.toFixed(2)}% APR. This is an estimate until final lender/BHPH terms are approved.`}</p>
     <p class="form-hint">Smart forms: ${escapeHtml(rules.summary)}</p>
   `;
-  if (built) renderPacket();
+  if (built && currentStep === 'build') renderPacket();
 }
 
 function packetRules() {
@@ -1195,13 +1203,41 @@ async function buildPacket() {
   } catch (err) {
     toast(err.message || 'Packet built, but the deal was not saved.', 'warn');
   }
-  renderPacket();
+  await renderPacket();
 }
 
-function renderPacket() {
+async function createOfficialPacketBlob() {
+  const response = await fetch('/api/paperwork/official-packet', {
+    method: 'POST',
+    headers: UN.headers(),
+    body: JSON.stringify(packetData()),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Official PDF packet could not be generated.');
+  }
+  return response.blob();
+}
+
+async function renderPacket() {
   if (!built) return;
-  const data = packetData();
-  $('packetPreview').innerHTML = coreFormPages(data);
+  const token = ++packetRenderToken;
+  $('packetPreview').innerHTML = '<div class="official-pdf-loading">Building the official PDF preview from the original forms...</div>';
+  try {
+    const blob = await createOfficialPacketBlob();
+    if (token !== packetRenderToken) return;
+    if (officialPacketUrl) URL.revokeObjectURL(officialPacketUrl);
+    officialPacketUrl = URL.createObjectURL(blob);
+    $('packetPreview').innerHTML = `<iframe class="official-pdf-frame" src="${officialPacketUrl}" title="Official filled PDF packet"></iframe>`;
+  } catch (err) {
+    $('packetPreview').innerHTML = `
+      <div class="preview-empty">
+        <strong>Official PDF preview could not load.</strong><br>
+        ${escapeHtml(err.message || 'Try downloading the official PDF packet.')}
+      </div>
+    `;
+    toast(err.message || 'Official PDF preview could not load.', 'warn');
+  }
 }
 
 function packetTop(data, subtitle) {
@@ -2068,19 +2104,15 @@ function downloadEsignPayload() {
 }
 
 async function downloadOfficialPacket() {
-  if (!built) buildPacket();
+  if (!built) await buildPacket();
   const data = packetData();
-  const response = await fetch('/api/paperwork/official-packet', {
-    method: 'POST',
-    headers: UN.headers(),
-    body: JSON.stringify(data),
-  });
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    toast(error.error || 'Official PDF packet could not be generated.', 'warn');
+  let blob;
+  try {
+    blob = await createOfficialPacketBlob();
+  } catch (err) {
+    toast(err.message || 'Official PDF packet could not be generated.', 'warn');
     return;
   }
-  const blob = await response.blob();
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
