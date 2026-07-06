@@ -454,6 +454,7 @@ let currentStep = 'packet';
 let inventoryUnits = [];
 let customers = [];
 let selectedCustomerId = null;
+const DEFAULT_EMISSIONS_FEE = 30;
 
 const SAMPLE_CUSTOMERS = [
   { id: 'sample-maya', name: 'Maya Collins', phone: '(801) 555-0142', email: 'maya@example.com', id_number: 'D123456789', address: '123 Main St, Provo, UT 84601' },
@@ -693,6 +694,7 @@ function loadSample() {
 }
 
 function calculations() {
+  const rules = packetRules();
   const salePrice = num('salePrice');
   const docFee = num('docFee');
   const filingFee = num('filingFee');
@@ -701,7 +703,8 @@ function calculations() {
   const plateFee = num('plateFee');
   const agePropertyTax = num('agePropertyTax');
   const titleFee = num('titleFee');
-  const emissionsFee = num('emissionsFee');
+  const emissionsFeeInput = num('emissionsFee');
+  const emissionsFee = rules.emissions === 'required' && emissionsFeeInput <= 0 ? DEFAULT_EMISSIONS_FEE : emissionsFeeInput;
   const insuranceGapVsi = num('insuranceGapVsi');
   const accessories = num('accessories');
   const products = num('products');
@@ -725,8 +728,11 @@ function calculations() {
 }
 
 function renderEstimate() {
-  const c = calculations();
   const rules = packetRules();
+  if (rules.emissions === 'required' && num('emissionsFee') <= 0) {
+    $('emissionsFee').value = String(DEFAULT_EMISSIONS_FEE);
+  }
+  const c = calculations();
   renderSelectionVisuals();
   $('estimateCard').innerHTML = `
     <div class="terms-line"><span>Estimated out-the-door</span><strong>${money(c.total)}</strong></div>
@@ -751,33 +757,38 @@ function packetRules() {
   const isSalvage = titleBrand === 'Salvage / Branded';
   const exemptByType = fuel === 'Electric' || unitType === 'Motorcycle' || unitType === 'ATV / UTV';
   let emissions = 'none';
-  let reason = `${county} county does not require emissions in this workflow.`;
+  let reason = `${county} County: not required.`;
   if (['Cache','Salt Lake','Davis','Weber','Utah'].includes(county)) {
     if (exemptByType) {
       emissions = 'exempt';
-      reason = `${fuel} ${unitType} is emissions exempt.`;
+      reason = `${fuel} ${unitType}: exempt.`;
     } else if (county === 'Cache') {
       if (modelYear >= currentYear - 5 || modelYear <= 1995) {
         emissions = 'exempt';
-        reason = 'Cache County emissions exemption based on model year.';
+        reason = 'Cache County: exempt by model year.';
       } else {
         emissions = modelYear % 2 === currentYear % 2 ? 'required' : 'none';
-        reason = emissions === 'required' ? 'Cache County biennial emissions is due.' : 'Cache County biennial emissions is not due this year.';
+        reason = emissions === 'required' ? 'Cache County: required.' : 'Cache County: not required this year.';
       }
     } else {
       emissions = modelYear >= currentYear - 5 ? 'exempt' : 'required';
-      reason = emissions === 'required' ? `${county} County emissions should be checked.` : `${county} County emissions exemption based on model year.`;
+      reason = emissions === 'required' ? `${county} County: required.` : `${county} County: exempt by model year.`;
     }
   }
   if (override !== 'auto') {
     emissions = override;
-    reason = `Dealer override: emissions ${override}.`;
+    reason = override === 'required'
+      ? 'Dealer override: required.'
+      : override === 'exempt'
+        ? 'Dealer override: exempt.'
+        : 'Dealer override: not required.';
   }
   const optionalForms = [];
   if (emissions === 'exempt' || emissions === 'none') optionalForms.push('TC-820 Emissions Exemption Affidavit');
-  if (emissions === 'required') optionalForms.push('Emissions Certificate / Requirement Check');
+  if (emissions === 'required') optionalForms.push('Emissions Inspection Certificate');
   if (isSalvage) optionalForms.push('TC-814 Notice of Salvage Vehicle or Branded Title');
-  return { emissions, reason, isSalvage, optionalForms, summary: [reason, isSalvage ? 'Salvage/branded disclosure included.' : 'Clean title selected.'].join(' ') };
+  const statusLabel = emissions === 'required' ? 'Required' : emissions === 'exempt' ? 'Exempt' : 'Not required';
+  return { emissions, reason, statusLabel, isSalvage, optionalForms, summary: [reason, isSalvage ? 'Salvage/branded disclosure included.' : 'Clean title selected.'].join(' ') };
 }
 
 function renderSelectionVisuals() {
@@ -1307,7 +1318,7 @@ function titleApplicationPage(data) {
         <tbody>
           <tr><th>Title Fee</th><td>${money(data.pricing.titleFee)}</td><th>Registration / License</th><td>${money(data.pricing.licenseFee)}</td></tr>
           <tr><th>Plate Fee</th><td>${money(data.pricing.plateFee)}</td><th>Age Property Tax</th><td>${money(data.pricing.agePropertyTax)}</td></tr>
-          <tr><th>Emissions</th><td colspan="3">${escapeHtml(data.rules.reason)}</td></tr>
+          <tr><th>Emissions Status</th><td>${escapeHtml(data.rules.statusLabel)}</td><th>Emissions Fee</th><td>${money(data.pricing.emissionsFee)}</td></tr>
         </tbody>
       </table>
       <div class="signature-grid">
@@ -1479,8 +1490,9 @@ function tc820Page(data) {
         ${formField('Vehicle', vehicleLabel(data))}
         ${formField('VIN', data.vehicle.vin)}
         ${formField('Model Year', data.vehicle.year)}
+        ${formField('Emissions Status', data.rules.statusLabel)}
       </div>
-      <p class="form-legal">The vehicle is being marked emissions exempt or not required based on the selected county, vehicle type, fuel type, model year, or dealer override.</p>
+      <p class="form-legal">The vehicle is marked exempt or not required for emissions based on the selected county, vehicle type, fuel type, model year, or dealer override.</p>
       <div class="checkbox-line">Newer model year exemption</div>
       <div class="checkbox-line">Vehicle type or fuel exemption</div>
       <div class="checkbox-line">County emissions not required</div>
@@ -1496,16 +1508,17 @@ function tc820Page(data) {
 function emissionsRequirementPage(data) {
   return `
     <article class="packet-page">
-      ${draftFormHeader('Emissions Requirement Notice', 'Emissions Check')}
+      ${draftFormHeader('Emissions Inspection Certificate', 'Emissions')}
       <div class="form-field-grid">
         ${formField('Buyer', data.customer.name)}
         ${formField('County', data.vehicle.county)}
         ${formField('Vehicle', vehicleLabel(data))}
         ${formField('VIN', data.vehicle.vin)}
         ${formField('Fuel', data.vehicle.fuel)}
-        ${formField('Requirement', data.rules.reason)}
+        ${formField('Emissions Status', data.rules.statusLabel)}
+        ${formField('Emissions Fee', money(data.pricing.emissionsFee))}
       </div>
-      <p class="form-legal">Buyer and dealer acknowledge an emissions inspection or related county requirement may be required before registration is completed.</p>
+      <p class="form-legal">An emissions inspection is required for this vehicle and county before registration is completed.</p>
       <table class="form-table">
         <tbody>
           <tr><th>Inspection Station</th><td></td><th>Inspection Date</th><td></td></tr>
