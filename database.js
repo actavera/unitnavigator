@@ -24,7 +24,8 @@ db.exec(`
     name TEXT NOT NULL,
     email TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
-    role TEXT DEFAULT 'staff' CHECK(role IN ('admin','manager','staff')),
+    role TEXT DEFAULT 'staff' CHECK(role IN ('super_admin','admin','manager','staff')),
+    status TEXT DEFAULT 'active' CHECK(status IN ('active','revoked')),
     created_at TEXT DEFAULT (datetime('now'))
   );
 
@@ -224,5 +225,38 @@ const dealColumns = db.prepare("PRAGMA table_info(deals)").all().map(col => col.
 if (!dealColumns.includes('last_status_check_at')) {
   db.exec("ALTER TABLE deals ADD COLUMN last_status_check_at TEXT");
 }
+
+const userSchema = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'").get()?.sql || '';
+const userColumns = db.prepare("PRAGMA table_info(users)").all().map(col => col.name);
+if (userSchema && (!userSchema.includes("'super_admin'") || !userColumns.includes('status'))) {
+  db.exec(`
+    PRAGMA foreign_keys = OFF;
+    ALTER TABLE users RENAME TO users_old_admin_migration;
+    CREATE TABLE users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      dealership_id INTEGER REFERENCES dealerships(id),
+      name TEXT NOT NULL,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      role TEXT DEFAULT 'staff' CHECK(role IN ('super_admin','admin','manager','staff')),
+      status TEXT DEFAULT 'active' CHECK(status IN ('active','revoked')),
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    INSERT INTO users (id, dealership_id, name, email, password_hash, role, status, created_at)
+    SELECT id, dealership_id, name, email, password_hash,
+      CASE WHEN role = 'admin' AND lower(email) = 'admin@unitnavigator.com' THEN 'super_admin' ELSE role END,
+      'active',
+      created_at
+    FROM users_old_admin_migration;
+    DROP TABLE users_old_admin_migration;
+    PRAGMA foreign_keys = ON;
+  `);
+}
+
+db.prepare(`
+  UPDATE users
+  SET role = 'super_admin', status = 'active'
+  WHERE lower(email) = 'admin@unitnavigator.com'
+`).run();
 
 module.exports = db;

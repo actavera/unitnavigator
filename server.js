@@ -24,6 +24,7 @@ app.use('/api/customers', require('./routes/customers'));
 app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/paperwork', require('./routes/paperwork'));
 app.use('/api/public',    require('./routes/public'));
+app.use('/api/admin',     require('./routes/admin'));
 
 const staticPages = {
   '/':              'index.html',
@@ -34,6 +35,7 @@ const staticPages = {
   '/credit/new':    'credit-new.html',
   '/deals':         'deals.html',
   '/customers':     'customers.html',
+  '/admin':         'admin.html',
   '/paperwork/start':'paperwork-start.html',
   '/inventory':     'inventory.html',
   '/inventory/list':'inventory.html',

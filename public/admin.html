@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin — Unit Navigator</title>
+  <script>(function(){var t=localStorage.getItem('un_theme')||'dark';document.documentElement.dataset.theme=t;})()</script>
+  <link rel="stylesheet" href="/css/main.css">
+  <style>
+    .admin-shell { width: min(100% - 44px, 1320px); margin: 0 auto; padding: 30px 0 70px; }
+    .admin-hero { display: flex; justify-content: space-between; gap: 18px; align-items: end; margin-bottom: 20px; }
+    .admin-hero h1 { font-size: clamp(2.4rem, 5vw, 5.2rem); line-height: .9; letter-spacing: -.06em; margin: 6px 0 10px; }
+    .admin-hero p { color: var(--text-2); max-width: 720px; line-height: 1.55; }
+    .admin-grid { display: grid; grid-template-columns: .9fr 1.1fr; gap: 18px; align-items: start; }
+    .admin-card { border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--s1); box-shadow: var(--sh); overflow: hidden; }
+    .admin-card-head { padding: 18px 20px; border-bottom: 1px solid var(--border); display:flex; justify-content:space-between; gap:12px; align-items:center; }
+    .admin-card-head h2 { font-size: .92rem; text-transform: uppercase; letter-spacing: .06em; }
+    .admin-card-body { padding: 20px; display: grid; gap: 14px; }
+    .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; }
+    .form-grid .wide { grid-column: 1 / -1; }
+    .admin-list { display: grid; gap: 10px; }
+    .admin-row { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 12px; align-items: center; border: 1px solid var(--border); border-radius: var(--r); background: var(--s2); padding: 14px; }
+    .admin-row strong { display: block; }
+    .admin-row span { display:block; color: var(--muted); font-size:.85rem; margin-top:3px; }
+    .status-pill { display:inline-flex; align-items:center; justify-content:center; min-width: 74px; border-radius:999px; padding:6px 10px; font-size:.75rem; font-weight:900; text-transform:uppercase; }
+    .status-pill.active { color: var(--green); background: var(--green-bg); border:1px solid rgba(52,211,153,.24); }
+    .status-pill.revoked { color: var(--red); background: var(--red-bg); border:1px solid rgba(248,113,113,.24); }
+    .row-actions { display:flex; flex-wrap:wrap; gap:8px; justify-content:flex-end; }
+    .muted-note { color: var(--muted); font-size:.85rem; line-height:1.45; }
+    @media(max-width: 880px) { .admin-grid, .form-grid { grid-template-columns: 1fr; } .admin-hero { display:grid; } }
+  </style>
+</head>
+<body>
+<div id="nav-container"></div>
+<main class="admin-shell">
+  <section class="admin-hero">
+    <div>
+      <p class="home-kicker">Platform Admin</p>
+      <h1>Dealership access control.</h1>
+      <p>Add dealerships, create logins, reset passwords, and revoke access without touching the database.</p>
+    </div>
+    <button class="btn btn-ghost" onclick="loadAdmin()">Refresh</button>
+  </section>
+
+  <section class="admin-grid">
+    <article class="admin-card">
+      <div class="admin-card-head"><h2>Add Dealership</h2></div>
+      <div class="admin-card-body">
+        <div class="form-group">
+          <label class="form-label">Dealership Name</label>
+          <input class="form-input" id="dealerName" placeholder="Example Motors">
+        </div>
+        <button class="btn btn-primary" onclick="createDealership()">Create Dealership</button>
+      </div>
+    </article>
+
+    <article class="admin-card">
+      <div class="admin-card-head"><h2>Create Login</h2></div>
+      <div class="admin-card-body">
+        <div class="form-grid">
+          <div class="form-group wide"><label class="form-label">Dealership</label><select class="form-select" id="userDealer"></select></div>
+          <div class="form-group"><label class="form-label">Name</label><input class="form-input" id="userName" placeholder="Jane Smith"></div>
+          <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="userEmail" type="email" placeholder="jane@dealer.com"></div>
+          <div class="form-group"><label class="form-label">Role</label><select class="form-select" id="userRole"><option value="admin">Admin</option><option value="manager">Manager</option><option value="staff">Staff</option><option value="super_admin">Platform Admin</option></select></div>
+          <div class="form-group"><label class="form-label">Temp Password</label><input class="form-input" id="userPassword" value="UnitNav2026!"></div>
+        </div>
+        <button class="btn btn-primary" onclick="createUser()">Create Login</button>
+        <p class="muted-note">For now, give the temporary password to the dealer manually. Later we can send invite emails automatically.</p>
+      </div>
+    </article>
+
+    <article class="admin-card">
+      <div class="admin-card-head"><h2>Dealerships</h2></div>
+      <div class="admin-card-body"><div class="admin-list" id="dealershipList"></div></div>
+    </article>
+
+    <article class="admin-card">
+      <div class="admin-card-head"><h2>Users</h2></div>
+      <div class="admin-card-body"><div class="admin-list" id="userList"></div></div>
+    </article>
+  </section>
+</main>
+
+<script src="/js/nav.js"></script>
+<script>
+if (UN.requireAuth()) {
+  UN.renderNav();
+  const user = UN.getUser();
+  if (user?.role !== 'super_admin') {
+    document.querySelector('.admin-shell').innerHTML = '<section class="admin-card"><div class="admin-card-body"><h1>Platform admin only</h1><p class="muted-note">Your login does not have access to this area.</p></div></section>';
+  } else {
+    loadAdmin();
+  }
+}
+
+let dealerships = [];
+let users = [];
+
+async function loadAdmin() {
+  try {
+    const data = await UN.api('GET', '/api/admin/overview');
+    dealerships = data.dealerships || [];
+    users = data.users || [];
+    renderDealerships();
+    renderUsers();
+    renderDealerOptions();
+  } catch (e) {
+    toast(e.message, 'err');
+  }
+}
+
+function renderDealerOptions() {
+  const active = dealerships.filter(d => d.status !== 'revoked');
+  document.getElementById('userDealer').innerHTML = active.map(d => `<option value="${d.id}">${esc(d.name)}</option>`).join('');
+}
+
+function renderDealerships() {
+  const el = document.getElementById('dealershipList');
+  if (!dealerships.length) { el.innerHTML = '<p class="muted-note">No dealerships yet.</p>'; return; }
+  el.innerHTML = dealerships.map(d => `
+    <div class="admin-row">
+      <div>
+        <strong>${esc(d.name)}</strong>
+        <span>${d.user_count || 0} users · ${d.active_user_count || 0} active</span>
+      </div>
+      <div class="row-actions">
+        <span class="status-pill ${esc(d.status)}">${esc(d.status)}</span>
+        <button class="btn btn-ghost btn-sm" onclick="renameDealership(${d.id})">Rename</button>
+        <button class="btn ${d.status === 'revoked' ? 'btn-primary' : 'btn-danger'} btn-sm" onclick="setDealershipStatus(${d.id}, '${d.status === 'revoked' ? 'active' : 'revoked'}')">${d.status === 'revoked' ? 'Reactivate' : 'Revoke'}</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderUsers() {
+  const el = document.getElementById('userList');
+  if (!users.length) { el.innerHTML = '<p class="muted-note">No users yet.</p>'; return; }
+  el.innerHTML = users.map(u => `
+    <div class="admin-row">
+      <div>
+        <strong>${esc(u.name)} <span class="status-pill ${esc(u.status)}">${esc(u.status)}</span></strong>
+        <span>${esc(u.email)} · ${esc(u.role)} · ${esc(u.dealership_name || 'No dealership')}</span>
+      </div>
+      <div class="row-actions">
+        <button class="btn btn-ghost btn-sm" onclick="resetPassword(${u.id})">Password</button>
+        <button class="btn ${u.status === 'revoked' ? 'btn-primary' : 'btn-danger'} btn-sm" onclick="setUserStatus(${u.id}, '${u.status === 'revoked' ? 'active' : 'revoked'}')">${u.status === 'revoked' ? 'Reactivate' : 'Revoke'}</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function createDealership() {
+  const name = document.getElementById('dealerName').value.trim();
+  if (!name) return toast('Enter a dealership name', 'err');
+  await UN.api('POST', '/api/admin/dealerships', { name });
+  document.getElementById('dealerName').value = '';
+  toast('Dealership created');
+  loadAdmin();
+}
+
+async function createUser() {
+  const body = {
+    dealership_id: Number(document.getElementById('userDealer').value),
+    name: document.getElementById('userName').value.trim(),
+    email: document.getElementById('userEmail').value.trim(),
+    role: document.getElementById('userRole').value,
+    password: document.getElementById('userPassword').value,
+  };
+  await UN.api('POST', '/api/admin/users', body);
+  ['userName','userEmail'].forEach(id => document.getElementById(id).value = '');
+  toast('Login created');
+  loadAdmin();
+}
+
+async function renameDealership(id) {
+  const current = dealerships.find(d => d.id === id);
+  const name = prompt('Dealership name', current?.name || '');
+  if (!name) return;
+  await UN.api('PATCH', `/api/admin/dealerships/${id}`, { name, status: current.status });
+  toast('Dealership updated');
+  loadAdmin();
+}
+
+async function setDealershipStatus(id, status) {
+  const current = dealerships.find(d => d.id === id);
+  await UN.api('PATCH', `/api/admin/dealerships/${id}`, { name: current.name, status });
+  toast(status === 'revoked' ? 'Dealership revoked' : 'Dealership reactivated');
+  loadAdmin();
+}
+
+async function setUserStatus(id, status) {
+  await UN.api('PATCH', `/api/admin/users/${id}`, { status });
+  toast(status === 'revoked' ? 'Login revoked' : 'Login reactivated');
+  loadAdmin();
+}
+
+async function resetPassword(id) {
+  const password = prompt('New temporary password', 'UnitNav2026!');
+  if (!password) return;
+  await UN.api('PATCH', `/api/admin/users/${id}`, { password });
+  toast('Password updated');
+}
+
+function esc(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch]));
+}
+</script>
+</body>
+</html>

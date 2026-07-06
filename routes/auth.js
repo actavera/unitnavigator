@@ -13,8 +13,14 @@ router.post('/login', (req, res) => {
   if (!user || !bcrypt.compareSync(password, user.password_hash)) {
     return res.status(401).json({ error: 'Invalid email or password' });
   }
+  if (user.status === 'revoked') {
+    return res.status(403).json({ error: 'This login has been revoked' });
+  }
 
   const dealership = db.prepare('SELECT * FROM dealerships WHERE id = ?').get(user.dealership_id);
+  if (dealership?.status === 'revoked') {
+    return res.status(403).json({ error: 'This dealership has been revoked' });
+  }
   const token = jwt.sign(
     { id: user.id, name: user.name, email: user.email, role: user.role, dealership_id: user.dealership_id },
     JWT_SECRET,
