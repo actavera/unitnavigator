@@ -4,6 +4,7 @@ const db = require('../database');
 const { requireAuth } = require('../middleware/auth');
 
 const VALID_STATUSES = new Set(['pending', 'closed', 'dead', 'vehicle_changed']);
+const VALID_DEAL_TYPES = new Set(['we_finance', 'bhph', 'they_finance', 'cash']);
 
 function labelDealType(type) {
   return {
@@ -58,6 +59,13 @@ function logDeal(req, id, action, note) {
     VALUES (?, 'deal', ?, ?, ?, ?)`).run(req.user.dealership_id, id, action, note || null, req.user.id);
 }
 
+function splitName(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return { first_name: 'New', last_name: 'Customer' };
+  if (parts.length === 1) return { first_name: parts[0], last_name: '' };
+  return { first_name: parts.slice(0, -1).join(' '), last_name: parts.at(-1) };
+}
+
 router.get('/', requireAuth, (req, res) => {
   const { status, q } = req.query;
   let sql = dealSelect();
@@ -86,6 +94,59 @@ router.get('/', requireAuth, (req, res) => {
 
   const deals = db.prepare(sql).all(...params).map(enrichDeal);
   res.json({ deals });
+});
+
+router.post('/', requireAuth, (req, res) => {
+  const body = req.body || {};
+  const dealType = VALID_DEAL_TYPES.has(body.deal_type) ? body.deal_type : 'they_finance';
+  const customerBody = body.customer || {};
+  let customerId = Number(body.customer_id) || null;
+  const unitId = Number(body.unit_id) || null;
+
+  if (customerId) {
+    const customer = db.prepare('SELECT id FROM customers WHERE id = ? AND dealership_id = ?')
+      .get(customerId, req.user.dealership_id);
+    if (!customer) return res.status(400).json({ error: 'Selected customer was not found for this dealership' });
+  } else {
+    const { first_name, last_name } = splitName(customerBody.name);
+    const info = db.prepare(`
+      INSERT INTO customers (dealership_id, first_name, last_name, phone, email, address, id_number)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      req.user.dealership_id,
+      first_name,
+      last_name,
+      customerBody.phone || null,
+      customerBody.email || null,
+      customerBody.address || null,
+      customerBody.id_number || customerBody.idNumber || null
+    );
+    customerId = info.lastInsertRowid;
+  }
+
+  if (unitId) {
+    const unit = db.prepare('SELECT id FROM units WHERE id = ? AND dealership_id = ?')
+      .get(unitId, req.user.dealership_id);
+    if (!unit) return res.status(400).json({ error: 'Selected vehicle was not found for this dealership' });
+  }
+
+  const nextFollowUp = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+  const deal = db.prepare(`
+    INSERT INTO deals (dealership_id, customer_id, unit_id, deal_type, status, next_follow_up_at, last_status_check_at)
+    VALUES (?, ?, ?, ?, 'pending', ?, ?)
+  `).run(req.user.dealership_id, customerId, unitId || null, dealType, nextFollowUp, new Date().toISOString());
+
+  if (unitId) {
+    db.prepare(`
+      UPDATE units
+      SET stage = 'pending'
+      WHERE id = ? AND dealership_id = ? AND stage != 'sold'
+    `).run(unitId, req.user.dealership_id);
+  }
+
+  logDeal(req, deal.lastInsertRowid, 'Deal started', body.source || 'Started from paperwork builder');
+  const created = db.prepare(`${dealSelect()} AND d.id = ?`).get(req.user.dealership_id, deal.lastInsertRowid);
+  res.status(201).json({ deal: enrichDeal(created) });
 });
 
 router.get('/export/contacts.csv', requireAuth, (req, res) => {

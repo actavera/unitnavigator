@@ -463,6 +463,7 @@ let currentStep = 'packet';
 let inventoryUnits = [];
 let customers = [];
 let selectedCustomerId = null;
+let savedDealId = null;
 const DEFAULT_EMISSIONS_FEE = 30;
 
 const SAMPLE_CUSTOMERS = [
@@ -873,13 +874,51 @@ function packetData() {
   };
 }
 
-function buildPacket() {
+function dealTypeForPacket() {
+  if (packetType === 'bhph') return 'bhph';
+  if (packetType === 'cash') return 'cash';
+  return 'they_finance';
+}
+
+function selectedNumericCustomerId() {
+  const match = String(selectedCustomerId || '').match(/^customer-(\d+)$/);
+  return match ? Number(match[1]) : null;
+}
+
+async function saveDealFromPacket(data) {
+  if (savedDealId) return;
+  const selectedUnitId = Number(val('vehicleSelect')) || null;
+  const payload = {
+    customer_id: selectedNumericCustomerId(),
+    unit_id: selectedUnitId,
+    deal_type: dealTypeForPacket(),
+    source: 'Started from paperwork builder',
+    customer: {
+      name: data.customer.name,
+      phone: data.customer.phone,
+      email: data.customer.email,
+      address: data.customer.address,
+      id_number: data.customer.idNumber,
+    },
+  };
+  const result = await UN.api('POST', '/api/deals', payload);
+  savedDealId = result.deal?.id || null;
+  toast('Deal saved to Deals.', 'ok');
+}
+
+async function buildPacket() {
   built = true;
   goToStep('build');
   $('previewEmpty').classList.add('hidden');
   $('packetPreview').classList.remove('hidden');
   $('printBtn').disabled = false;
   $('esignBtn').disabled = false;
+  const data = packetData();
+  try {
+    await saveDealFromPacket(data);
+  } catch (err) {
+    toast(err.message || 'Packet built, but the deal was not saved.', 'warn');
+  }
   renderPacket();
 }
 
