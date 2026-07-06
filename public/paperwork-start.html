@@ -182,6 +182,23 @@
     .packet-checklist { display: grid; gap: 8px; margin-top: 12px; }
     .packet-check { display: grid; grid-template-columns: 18px minmax(0,1fr); gap: 8px; align-items: start; }
     .packet-check::before { content: ""; width: 14px; height: 14px; border: 1px solid #64748b; margin-top: 2px; }
+    .draft-form-title { display: flex; justify-content: space-between; gap: 18px; align-items: flex-start; border-bottom: 2px solid #111827; padding-bottom: 10px; margin-bottom: 16px; }
+    .draft-form-title h2 { color: #020617; font-size: 1.25rem; letter-spacing: -.025em; }
+    .draft-form-title span { color: #475569; font-size: .76rem; font-weight: 900; text-transform: uppercase; letter-spacing: .06em; text-align: right; }
+    .form-table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: .84rem; }
+    .form-table th, .form-table td { border: 1px solid #cbd5e1; padding: 7px 8px; text-align: left; vertical-align: top; }
+    .form-table th { background: #f8fafc; color: #475569; font-size: .68rem; text-transform: uppercase; letter-spacing: .055em; }
+    .form-field-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 12px 0; }
+    .form-field { border: 1px solid #cbd5e1; min-height: 54px; padding: 7px 8px; }
+    .form-field .label { display: block; color: #64748b; font-size: .65rem; font-weight: 900; letter-spacing: .055em; text-transform: uppercase; margin-bottom: 5px; }
+    .form-field .value { color: #020617; font-weight: 800; overflow-wrap: anywhere; }
+    .form-field.wide { grid-column: span 2; }
+    .form-field.full { grid-column: 1 / -1; }
+    .form-legal { color: #334155; font-size: .78rem; line-height: 1.45; margin: 10px 0; }
+    .buyer-guide-box { border: 3px solid #111827; padding: 16px; margin-top: 12px; }
+    .buyer-guide-box h3 { color: #020617; font-size: 1.35rem; text-align: center; letter-spacing: .02em; margin-bottom: 10px; }
+    .checkbox-line { display: grid; grid-template-columns: 18px minmax(0,1fr); gap: 8px; align-items: start; margin: 7px 0; color: #0f172a; }
+    .checkbox-line::before { content: ""; width: 14px; height: 14px; border: 1px solid #111827; margin-top: 2px; }
     .signature-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-top: 34px; }
     .signature-line { border-top: 1px solid #111827; padding-top: 7px; color: #334155; font-size: .85rem; }
     .field-map-table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: .8rem; }
@@ -845,13 +862,7 @@ function buildPacket() {
 function renderPacket() {
   if (!built) return;
   const data = packetData();
-  $('packetPreview').innerHTML = [
-    coverPage(data),
-    formChecklistPage(data),
-    termsPage(data),
-    data.packetType === 'bhph' ? bhphPage(data) : data.packetType === 'cash' ? cashPage(data) : outsideFinancingPage(data),
-    advancedMapPage(data),
-  ].join('');
+  $('packetPreview').innerHTML = coreFormPages(data);
 }
 
 function packetTop(data, subtitle) {
@@ -871,8 +882,29 @@ function line(label, value) {
   return `<div class="packet-line"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value || '-')}</strong></div>`;
 }
 
+function todayLabel() {
+  return new Date().toLocaleDateString('en-US');
+}
+
+function vehicleLabel(data) {
+  return `${data.vehicle.year} ${data.vehicle.make} ${data.vehicle.model}`.trim();
+}
+
+function formField(label, value, cls = '') {
+  return `<div class="form-field ${cls}"><span class="label">${escapeHtml(label)}</span><span class="value">${escapeHtml(value || '-')}</span></div>`;
+}
+
+function draftFormHeader(title, formName) {
+  return `
+    <div class="draft-form-title">
+      <h2>${escapeHtml(title)}</h2>
+      <span>${escapeHtml(formName)}<br>Printable packet form</span>
+    </div>
+  `;
+}
+
 function coverPage(data) {
-  const vehicle = `${data.vehicle.year} ${data.vehicle.make} ${data.vehicle.model}`.trim();
+  const vehicle = vehicleLabel(data);
   return `
     <article class="packet-page">
       ${packetTop(data, 'Generated from the deal workflow and ready for dealer review before print or e-sign export.')}
@@ -924,6 +956,32 @@ function coverPage(data) {
   `;
 }
 
+function coreFormPages(data) {
+  const pages = [
+    agreementToProvideInsurancePage(data),
+    buyersGuidePage(data),
+    buyersGuideDefectsPage(data),
+    purchaseAgreementPage(data),
+    purchaseAgreementDisclosuresPage(data),
+    purchaseAgreementTradePage(data),
+    purchaseAgreementSignaturePage(data),
+    odometerStatementPage(data),
+    titleApplicationPage(data),
+    titleApplicationPageTwo(data),
+    weOweYouOwePage(data),
+    tc466Page(data),
+    creditApplicationPage(data),
+    creditApplicationDisclosuresPage(data),
+  ];
+  if (data.rules.emissions === 'exempt' || data.rules.emissions === 'none') pages.push(tc820Page(data));
+  if (data.rules.emissions === 'required') pages.push(emissionsRequirementPage(data));
+  if (data.rules.isSalvage) pages.push(salvageDisclosurePage(data));
+  if (data.packetType === 'bhph') pages.push(bhphPage(data));
+  if (data.packetType === 'cash') pages.push(cashPage(data));
+  if (data.packetType === 'outside') pages.push(outsideFinancingPage(data));
+  return pages.join('');
+}
+
 function formChecklistPage(data) {
   const forms = [
     'Agreement to Provide Insurance',
@@ -959,6 +1017,491 @@ function formChecklistPage(data) {
         ${line('Dealer Custom Fees', 'Filing fee and lender processing fee are editable dealer settings.')}
       </section>
       <div class="packet-note">The old "Build Utah Packet" workbench belongs in dealer setup/settings. This Start Paperwork screen is now the daily workflow for actual deals.</div>
+    </article>
+  `;
+}
+
+function agreementToProvideInsurancePage(data) {
+  return `
+    <article class="packet-page">
+      ${draftFormHeader('Agreement to Provide Insurance', 'Insurance Agreement')}
+      <div class="form-field-grid">
+        ${formField('Buyer', data.customer.name)}
+        ${formField('Phone', data.customer.phone)}
+        ${formField('Date', todayLabel())}
+        ${formField('Vehicle', vehicleLabel(data))}
+        ${formField('VIN', data.vehicle.vin)}
+        ${formField('Amount Financed / Balance', money(data.pricing.amountFinanced))}
+      </div>
+      <p class="form-legal">Buyer agrees to keep required insurance coverage in force on the vehicle until the transaction is completed and any lienholder or dealer requirements have been satisfied. Buyer should provide proof of insurance before delivery when required by the dealership or lender.</p>
+      <table class="form-table">
+        <tbody>
+          <tr><th>Insurance Company</th><td></td><th>Policy Number</th><td></td></tr>
+          <tr><th>Agent / Phone</th><td></td><th>Effective Date</th><td></td></tr>
+          <tr><th>Comprehensive Deductible</th><td></td><th>Collision Deductible</th><td></td></tr>
+        </tbody>
+      </table>
+      <div class="signature-grid">
+        <div class="signature-line">Buyer Signature</div>
+        <div class="signature-line">Date</div>
+      </div>
+    </article>
+  `;
+}
+
+function buyersGuidePage(data) {
+  return `
+    <article class="packet-page">
+      ${draftFormHeader('Buyers Guide', 'FTC Buyers Guide')}
+      <div class="buyer-guide-box">
+        <h3>BUYERS GUIDE</h3>
+        <div class="form-field-grid">
+          ${formField('Vehicle', vehicleLabel(data))}
+          ${formField('VIN', data.vehicle.vin)}
+          ${formField('Odometer', data.vehicle.mileage ? `${Number(data.vehicle.mileage).toLocaleString()} mi` : '')}
+          ${formField('Dealer', data.dealer.name)}
+          ${formField('Sale Date', todayLabel())}
+          ${formField('Stock / Unit', val('vehicleSelect') || '')}
+        </div>
+        <div class="checkbox-line">As Is - No Dealer Warranty</div>
+        <div class="checkbox-line">Dealer Warranty - terms attached</div>
+        <div class="checkbox-line">Service Contract Available</div>
+        <p class="form-legal">Buyer acknowledges receipt of the Buyers Guide information for the vehicle listed above.</p>
+      </div>
+      <div class="signature-grid">
+        <div class="signature-line">Buyer Acknowledgment</div>
+        <div class="signature-line">Date</div>
+      </div>
+    </article>
+  `;
+}
+
+function buyersGuideDefectsPage(data) {
+  const defects = [
+    ['Frame & Body', 'Frame cracks, corrective welds, rusted through panels, dog tracks'],
+    ['Engine', 'Oil leakage, cracked block or head, belts missing, abnormal exhaust discharge'],
+    ['Transmission & Drive Shaft', 'Improper fluid level or leakage, cracked case, abnormal vibration'],
+    ['Differential', 'Fluid leakage, cracked housing, abnormal noise or vibration'],
+    ['Cooling System', 'Leakage, improperly functioning water pump'],
+    ['Electrical System', 'Battery leakage, alternator/starter failure'],
+    ['Fuel System', 'Visible leakage'],
+    ['Brake System', 'Warning light, pedal not firm, drum or rotor too thin'],
+    ['Steering System', 'Too much free play, steering gear binds, power unit leaks'],
+    ['Suspension System', 'Ball joints damaged, spring broken, shock absorbers leaking'],
+    ['Tires', 'Tread depth low, sizes mismatched, visible damage'],
+    ['Wheels', 'Visible cracks, loose or missing bolts'],
+  ];
+  return `
+    <article class="packet-page">
+      ${draftFormHeader('Buyers Guide - Major Defects', 'FTC Buyers Guide Page 2')}
+      <p class="form-legal">Here is a list of some major defects that may occur in used vehicles.</p>
+      <table class="form-table">
+        <tbody>
+          ${defects.map(([system, detail]) => `<tr><th>${escapeHtml(system)}</th><td>${escapeHtml(detail)}</td></tr>`).join('')}
+        </tbody>
+      </table>
+      <div class="form-field-grid">
+        ${formField('Dealer Name', data.dealer.name)}
+        ${formField('Address', 'Dealer address', 'wide')}
+        ${formField('Telephone', '')}
+        ${formField('Buyer', data.customer.name)}
+        ${formField('Date', todayLabel())}
+      </div>
+      <p class="form-legal">I acknowledge receipt of the Buyers Guide at the closing of this sale.</p>
+      <div class="signature-grid">
+        <div class="signature-line">Buyer Signature</div>
+        <div class="signature-line">Date</div>
+      </div>
+    </article>
+  `;
+}
+
+function purchaseAgreementPage(data) {
+  return `
+    <article class="packet-page">
+      ${draftFormHeader('Purchase Agreement / Buyers Order', 'Retail Purchase Agreement')}
+      <div class="form-field-grid">
+        ${formField('Buyer', data.customer.name)}
+        ${formField('Co-Buyer', data.customer.coBuyer)}
+        ${formField('ID Number', data.customer.idNumber)}
+        ${formField('Address', data.customer.address, 'full')}
+        ${formField('Vehicle', vehicleLabel(data))}
+        ${formField('VIN', data.vehicle.vin)}
+        ${formField('Mileage', data.vehicle.mileage ? `${Number(data.vehicle.mileage).toLocaleString()} mi` : '')}
+        ${formField('Title Brand', data.vehicle.titleBrand)}
+      </div>
+      <table class="form-table">
+        <tbody>
+          <tr><th>Sale Price</th><td>${money(data.pricing.salePrice)}</td><th>Dealer Doc Fee</th><td>${money(data.pricing.docFee)}</td></tr>
+          <tr><th>Filing Fee</th><td>${money(data.pricing.filingFee)}</td><th>Lender Processing Fee</th><td>${money(data.pricing.lenderFee)}</td></tr>
+          <tr><th>License / Plate / Age Property</th><td>${money(data.pricing.licenseFee + data.pricing.plateFee + data.pricing.agePropertyTax)}</td><th>Title / Emissions</th><td>${money(data.pricing.titleFee + data.pricing.emissionsFee)}</td></tr>
+          <tr><th>Insurance / GAP / VSI</th><td>${money(data.pricing.insuranceGapVsi)}</td><th>Accessories / Products</th><td>${money(data.pricing.accessories + data.pricing.products)}</td></tr>
+          <tr><th>Total Tax</th><td>${money(data.pricing.salesTax)}</td><th>Out-the-Door Total</th><td>${money(data.pricing.total)}</td></tr>
+          <tr><th>Down Payment</th><td>${money(data.pricing.downPayment)}</td><th>Trade Allowance</th><td>${money(data.pricing.trade)}</td></tr>
+          <tr><th>${data.packetType === 'cash' ? 'Balance Due' : 'Amount Financed'}</th><td colspan="3">${money(data.pricing.amountFinanced)}</td></tr>
+        </tbody>
+      </table>
+      <div class="signature-grid">
+        <div class="signature-line">Buyer Signature</div>
+        <div class="signature-line">Dealer Signature</div>
+      </div>
+    </article>
+  `;
+}
+
+function purchaseAgreementDisclosuresPage(data) {
+  return `
+    <article class="packet-page">
+      ${draftFormHeader('Purchase Agreement - Disclosures', 'Retail Purchase Agreement Page 2')}
+      <div class="packet-grid">
+        <section class="packet-box">
+          <h4>Itemization of Vehicle Costs</h4>
+          ${line('Cash Price of Vehicle', money(data.pricing.salePrice))}
+          ${line('Sales Tax', money(data.pricing.salesTax))}
+          ${line('Dealer Doc Fee', money(data.pricing.docFee))}
+          ${line('License / Title / Registration', money(data.pricing.licenseFee + data.pricing.titleFee + data.pricing.plateFee))}
+          ${line('Age / Property Assessment', money(data.pricing.agePropertyTax))}
+          ${line('Optional Products', money(data.pricing.insuranceGapVsi + data.pricing.accessories + data.pricing.products))}
+          ${line('Total Sale Price', money(data.pricing.total))}
+          ${line('Down Payment / Trade', money(data.pricing.downPayment + data.pricing.trade))}
+          ${line('Unpaid Balance', money(data.pricing.amountFinanced))}
+        </section>
+        <section class="packet-box">
+          <h4>Used Vehicle Disclosure</h4>
+          <p class="form-legal">Unless a written warranty or service contract applies, the vehicle may be sold as-is. Any Buyers Guide window form for this vehicle is part of the contract.</p>
+          <p class="form-legal">Buyer acknowledges review of the sale price, taxes, fees, optional products, trade allowance, down payment, and unpaid balance.</p>
+        </section>
+      </div>
+      <p class="form-legal">Used Vehicles: Buyer understands the vehicle information, odometer reading, and title information are represented based on available records and dealer disclosures.</p>
+    </article>
+  `;
+}
+
+function purchaseAgreementTradePage(data) {
+  return `
+    <article class="packet-page">
+      ${draftFormHeader('Purchase Agreement - Trade-In Information', 'Retail Purchase Agreement Page 3')}
+      <table class="form-table">
+        <thead><tr><th>Trade Vehicle</th><th>VIN</th><th>Mileage</th><th>Allowance</th><th>Payoff</th></tr></thead>
+        <tbody>
+          <tr><td>&nbsp;</td><td></td><td></td><td>${money(data.pricing.trade)}</td><td></td></tr>
+          <tr><td>&nbsp;</td><td></td><td></td><td></td><td></td></tr>
+        </tbody>
+      </table>
+      <p class="form-legal">Buyer represents that any trade-in vehicle is owned by buyer, has the actual mileage stated, and has not been materially altered, repaired, branded, flooded, or subject to undisclosed liens except as disclosed to dealer.</p>
+      <p class="form-legal">Buyer agrees to provide evidence of title and payoff information for any trade-in. Dealer may adjust trade allowance if payoff, condition, title status, or represented information is inaccurate.</p>
+      <div class="signature-grid">
+        <div class="signature-line">Buyer Signature</div>
+        <div class="signature-line">Date</div>
+      </div>
+    </article>
+  `;
+}
+
+function purchaseAgreementSignaturePage(data) {
+  return `
+    <article class="packet-page">
+      ${draftFormHeader('Purchase Agreement - Acceptance', 'Retail Purchase Agreement Page 4')}
+      <p class="form-legal">Buyer acknowledges receipt of the agreement and agrees to complete the vehicle purchase according to the terms shown in the packet. Buyer confirms the information provided for the transaction is complete and accurate.</p>
+      <div class="form-field-grid">
+        ${formField('Buyer', data.customer.name)}
+        ${formField('Co-Buyer', data.customer.coBuyer)}
+        ${formField('Vehicle', vehicleLabel(data))}
+        ${formField('VIN', data.vehicle.vin)}
+        ${formField('Date', todayLabel())}
+        ${formField('Unpaid Balance', money(data.pricing.amountFinanced))}
+      </div>
+      <div class="signature-grid">
+        <div class="signature-line">Buyer Signature</div>
+        <div class="signature-line">Date</div>
+        <div class="signature-line">Co-Buyer Signature</div>
+        <div class="signature-line">Date</div>
+        <div class="signature-line">Dealer Signature</div>
+        <div class="signature-line">Date</div>
+      </div>
+    </article>
+  `;
+}
+
+function odometerStatementPage(data) {
+  return `
+    <article class="packet-page">
+      ${draftFormHeader('Utah DMV Odometer Disclosure Statement', 'Odometer Statement')}
+      <p class="form-legal">Federal and state law require odometer disclosure for many ownership transfers. Review exemptions before final delivery.</p>
+      <div class="form-field-grid">
+        ${formField('Transferor / Seller', data.dealer.name)}
+        ${formField('Transferee / Buyer', data.customer.name)}
+        ${formField('Date of Sale', todayLabel())}
+        ${formField('Vehicle', vehicleLabel(data))}
+        ${formField('VIN', data.vehicle.vin)}
+        ${formField('Odometer Reading', data.vehicle.mileage ? `${Number(data.vehicle.mileage).toLocaleString()} mi` : '')}
+      </div>
+      <div class="checkbox-line">Actual mileage</div>
+      <div class="checkbox-line">Mileage exceeds mechanical limits</div>
+      <div class="checkbox-line">Not actual mileage / odometer discrepancy</div>
+      <div class="signature-grid">
+        <div class="signature-line">Seller Signature</div>
+        <div class="signature-line">Buyer Signature</div>
+      </div>
+    </article>
+  `;
+}
+
+function titleApplicationPage(data) {
+  return `
+    <article class="packet-page">
+      ${draftFormHeader('Utah Application for Title / Registration', 'TC-656')}
+      <div class="form-field-grid">
+        ${formField('Primary Owner', data.customer.name)}
+        ${formField('Owner ID Number', data.customer.idNumber)}
+        ${formField('Phone', data.customer.phone)}
+        ${formField('Email', data.customer.email)}
+        ${formField('Address', data.customer.address, 'wide')}
+        ${formField('Co-Owner', data.customer.coBuyer)}
+        ${formField('Year', data.vehicle.year)}
+        ${formField('Make', data.vehicle.make)}
+        ${formField('Model', data.vehicle.model)}
+        ${formField('VIN', data.vehicle.vin, 'wide')}
+        ${formField('Color', data.vehicle.color)}
+        ${formField('Fuel', data.vehicle.fuel)}
+        ${formField('Odometer', data.vehicle.mileage ? `${Number(data.vehicle.mileage).toLocaleString()} mi` : '')}
+        ${formField('County', data.vehicle.county)}
+        ${formField('Registration Period', `${data.vehicle.registrationPeriod} months`)}
+      </div>
+      <table class="form-table">
+        <tbody>
+          <tr><th>Title Fee</th><td>${money(data.pricing.titleFee)}</td><th>Registration / License</th><td>${money(data.pricing.licenseFee)}</td></tr>
+          <tr><th>Plate Fee</th><td>${money(data.pricing.plateFee)}</td><th>Age Property Tax</th><td>${money(data.pricing.agePropertyTax)}</td></tr>
+          <tr><th>Emissions</th><td colspan="3">${escapeHtml(data.rules.reason)}</td></tr>
+        </tbody>
+      </table>
+      <div class="signature-grid">
+        <div class="signature-line">Applicant Signature</div>
+        <div class="signature-line">Date</div>
+      </div>
+    </article>
+  `;
+}
+
+function titleApplicationPageTwo(data) {
+  return `
+    <article class="packet-page">
+      ${draftFormHeader('Utah Application for Title / Registration', 'TC-656 Page 2')}
+      <section class="packet-box">
+        <h4>Vehicle Type</h4>
+        <div class="checkbox-line">Passenger, light truck, van or utility</div>
+        <div class="checkbox-line">Motorcycle / street motorcycle</div>
+        <div class="checkbox-line">Trailer / camper / utility</div>
+        <div class="checkbox-line">Off-highway / ATV / UTV / snowmobile</div>
+      </section>
+      <div class="form-field-grid">
+        ${formField('Odometer', data.vehicle.mileage ? `${Number(data.vehicle.mileage).toLocaleString()} mi` : '')}
+        ${formField('Reading Is', 'Miles')}
+        ${formField('Plate Type', 'Standard')}
+        ${formField('Lien Holder', data.packetType === 'cash' ? '' : data.dealer.name)}
+        ${formField('Purchase Date', todayLabel())}
+        ${formField('Dealer Number', data.dealer.number)}
+      </div>
+      <p class="form-legal">Owner certifies the vehicle information is accurate and that required security, insurance, registration, and dealer information has been reviewed.</p>
+      <div class="signature-grid">
+        <div class="signature-line">Owner Signature</div>
+        <div class="signature-line">Dealer Authorized Representative</div>
+      </div>
+    </article>
+  `;
+}
+
+function weOweYouOwePage(data) {
+  return `
+    <article class="packet-page">
+      ${draftFormHeader('We Owe / You Owe', 'Delivery Promises')}
+      <div class="form-field-grid">
+        ${formField('Buyer', data.customer.name)}
+        ${formField('Vehicle', vehicleLabel(data))}
+        ${formField('VIN', data.vehicle.vin)}
+      </div>
+      <table class="form-table">
+        <thead><tr><th>Dealer Owes Buyer</th><th>Due Date</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>&nbsp;</td><td></td><td></td></tr>
+          <tr><td>&nbsp;</td><td></td><td></td></tr>
+          <tr><td>&nbsp;</td><td></td><td></td></tr>
+        </tbody>
+      </table>
+      <table class="form-table">
+        <thead><tr><th>Buyer Owes Dealer</th><th>Due Date</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>&nbsp;</td><td></td><td></td></tr>
+          <tr><td>&nbsp;</td><td></td><td></td></tr>
+        </tbody>
+      </table>
+      <div class="signature-grid">
+        <div class="signature-line">Buyer Signature</div>
+        <div class="signature-line">Dealer Signature</div>
+      </div>
+    </article>
+  `;
+}
+
+function tc466Page(data) {
+  return `
+    <article class="packet-page">
+      ${draftFormHeader('Transaction Disclosure', 'Utah TC-466')}
+      <div class="form-field-grid">
+        ${formField('Dealer', data.dealer.name)}
+        ${formField('Dealer Number', data.dealer.number)}
+        ${formField('Date', todayLabel())}
+        ${formField('Buyer', data.customer.name)}
+        ${formField('Vehicle', vehicleLabel(data))}
+        ${formField('VIN', data.vehicle.vin)}
+      </div>
+      <table class="form-table">
+        <tbody>
+          <tr><th>1. Cash Price / Sale Price</th><td>${money(data.pricing.salePrice)}</td></tr>
+          <tr><th>2. Accessories / Products / Insurance / GAP / VSI</th><td>${money(data.pricing.accessories + data.pricing.products + data.pricing.insuranceGapVsi)}</td></tr>
+          <tr><th>3. Dealer Documentary Service Fee</th><td>${money(data.pricing.docFee)}</td></tr>
+          <tr><th>4. Government Fees / Registration / Title / Emissions</th><td>${money(data.pricing.licenseFee + data.pricing.plateFee + data.pricing.agePropertyTax + data.pricing.titleFee + data.pricing.emissionsFee)}</td></tr>
+          <tr><th>5. Taxes</th><td>${money(data.pricing.salesTax)}</td></tr>
+          <tr><th>6. Trade-In Allowance</th><td>${money(data.pricing.trade)}</td></tr>
+          <tr><th>7. Down Payment</th><td>${money(data.pricing.downPayment)}</td></tr>
+          <tr><th>8. Amount Financed / Balance Due</th><td>${money(data.pricing.amountFinanced)}</td></tr>
+        </tbody>
+      </table>
+      <div class="signature-grid">
+        <div class="signature-line">Buyer Signature</div>
+        <div class="signature-line">Dealer Signature</div>
+      </div>
+    </article>
+  `;
+}
+
+function creditApplicationPage(data) {
+  return `
+    <article class="packet-page">
+      ${draftFormHeader('Credit Application', 'Credit Application')}
+      <div class="form-field-grid">
+        ${formField('Applicant Name', data.customer.name)}
+        ${formField('ID Number', data.customer.idNumber)}
+        ${formField('Phone', data.customer.phone)}
+        ${formField('Email', data.customer.email)}
+        ${formField('Current Address', data.customer.address, 'wide')}
+        ${formField('Co-Buyer', data.customer.coBuyer)}
+        ${formField('Vehicle Requested', vehicleLabel(data))}
+        ${formField('Sale Price', money(data.pricing.salePrice))}
+        ${formField('Down Payment', money(data.pricing.downPayment))}
+      </div>
+      <table class="form-table">
+        <tbody>
+          <tr><th>Date of Birth</th><td></td><th>SSN</th><td></td></tr>
+          <tr><th>Employer</th><td></td><th>Monthly Income</th><td></td></tr>
+          <tr><th>Time at Job</th><td></td><th>Time at Residence</th><td></td></tr>
+          <tr><th>Previous Address</th><td colspan="3"></td></tr>
+        </tbody>
+      </table>
+      <p class="form-legal">Applicant authorizes the dealership and its finance sources to verify application information and obtain credit reports where permitted by law.</p>
+      <div class="signature-grid">
+        <div class="signature-line">Applicant Signature</div>
+        <div class="signature-line">Date</div>
+      </div>
+    </article>
+  `;
+}
+
+function creditApplicationDisclosuresPage(data) {
+  return `
+    <article class="packet-page">
+      ${draftFormHeader('Credit Application Disclosures', 'Credit Application Page 2')}
+      <section class="packet-box">
+        <h4>Joint Credit</h4>
+        <p class="form-legal">Applicants intend to apply for joint credit only when both applicant and co-applicant sign below or otherwise indicate joint application intent.</p>
+      </section>
+      <section class="packet-box">
+        <h4>Financial Institution(s)</h4>
+        <p class="form-legal">${escapeHtml(data.dealer.name)} may submit this application to finance sources selected for the transaction.</p>
+      </section>
+      <section class="packet-box">
+        <h4>Authorization</h4>
+        <p class="form-legal">By signing below, applicant certifies the information in this credit application is complete and correct, authorizes credit reports and verification of application information, and authorizes release of information about credit experience as permitted by law.</p>
+      </section>
+      <div class="signature-grid">
+        <div class="signature-line">Applicant Signature</div>
+        <div class="signature-line">Date</div>
+        <div class="signature-line">Co-Applicant Signature</div>
+        <div class="signature-line">Date</div>
+      </div>
+    </article>
+  `;
+}
+
+function tc820Page(data) {
+  return `
+    <article class="packet-page">
+      ${draftFormHeader('Emissions Exemption Affidavit', 'TC-820')}
+      <div class="form-field-grid">
+        ${formField('Owner / Buyer', data.customer.name)}
+        ${formField('ID Number', data.customer.idNumber)}
+        ${formField('County', data.vehicle.county)}
+        ${formField('Vehicle', vehicleLabel(data))}
+        ${formField('VIN', data.vehicle.vin)}
+        ${formField('Model Year', data.vehicle.year)}
+      </div>
+      <p class="form-legal">The vehicle is being marked emissions exempt or not required based on the selected county, vehicle type, fuel type, model year, or dealer override.</p>
+      <div class="checkbox-line">Newer model year exemption</div>
+      <div class="checkbox-line">Vehicle type or fuel exemption</div>
+      <div class="checkbox-line">County emissions not required</div>
+      <div class="checkbox-line">Other exemption: ________________________________</div>
+      <div class="signature-grid">
+        <div class="signature-line">Applicant Signature</div>
+        <div class="signature-line">Date</div>
+      </div>
+    </article>
+  `;
+}
+
+function emissionsRequirementPage(data) {
+  return `
+    <article class="packet-page">
+      ${draftFormHeader('Emissions Requirement Notice', 'Emissions Check')}
+      <div class="form-field-grid">
+        ${formField('Buyer', data.customer.name)}
+        ${formField('County', data.vehicle.county)}
+        ${formField('Vehicle', vehicleLabel(data))}
+        ${formField('VIN', data.vehicle.vin)}
+        ${formField('Fuel', data.vehicle.fuel)}
+        ${formField('Requirement', data.rules.reason)}
+      </div>
+      <p class="form-legal">Buyer and dealer acknowledge an emissions inspection or related county requirement may be required before registration is completed.</p>
+      <table class="form-table">
+        <tbody>
+          <tr><th>Inspection Station</th><td></td><th>Inspection Date</th><td></td></tr>
+          <tr><th>Certificate / Result</th><td></td><th>Fee</th><td>${money(data.pricing.emissionsFee)}</td></tr>
+        </tbody>
+      </table>
+      <div class="signature-grid">
+        <div class="signature-line">Buyer Signature</div>
+        <div class="signature-line">Dealer Signature</div>
+      </div>
+    </article>
+  `;
+}
+
+function salvageDisclosurePage(data) {
+  return `
+    <article class="packet-page">
+      ${draftFormHeader('Salvage / Branded Title Disclosure', 'TC-814')}
+      <div class="form-field-grid">
+        ${formField('Buyer', data.customer.name)}
+        ${formField('Vehicle', vehicleLabel(data))}
+        ${formField('VIN', data.vehicle.vin)}
+        ${formField('Title Brand', data.vehicle.titleBrand)}
+        ${formField('Odometer', data.vehicle.mileage ? `${Number(data.vehicle.mileage).toLocaleString()} mi` : '')}
+        ${formField('Date', todayLabel())}
+      </div>
+      <p class="form-legal">Buyer acknowledges the vehicle has a salvage, branded, rebuilt, or otherwise disclosed title condition as shown above.</p>
+      <div class="signature-grid">
+        <div class="signature-line">Buyer Signature</div>
+        <div class="signature-line">Dealer Signature</div>
+      </div>
     </article>
   `;
 }
@@ -1001,16 +1544,23 @@ function termsPage(data) {
 function outsideFinancingPage(data) {
   return `
     <article class="packet-page">
-      ${packetTop(data, 'Outside financing handoff.')}
-      <section class="packet-box">
-        <h4>Outside Financing Tasks</h4>
-        <div class="packet-checklist">
-          <div class="packet-check">Confirm lender approval and funding instructions.</div>
-          <div class="packet-check">Collect down payment and verify cashier check/wire when required.</div>
-          <div class="packet-check">Attach title application, bill of sale, odometer disclosure, Buyers Guide, and emissions/fee worksheet.</div>
-          <div class="packet-check">Mark deal funded once lender proceeds are received.</div>
-        </div>
-      </section>
+      ${draftFormHeader('Outside Financing Acknowledgment', 'Funding Verification')}
+      <div class="form-field-grid">
+        ${formField('Buyer', data.customer.name)}
+        ${formField('Vehicle', vehicleLabel(data))}
+        ${formField('VIN', data.vehicle.vin)}
+        ${formField('Sale Price', money(data.pricing.salePrice))}
+        ${formField('Down Payment', money(data.pricing.downPayment))}
+        ${formField('Amount to be funded / paid', money(data.pricing.amountFinanced))}
+      </div>
+      <table class="form-table">
+        <tbody>
+          <tr><th>Lender / Funding Source</th><td></td><th>Approval Number</th><td></td></tr>
+          <tr><th>Funding Contact</th><td></td><th>Funding Date</th><td></td></tr>
+          <tr><th>Stipulations / Notes</th><td colspan="3"></td></tr>
+        </tbody>
+      </table>
+      <p class="form-legal">Buyer acknowledges the vehicle purchase is being completed with outside financing or customer-arranged funds. Delivery may be conditioned on final funding approval and receipt of required funds.</p>
       <div class="signature-grid">
         <div class="signature-line">Buyer Signature</div>
         <div class="signature-line">Dealer Signature</div>
@@ -1022,16 +1572,23 @@ function outsideFinancingPage(data) {
 function cashPage(data) {
   return `
     <article class="packet-page">
-      ${packetTop(data, 'Cash deal handoff.')}
-      <section class="packet-box">
-        <h4>Cash Deal Tasks</h4>
-        <div class="packet-checklist">
-          <div class="packet-check">Confirm paid-in-full funds before delivery.</div>
-          <div class="packet-check">Collect cash/check/wire receipt details.</div>
-          <div class="packet-check">Attach title application, purchase agreement, odometer disclosure, Buyers Guide, TC-466, and We Owe / You Owe.</div>
-          <div class="packet-check">Review emissions and salvage/branded title forms automatically included above.</div>
-        </div>
-      </section>
+      ${draftFormHeader('Cash Receipt / Balance Due', 'Cash Deal')}
+      <div class="form-field-grid">
+        ${formField('Buyer', data.customer.name)}
+        ${formField('Vehicle', vehicleLabel(data))}
+        ${formField('VIN', data.vehicle.vin)}
+        ${formField('Out-the-Door Total', money(data.pricing.total))}
+        ${formField('Down Payment / Deposit', money(data.pricing.downPayment))}
+        ${formField('Balance Due', money(data.pricing.balanceDue))}
+      </div>
+      <table class="form-table">
+        <tbody>
+          <tr><th>Payment Method</th><td></td><th>Reference / Check Number</th><td></td></tr>
+          <tr><th>Amount Received</th><td></td><th>Date Received</th><td></td></tr>
+          <tr><th>Balance Remaining</th><td colspan="3"></td></tr>
+        </tbody>
+      </table>
+      <p class="form-legal">Buyer and dealer acknowledge the cash sale balance shown above. Vehicle delivery may be conditioned on verified funds.</p>
       <div class="signature-grid">
         <div class="signature-line">Buyer Signature</div>
         <div class="signature-line">Dealer Signature</div>
@@ -1043,28 +1600,28 @@ function cashPage(data) {
 function bhphPage(data) {
   return `
     <article class="packet-page">
-      ${packetTop(data, 'BHPH terms and payment schedule draft.')}
-      <div class="packet-grid">
-        <section class="packet-box">
-          <h4>BHPH Terms</h4>
-          ${line('Amount Financed', money(data.pricing.amountFinanced))}
-          ${line('APR', `${data.finance.apr.toFixed(2)}%`)}
-          ${line('Payment Amount', money(data.finance.payment))}
-          ${line('Payment Count', `${data.finance.paymentCount}`)}
-          ${line('First Payment', data.finance.firstPayment)}
-          ${line('Late Fee / Grace', `${money(data.finance.lateFee)} / ${data.finance.graceDays} days`)}
-        </section>
-        <section class="packet-box">
-          <h4>BHPH Acknowledgments</h4>
-          <div class="packet-checklist">
-            <div class="packet-check">Insurance requirement reviewed.</div>
-            <div class="packet-check">Late payment and default process reviewed.</div>
-            <div class="packet-check">Repossession/default language must be counsel-reviewed before live use.</div>
-            <div class="packet-check">Payment schedule accepted by buyer.</div>
-          </div>
-        </section>
+      ${draftFormHeader('BHPH Retail Installment Terms', 'Payment Agreement')}
+      <div class="form-field-grid">
+        ${formField('Buyer', data.customer.name)}
+        ${formField('Vehicle', vehicleLabel(data))}
+        ${formField('VIN', data.vehicle.vin)}
+        ${formField('Amount Financed', money(data.pricing.amountFinanced))}
+        ${formField('APR', `${data.finance.apr.toFixed(2)}%`)}
+        ${formField('Term', `${data.finance.termMonths} months`)}
+        ${formField('Payment Amount', money(data.finance.payment))}
+        ${formField('Number of Payments', data.finance.paymentCount)}
+        ${formField('Payment Frequency', data.finance.frequency)}
+        ${formField('First Payment Due', data.finance.firstPayment)}
+        ${formField('Late Fee', money(data.finance.lateFee))}
+        ${formField('Grace Days', `${data.finance.graceDays} days`)}
       </div>
-      <div class="packet-warning">BHPH paperwork is higher risk. Treat this as a workflow placeholder until the dealer's attorney signs off on the contract language and disclosures.</div>
+      <table class="form-table">
+        <thead><tr><th>Payment #</th><th>Due Date</th><th>Amount</th><th>Status</th></tr></thead>
+        <tbody>
+          ${[1,2,3,4,5,6].map(n => `<tr><td>${n}</td><td></td><td>${money(data.finance.payment)}</td><td></td></tr>`).join('')}
+        </tbody>
+      </table>
+      <p class="form-legal">Buyer acknowledges the payment amount, frequency, due date, late fee, and grace period shown above.</p>
       <div class="signature-grid">
         <div class="signature-line">Buyer Signature</div>
         <div class="signature-line">Dealer Signature</div>
