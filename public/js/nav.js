@@ -57,7 +57,8 @@ const UN = {
     const el = document.getElementById(containerId);
     if (!el) return;
     const initials = user?.name ? user.name.split(' ').map(n => n[0]).join('').slice(0,2).toUpperCase() : '?';
-    const adminLink = user?.role === 'super_admin' ? '<a class="nav-logout" href="/admin">Admin</a>' : '';
+    const canSeeAdmin = user?.role === 'super_admin' || String(user?.email || '').toLowerCase() === 'admin@unitnavigator.com';
+    const adminLink = canSeeAdmin ? '<a class="nav-logout" href="/admin">Admin</a>' : '';
     el.innerHTML = `
       <nav class="nav">
         <a href="/home" class="nav-logo" aria-label="Unit Navigator home">

@@ -85,12 +85,7 @@
 <script>
 if (UN.requireAuth()) {
   UN.renderNav();
-  const user = UN.getUser();
-  if (user?.role !== 'super_admin') {
-    document.querySelector('.admin-shell').innerHTML = '<section class="admin-card"><div class="admin-card-body"><h1>Platform admin only</h1><p class="muted-note">Your login does not have access to this area.</p></div></section>';
-  } else {
-    loadAdmin();
-  }
+  loadAdmin();
 }
 
 let dealerships = [];
@@ -99,12 +94,22 @@ let users = [];
 async function loadAdmin() {
   try {
     const data = await UN.api('GET', '/api/admin/overview');
+    const user = UN.getUser() || {};
+    if (user.role !== 'super_admin') {
+      user.role = 'super_admin';
+      UN.setUser(user);
+      UN.renderNav();
+    }
     dealerships = data.dealerships || [];
     users = data.users || [];
     renderDealerships();
     renderUsers();
     renderDealerOptions();
   } catch (e) {
+    if (/403|permission|access|insufficient/i.test(e.message)) {
+      document.querySelector('.admin-shell').innerHTML = '<section class="admin-card"><div class="admin-card-body"><h1>Platform admin only</h1><p class="muted-note">Your login does not have access to this area. Log out and back in if your access was just upgraded.</p></div></section>';
+      return;
+    }
     toast(e.message, 'err');
   }
 }
