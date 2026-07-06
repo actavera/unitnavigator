@@ -132,6 +132,7 @@ function renderDealerships() {
         <span class="status-pill ${esc(d.status)}">${esc(d.status)}</span>
         <button class="btn btn-ghost btn-sm" onclick="renameDealership(${d.id})">Rename</button>
         <button class="btn ${d.status === 'revoked' ? 'btn-primary' : 'btn-danger'} btn-sm" onclick="setDealershipStatus(${d.id}, '${d.status === 'revoked' ? 'active' : 'revoked'}')">${d.status === 'revoked' ? 'Reactivate' : 'Revoke'}</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteDealership(${d.id})">Delete</button>
       </div>
     </div>
   `).join('');
@@ -147,8 +148,10 @@ function renderUsers() {
         <span>${esc(u.email)} · ${esc(u.role)} · ${esc(u.dealership_name || 'No dealership')}</span>
       </div>
       <div class="row-actions">
+        <button class="btn btn-ghost btn-sm" onclick="editUser(${u.id})">Edit</button>
         <button class="btn btn-ghost btn-sm" onclick="resetPassword(${u.id})">Password</button>
         <button class="btn ${u.status === 'revoked' ? 'btn-primary' : 'btn-danger'} btn-sm" onclick="setUserStatus(${u.id}, '${u.status === 'revoked' ? 'active' : 'revoked'}')">${u.status === 'revoked' ? 'Reactivate' : 'Revoke'}</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteUser(${u.id})">Delete</button>
       </div>
     </div>
   `).join('');
@@ -193,6 +196,40 @@ async function setDealershipStatus(id, status) {
   loadAdmin();
 }
 
+async function deleteDealership(id) {
+  const current = dealerships.find(d => d.id === id);
+  if (!confirm(`Delete ${current?.name || 'this dealership'}? This only works if it has no inventory, customers, deals, credit pulls, or documents.`)) return;
+  try {
+    await UN.api('DELETE', `/api/admin/dealerships/${id}`);
+    toast('Dealership deleted');
+    loadAdmin();
+  } catch (e) {
+    toast(e.message, 'err');
+  }
+}
+
+async function editUser(id) {
+  const user = users.find(u => u.id === id);
+  if (!user) return;
+  const name = prompt('Name', user.name || '');
+  if (!name) return;
+  const email = prompt('Email login', user.email || '');
+  if (!email) return;
+  const role = prompt('Role: super_admin, admin, manager, staff', user.role || 'staff');
+  if (!role) return;
+  const dealerInput = prompt('Dealership ID', String(user.dealership_id || ''));
+  if (!dealerInput) return;
+  await UN.api('PATCH', `/api/admin/users/${id}`, {
+    name,
+    email,
+    role,
+    dealership_id: Number(dealerInput),
+    status: user.status,
+  });
+  toast('Login updated');
+  loadAdmin();
+}
+
 async function setUserStatus(id, status) {
   await UN.api('PATCH', `/api/admin/users/${id}`, { status });
   toast(status === 'revoked' ? 'Login revoked' : 'Login reactivated');
@@ -204,6 +241,14 @@ async function resetPassword(id) {
   if (!password) return;
   await UN.api('PATCH', `/api/admin/users/${id}`, { password });
   toast('Password updated');
+}
+
+async function deleteUser(id) {
+  const user = users.find(u => u.id === id);
+  if (!confirm(`Delete login for ${user?.email || 'this user'}?`)) return;
+  await UN.api('DELETE', `/api/admin/users/${id}`);
+  toast('Login deleted');
+  loadAdmin();
 }
 
 function esc(value) {

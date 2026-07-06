@@ -59,6 +59,34 @@ router.patch('/dealerships/:id', (req, res) => {
   res.json({ dealership: db.prepare('SELECT * FROM dealerships WHERE id = ?').get(dealership.id) });
 });
 
+router.delete('/dealerships/:id', (req, res) => {
+  const dealership = db.prepare('SELECT * FROM dealerships WHERE id = ?').get(req.params.id);
+  if (!dealership) return res.status(404).json({ error: 'Dealership not found' });
+
+  const counts = {
+    units: db.prepare('SELECT COUNT(*) AS count FROM units WHERE dealership_id = ?').get(dealership.id).count,
+    customers: db.prepare('SELECT COUNT(*) AS count FROM customers WHERE dealership_id = ?').get(dealership.id).count,
+    deals: db.prepare('SELECT COUNT(*) AS count FROM deals WHERE dealership_id = ?').get(dealership.id).count,
+    credit_pulls: db.prepare('SELECT COUNT(*) AS count FROM credit_pulls WHERE dealership_id = ?').get(dealership.id).count,
+    documents: db.prepare('SELECT COUNT(*) AS count FROM documents WHERE dealership_id = ?').get(dealership.id).count,
+  };
+  const hasBusinessData = Object.values(counts).some(Boolean);
+  if (hasBusinessData) {
+    return res.status(409).json({
+      error: 'This dealership has inventory, customers, deals, credit pulls, or documents. Revoke it instead of deleting.',
+      counts,
+    });
+  }
+
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM users WHERE dealership_id = ?').run(dealership.id);
+    db.prepare('DELETE FROM activity_logs WHERE dealership_id = ?').run(dealership.id);
+    db.prepare('DELETE FROM dealerships WHERE id = ?').run(dealership.id);
+  });
+  tx();
+  res.json({ ok: true });
+});
+
 router.post('/users', (req, res) => {
   const dealershipId = Number(req.body.dealership_id);
   const name = String(req.body.name || '').trim();
@@ -102,11 +130,16 @@ router.patch('/users/:id', (req, res) => {
   const email = normalizeEmail(req.body.email ?? user.email);
   const role = ['super_admin','admin','manager','staff'].includes(req.body.role) ? req.body.role : user.role;
   const status = req.body.status === 'revoked' ? 'revoked' : 'active';
-  db.prepare(`
-    UPDATE users
-    SET dealership_id = ?, name = ?, email = ?, role = ?, status = ?
-    WHERE id = ?
-  `).run(dealershipId, name, email, role, status, user.id);
+  try {
+    db.prepare(`
+      UPDATE users
+      SET dealership_id = ?, name = ?, email = ?, role = ?, status = ?
+      WHERE id = ?
+    `).run(dealershipId, name, email, role, status, user.id);
+  } catch (err) {
+    if (String(err.message).includes('UNIQUE')) return res.status(409).json({ error: 'Email already exists' });
+    throw err;
+  }
 
   if (req.body.password) {
     const password = String(req.body.password);
@@ -120,6 +153,14 @@ router.patch('/users/:id', (req, res) => {
     WHERE u.id = ?
   `).get(user.id);
   res.json({ user: userRow(row) });
+});
+
+router.delete('/users/:id', (req, res) => {
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  if (user.id === req.user.id) return res.status(400).json({ error: 'You cannot delete your own login while signed in' });
+  db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
+  res.json({ ok: true });
 });
 
 module.exports = router;
