@@ -43,7 +43,7 @@
       border: 0; background: transparent; box-shadow: none; border-radius: 0; overflow: visible;
     }
     .packet-focus .paper-panel-body { padding: 0; }
-    .step-strip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-bottom: 18px; }
+    .step-strip { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; margin-bottom: 18px; }
     .step-pill { border: 1px solid var(--border); border-radius: 999px; padding: 8px 10px; color: var(--muted); font-size: .76rem; font-weight: 800; text-align: center; text-transform: uppercase; letter-spacing: .04em; }
     .step-pill.active { color: var(--blue); border-color: var(--blue-border); background: var(--blue-gl); }
     .choice-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
@@ -256,6 +256,7 @@
           <div class="step-pill" data-step-pill="customer">Customer</div>
           <div class="step-pill" data-step-pill="vehicle">Vehicle</div>
           <div class="step-pill" data-step-pill="terms">Terms</div>
+          <div class="step-pill" data-step-pill="forms">Forms</div>
           <div class="step-pill" data-step-pill="build">Build</div>
         </div>
 
@@ -411,12 +412,51 @@
           <div class="terms-card" id="estimateCard"></div>
           <div class="wizard-nav">
             <button class="btn btn-ghost" onclick="goToStep('vehicle')">← Vehicle</button>
+            <button class="btn btn-primary" onclick="goToStep('forms')">Form Questions →</button>
+          </div>
+        </div>
+
+        <div class="builder-section step-section" data-step="forms">
+          <div class="section-heading"><h3>5. Form Interview</h3></div>
+          <div class="form-row form-row-3">
+            <div class="form-group"><label class="form-label">Insurance Company</label><input class="form-input" id="insuranceCompany" oninput="renderEstimate()"></div>
+            <div class="form-group"><label class="form-label">Insurance Agent</label><input class="form-input" id="insuranceAgent" oninput="renderEstimate()"></div>
+            <div class="form-group"><label class="form-label">Agent Phone</label><input class="form-input" id="insuranceAgentPhone" oninput="renderEstimate()"></div>
+          </div>
+          <div class="form-row form-row-3">
+            <div class="form-group"><label class="form-label">Policy Number</label><input class="form-input" id="insurancePolicy" oninput="renderEstimate()"></div>
+            <div class="form-group"><label class="form-label">Effective Date</label><input class="form-input" id="insuranceEffective" type="date" onchange="renderEstimate()"></div>
+            <div class="form-group"><label class="form-label">Coverage</label><select class="form-select" id="insuranceCoverage" onchange="renderEstimate()"><option>Full Coverage</option><option>Liability Only</option><option>Binder Pending</option></select></div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Buyers Guide Sale Type</label>
+            <select class="form-select" id="buyersGuideSaleType" onchange="renderBuyersGuideWarrantyFields(); renderEstimate();">
+              <option value="as_is">As Is - No Dealer Warranty</option>
+              <option value="dealer_warranty">Dealer Warranty</option>
+              <option value="service_contract">Service Contract Included / Available</option>
+            </select>
+          </div>
+          <div id="buyersGuideWarrantyFields" class="form-row form-row-3 hidden">
+            <div class="form-group"><label class="form-label">Systems Covered</label><input class="form-input" id="warrantySystems" placeholder="Engine, transmission..." oninput="renderEstimate()"></div>
+            <div class="form-group"><label class="form-label">Warranty Duration</label><input class="form-input" id="warrantyDuration" placeholder="30 days / 1,000 miles" oninput="renderEstimate()"></div>
+            <div class="form-group"><label class="form-label">Dealer Pays</label><input class="form-input" id="warrantyDealerPays" placeholder="100% parts / 100% labor" oninput="renderEstimate()"></div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">We Owe</label>
+            <textarea class="form-textarea" id="weOweText" placeholder="Nothing owed, nothing promised, nothing implied." oninput="renderEstimate()"></textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Customer Still Owes Dealer</label>
+            <textarea class="form-textarea" id="youOweText" placeholder="Title to trade-in, insurance card, all monies..." oninput="renderEstimate()"></textarea>
+          </div>
+          <div class="wizard-nav">
+            <button class="btn btn-ghost" onclick="goToStep('terms')">← Terms</button>
             <button class="btn btn-primary" onclick="buildPacket()">Go! Build It</button>
           </div>
         </div>
 
         <div class="builder-section step-section" data-step="build">
-          <div class="section-heading"><h3>5. Review and Export</h3></div>
+          <div class="section-heading"><h3>6. Review and Export</h3></div>
           <div class="selection-snapshot">
             <div class="snapshot-icon">✓</div>
             <div>
@@ -597,6 +637,11 @@ function setCustomerMode(mode) {
   renderEstimate();
 }
 
+function renderBuyersGuideWarrantyFields() {
+  const saleType = val('buyersGuideSaleType');
+  $('buyersGuideWarrantyFields').classList.toggle('hidden', saleType === 'as_is');
+}
+
 function customerPool() {
   return customers.length ? customers : SAMPLE_CUSTOMERS;
 }
@@ -703,6 +748,18 @@ function loadSample() {
   $('taxRate').value = '7.25';
   $('lateFee').value = '25';
   $('graceDays').value = '10';
+  $('insuranceCompany').value = '';
+  $('insuranceAgent').value = '';
+  $('insuranceAgentPhone').value = '';
+  $('insurancePolicy').value = '';
+  $('insuranceCoverage').value = 'Full Coverage';
+  $('buyersGuideSaleType').value = 'as_is';
+  $('warrantySystems').value = '';
+  $('warrantyDuration').value = '';
+  $('warrantyDealerPays').value = '';
+  $('weOweText').value = 'Nothing owed, nothing promised, nothing implied.';
+  $('youOweText').value = 'Valid insurance card before delivery.';
+  renderBuyersGuideWarrantyFields();
   renderEstimate();
 }
 
@@ -869,6 +926,20 @@ function packetData() {
       graceDays: num('graceDays'),
       responsibility: packetType === 'cash' ? 'cash' : val('financingResponsibility'),
     },
+    formAnswers: {
+      insuranceCompany: val('insuranceCompany'),
+      insuranceAgent: val('insuranceAgent'),
+      insuranceAgentPhone: val('insuranceAgentPhone'),
+      insurancePolicy: val('insurancePolicy'),
+      insuranceEffective: val('insuranceEffective'),
+      insuranceCoverage: val('insuranceCoverage'),
+      buyersGuideSaleType: val('buyersGuideSaleType'),
+      warrantySystems: val('warrantySystems'),
+      warrantyDuration: val('warrantyDuration'),
+      warrantyDealerPays: val('warrantyDealerPays'),
+      weOwe: val('weOweText'),
+      youOwe: val('youOweText'),
+    },
     fieldMap: FIELD_MAP,
     generatedAt: new Date().toISOString(),
   };
@@ -955,6 +1026,12 @@ function vehicleLabel(data) {
 
 function formField(label, value, cls = '') {
   return `<div class="form-field ${cls}"><span class="label">${escapeHtml(label)}</span><span class="value">${escapeHtml(value || '-')}</span></div>`;
+}
+
+function splitLines(value, minRows) {
+  const rows = String(value || '').split(/\n|;/).map(row => row.trim()).filter(Boolean);
+  while (rows.length < minRows) rows.push('');
+  return rows.slice(0, Math.max(minRows, rows.length));
 }
 
 function draftFormHeader(title, formName) {
@@ -1100,9 +1177,9 @@ function agreementToProvideInsurancePage(data) {
       <p class="form-legal">Buyer agrees to keep required insurance coverage in force on the vehicle until the transaction is completed and any lienholder or dealer requirements have been satisfied. Buyer should provide proof of insurance before delivery when required by the dealership or lender.</p>
       <table class="form-table">
         <tbody>
-          <tr><th>Insurance Company</th><td></td><th>Policy Number</th><td></td></tr>
-          <tr><th>Agent / Phone</th><td></td><th>Effective Date</th><td></td></tr>
-          <tr><th>Comprehensive Deductible</th><td></td><th>Collision Deductible</th><td></td></tr>
+          <tr><th>Insurance Company</th><td>${escapeHtml(data.formAnswers.insuranceCompany || '-')}</td><th>Policy Number</th><td>${escapeHtml(data.formAnswers.insurancePolicy || '-')}</td></tr>
+          <tr><th>Agent / Phone</th><td>${escapeHtml([data.formAnswers.insuranceAgent, data.formAnswers.insuranceAgentPhone].filter(Boolean).join(' / ') || '-')}</td><th>Effective Date</th><td>${escapeHtml(data.formAnswers.insuranceEffective || '-')}</td></tr>
+          <tr><th>Coverage</th><td>${escapeHtml(data.formAnswers.insuranceCoverage || '-')}</td><th>Collision Deductible</th><td></td></tr>
         </tbody>
       </table>
       <div class="signature-grid">
@@ -1114,6 +1191,7 @@ function agreementToProvideInsurancePage(data) {
 }
 
 function buyersGuidePage(data) {
+  const saleType = data.formAnswers.buyersGuideSaleType;
   return `
     <article class="packet-page">
       ${draftFormHeader('Buyers Guide', 'FTC Buyers Guide')}
@@ -1127,9 +1205,18 @@ function buyersGuidePage(data) {
           ${formField('Sale Date', todayLabel())}
           ${formField('Stock / Unit', val('vehicleSelect') || '')}
         </div>
-        <div class="checkbox-line">As Is - No Dealer Warranty</div>
-        <div class="checkbox-line">Dealer Warranty - terms attached</div>
-        <div class="checkbox-line">Service Contract Available</div>
+        <div class="checkbox-line ${saleType === 'as_is' ? 'checked' : ''}">As Is - No Dealer Warranty</div>
+        <div class="checkbox-line ${saleType === 'dealer_warranty' ? 'checked' : ''}">Dealer Warranty - terms attached</div>
+        <div class="checkbox-line ${saleType === 'service_contract' ? 'checked' : ''}">Service Contract Included / Available</div>
+        ${saleType === 'dealer_warranty' ? `
+          <table class="form-table">
+            <tbody>
+              <tr><th>Systems Covered</th><td>${escapeHtml(data.formAnswers.warrantySystems || '-')}</td></tr>
+              <tr><th>Duration</th><td>${escapeHtml(data.formAnswers.warrantyDuration || '-')}</td></tr>
+              <tr><th>Dealer Pays</th><td>${escapeHtml(data.formAnswers.warrantyDealerPays || '-')}</td></tr>
+            </tbody>
+          </table>
+        ` : ''}
         <p class="form-legal">Buyer acknowledges receipt of the Buyers Guide information for the vehicle listed above.</p>
       </div>
       <div class="signature-grid">
@@ -1412,6 +1499,8 @@ function titleApplicationPageTwo(data) {
 }
 
 function weOweYouOwePage(data) {
+  const weOweRows = splitLines(data.formAnswers.weOwe || 'Nothing owed, nothing promised, nothing implied.', 3);
+  const youOweRows = splitLines(data.formAnswers.youOwe || '', 6);
   return `
     <article class="packet-page">
       ${draftFormHeader('We Owe / You Owe', 'Delivery Promises')}
@@ -1423,16 +1512,13 @@ function weOweYouOwePage(data) {
       <table class="form-table">
         <thead><tr><th>Dealer Owes Buyer</th><th>Due Date</th><th>Status</th></tr></thead>
         <tbody>
-          <tr><td>&nbsp;</td><td></td><td></td></tr>
-          <tr><td>&nbsp;</td><td></td><td></td></tr>
-          <tr><td>&nbsp;</td><td></td><td></td></tr>
+          ${weOweRows.map(row => `<tr><td>${escapeHtml(row || '\u00a0')}</td><td></td><td></td></tr>`).join('')}
         </tbody>
       </table>
       <table class="form-table">
         <thead><tr><th>Buyer Owes Dealer</th><th>Due Date</th><th>Status</th></tr></thead>
         <tbody>
-          <tr><td>&nbsp;</td><td></td><td></td></tr>
-          <tr><td>&nbsp;</td><td></td><td></td></tr>
+          ${youOweRows.map(row => `<tr><td>${escapeHtml(row || '\u00a0')}</td><td></td><td></td></tr>`).join('')}
         </tbody>
       </table>
       <div class="signature-grid">
