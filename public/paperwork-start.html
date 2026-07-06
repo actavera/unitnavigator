@@ -43,7 +43,7 @@
       border: 0; background: transparent; box-shadow: none; border-radius: 0; overflow: visible;
     }
     .packet-focus .paper-panel-body { padding: 0; }
-    .step-strip { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; margin-bottom: 18px; }
+    .step-strip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-bottom: 18px; }
     .step-pill { border: 1px solid var(--border); border-radius: 999px; padding: 8px 10px; color: var(--muted); font-size: .76rem; font-weight: 800; text-align: center; text-transform: uppercase; letter-spacing: .04em; }
     .step-pill.active { color: var(--blue); border-color: var(--blue-border); background: var(--blue-gl); }
     .choice-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
@@ -152,6 +152,27 @@
     .terms-line strong { color: var(--text); text-align: right; }
     .terms-total { border-top: 1px solid var(--border); padding-top: 12px; margin-top: 2px; align-items: end; }
     .terms-total strong { color: var(--blue); font-size: 1.65rem; letter-spacing: -.04em; }
+    .question-flow {
+      display: grid; gap: 18px; align-content: center; min-height: 420px;
+      border: 1px solid var(--border); border-radius: var(--r-lg);
+      background:
+        radial-gradient(circle at 82% 14%, rgba(59,130,246,.22), transparent 30%),
+        radial-gradient(circle at 96% 88%, rgba(34,211,238,.12), transparent 28%),
+        var(--s2);
+      padding: clamp(22px, 4vw, 38px);
+      box-shadow: 0 18px 60px rgba(0,0,0,.12);
+    }
+    .question-progress { color: var(--muted); font-size: .78rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+    .question-flow h3 { max-width: 850px; font-size: clamp(2rem, 5vw, 4.2rem); line-height: .94; letter-spacing: -.06em; margin: 0; }
+    .question-flow p { max-width: 720px; color: var(--text-2); line-height: 1.5; }
+    .question-input-shell { max-width: 640px; }
+    .question-input-shell .form-input,
+    .question-input-shell .form-select,
+    .question-input-shell .form-textarea { font-size: 1.14rem; padding: 16px; }
+    .question-input-shell .form-textarea { min-height: 130px; }
+    .question-answer-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+    .question-prefix { color: var(--muted); font-size: 1.8rem; font-weight: 900; }
+    .question-actions { display: flex; justify-content: space-between; gap: 12px; border-top: 1px solid var(--border); padding-top: 18px; margin-top: 8px; }
     .paper-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
     .wizard-nav { display: flex; justify-content: space-between; gap: 10px; border-top: 1px solid var(--border); margin-top: 22px; padding-top: 18px; }
     .preview-empty {
@@ -255,8 +276,7 @@
           <div class="step-pill active" data-step-pill="packet">Packet</div>
           <div class="step-pill" data-step-pill="customer">Customer</div>
           <div class="step-pill" data-step-pill="vehicle">Vehicle</div>
-          <div class="step-pill" data-step-pill="terms">Terms</div>
-          <div class="step-pill" data-step-pill="forms">Forms</div>
+          <div class="step-pill" data-step-pill="terms">Questions</div>
           <div class="step-pill" data-step-pill="build">Build</div>
         </div>
 
@@ -359,12 +379,23 @@
           </div>
           <div class="wizard-nav">
             <button class="btn btn-ghost" onclick="goToStep('customer')">← Customer</button>
-            <button class="btn btn-primary" onclick="goToStep('terms')">Set Terms →</button>
+            <button class="btn btn-primary" onclick="startQuestionFlow()">Start Questions →</button>
           </div>
         </div>
 
         <div class="builder-section step-section" data-step="terms">
-          <div class="section-heading"><h3>4. Deal Structure</h3></div>
+          <div class="section-heading"><h3>4. Deal Questions</h3></div>
+          <div class="question-flow" id="dealQuestionFlow">
+            <div class="question-progress" id="questionCounter">Question 1</div>
+            <h3 id="questionTitle">Is this the correct price of the vehicle?</h3>
+            <p id="questionHint">This should auto-populate from inventory. Adjust it if the sales price changed.</p>
+            <div class="question-input-shell" id="questionInput"></div>
+            <div class="question-actions">
+              <button class="btn btn-ghost" onclick="prevQuestion()">← Back</button>
+              <button class="btn btn-primary" id="questionNextBtn" onclick="nextQuestion()">Next →</button>
+            </div>
+          </div>
+          <div id="paperworkBackingFields" class="hidden">
           <div class="form-row form-row-3">
             <div class="form-group"><label class="form-label">Sale Price</label><input class="form-input" id="salePrice" type="number" oninput="renderEstimate()"></div>
             <div class="form-group"><label class="form-label">Down Payment</label><input class="form-input" id="downPayment" type="number" oninput="renderEstimate()"></div>
@@ -414,9 +445,10 @@
             <button class="btn btn-ghost" onclick="goToStep('vehicle')">← Vehicle</button>
             <button class="btn btn-primary" onclick="goToStep('forms')">Form Questions →</button>
           </div>
+          </div>
         </div>
 
-        <div class="builder-section step-section" data-step="forms">
+        <div class="builder-section step-section hidden" data-step="forms">
           <div class="section-heading"><h3>5. Form Interview</h3></div>
           <div class="form-row form-row-3">
             <div class="form-group"><label class="form-label">Insurance Company</label><input class="form-input" id="insuranceCompany" oninput="renderEstimate()"></div>
@@ -467,8 +499,10 @@
           <div class="paper-actions">
             <button class="btn btn-ghost" onclick="goToStep('terms')">← Edit Terms</button>
             <button class="btn btn-primary" onclick="window.print()">Print / Save PDF</button>
+            <button class="btn btn-primary" onclick="downloadOfficialPacket()">Download Official PDFs</button>
             <button class="btn btn-ghost" onclick="downloadEsignPayload()">Export for E-Sign</button>
           </div>
+          <div class="terms-card" id="officialFormsPanel"></div>
         </div>
       </div>
     </aside>
@@ -502,8 +536,10 @@ let built = false;
 let currentStep = 'packet';
 let inventoryUnits = [];
 let customers = [];
+let officialTemplates = [];
 let selectedCustomerId = null;
 let savedDealId = null;
+let questionIndex = 0;
 const DEFAULT_EMISSIONS_FEE = 30;
 
 const SAMPLE_CUSTOMERS = [
@@ -544,14 +580,85 @@ function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch]));
 }
 
+const DEAL_QUESTIONS = [
+  { id: 'salePrice', type: 'number', prefix: '$', title: 'Is this the correct price of the vehicle?', hint: 'This auto-populates from inventory when available. Adjust it if the selling price changed.' },
+  { id: 'downPayment', type: 'number', prefix: '$', title: 'How much is the down payment?', hint: 'Enter 0 if there is no money down yet.' },
+  { id: 'trade', type: 'number', prefix: '$', title: 'Is there a trade-in allowance?', hint: 'Enter the trade allowance. If there is no trade, leave it at 0.' },
+  {
+    id: 'financingResponsibility',
+    type: 'select',
+    title: 'Who is handling the financing?',
+    hint: 'This checks the correct financing-arrangement box on the purchase agreement for print or e-sign.',
+    when: () => packetType !== 'cash',
+    options: [
+      ['dealer', 'Dealer is helping arrange financing'],
+      ['customer', 'Customer is taking this to their bank / arranging their own financing'],
+    ],
+  },
+  { id: 'apr', type: 'number', suffix: '%', title: 'What is the estimated interest rate?', hint: 'Use the current expected APR. You can update it later if the lender changes terms.', when: () => packetType !== 'cash' },
+  { id: 'term', type: 'number', suffix: 'months', title: 'How many months is the note?', hint: 'For BHPH this becomes part of the payment schedule. For outside financing, it is still an estimate.', when: () => packetType !== 'cash' },
+  {
+    id: 'frequency',
+    type: 'select',
+    title: 'How often are payments due?',
+    hint: 'Monthly is the default unless this is a BHPH deal with a different schedule.',
+    when: () => packetType !== 'cash',
+    options: [['Monthly', 'Monthly'], ['Biweekly', 'Biweekly'], ['Weekly', 'Weekly']],
+  },
+  { id: 'insuranceGapVsi', type: 'number', prefix: '$', title: 'Are you selling Insurance, GAP, or VSI?', hint: 'Enter the total add-on amount, or 0 if none.' },
+  { id: 'accessories', type: 'number', prefix: '$', title: 'Are there accessories being added?', hint: 'Enter the accessory total, or 0 if none.' },
+  { id: 'products', type: 'number', prefix: '$', title: 'Are any other products being sold?', hint: 'Enter the product total, or 0 if none.' },
+  { id: 'docFee', type: 'number', prefix: '$', title: 'Is this the correct dealer doc fee?', hint: 'This defaults to the dealer setting. Adjust for this deal if needed.' },
+  { id: 'filingFee', type: 'number', prefix: '$', title: 'Is there a filing fee?', hint: 'Use the dealer custom fee. Enter 0 if it does not apply.' },
+  { id: 'lenderFee', type: 'number', prefix: '$', title: 'Is there a lender processing fee?', hint: 'Enter the lender processing fee, or 0 if it does not apply.', when: () => packetType !== 'cash' },
+  { id: 'licenseFee', type: 'number', prefix: '$', title: 'Is this the correct license fee?', hint: 'This should follow the Utah fee schedule, but can be adjusted before building.' },
+  { id: 'plateFee', type: 'number', prefix: '$', title: 'Is this the correct plate fee?', hint: 'Use the correct plate amount for this vehicle.' },
+  { id: 'agePropertyTax', type: 'number', prefix: '$', title: 'Is this the correct age/property tax?', hint: 'Use the Utah age-based fee/property tax amount for the unit.' },
+  { id: 'titleFee', type: 'number', prefix: '$', title: 'Is this the correct title fee?', hint: 'Utah title fee defaults here, but can be adjusted.' },
+  { id: 'emissionsFee', type: 'number', prefix: '$', title: 'Is there an emissions fee?', hint: 'If emissions are required, the system defaults a fee. If exempt or not required, this should be 0.' },
+  { id: 'taxRate', type: 'number', suffix: '%', title: 'What tax rate should be used?', hint: 'Enter the sales tax rate for this deal.' },
+  { id: 'firstPayment', type: 'date', title: 'When is the first payment due?', hint: 'Only used for BHPH payment scheduling.', when: () => packetType === 'bhph' },
+  { id: 'lateFee', type: 'number', prefix: '$', title: 'What is the late fee?', hint: 'Only used for BHPH contracts.', when: () => packetType === 'bhph' },
+  { id: 'graceDays', type: 'number', suffix: 'days', title: 'How many grace days?', hint: 'Only used for BHPH contracts.', when: () => packetType === 'bhph' },
+  { id: 'insuranceCompany', type: 'text', title: 'What is the customer’s insurance company?', hint: 'Leave blank if they have not provided it yet.' },
+  { id: 'insuranceAgent', type: 'text', title: 'Who is the insurance agent?', hint: 'Leave blank if unknown.' },
+  { id: 'insuranceAgentPhone', type: 'text', title: 'What is the agent phone number?', hint: 'Leave blank if unknown.' },
+  { id: 'insurancePolicy', type: 'text', title: 'What is the policy number?', hint: 'Leave blank if the binder is still pending.' },
+  { id: 'insuranceEffective', type: 'date', title: 'What is the insurance effective date?', hint: 'Use the date coverage starts, if available.' },
+  {
+    id: 'insuranceCoverage',
+    type: 'select',
+    title: 'What type of insurance coverage?',
+    hint: 'This fills the Agreement to Provide Insurance.',
+    options: [['Full Coverage', 'Full Coverage'], ['Liability Only', 'Liability Only'], ['Binder Pending', 'Binder Pending']],
+  },
+  {
+    id: 'buyersGuideSaleType',
+    type: 'select',
+    title: 'How should the Buyers Guide be marked?',
+    hint: 'This should be decided before print or e-sign so there are no unchecked boxes.',
+    options: [
+      ['as_is', 'As Is - No Dealer Warranty'],
+      ['dealer_warranty', 'Dealer Warranty'],
+      ['service_contract', 'Service Contract Included / Available'],
+    ],
+  },
+  { id: 'warrantySystems', type: 'text', title: 'What systems are covered by the warranty?', hint: 'Example: engine, transmission, drivetrain.', when: () => val('buyersGuideSaleType') === 'dealer_warranty' },
+  { id: 'warrantyDuration', type: 'text', title: 'How long is the warranty?', hint: 'Example: 30 days / 1,000 miles.', when: () => val('buyersGuideSaleType') === 'dealer_warranty' },
+  { id: 'warrantyDealerPays', type: 'text', title: 'What does the dealer pay under warranty?', hint: 'Example: 100% parts / 100% labor.', when: () => val('buyersGuideSaleType') === 'dealer_warranty' },
+  { id: 'weOweText', type: 'textarea', title: 'What does the dealer owe the customer?', hint: 'Use “Nothing owed” if nothing is promised.' },
+  { id: 'youOweText', type: 'textarea', title: 'What does the customer still owe the dealer?', hint: 'Examples: insurance card, title to trade, remaining down payment.' },
+];
+
 async function init() {
   const firstPayment = new Date();
   firstPayment.setDate(firstPayment.getDate() + 30);
   $('firstPayment').value = firstPayment.toISOString().slice(0, 10);
   loadSample();
-  await Promise.allSettled([loadInventory(), loadCustomers()]);
+  await Promise.allSettled([loadInventory(), loadCustomers(), loadOfficialTemplates()]);
   populateVehicleSelect();
   populateCustomerSelect();
+  renderOfficialTemplates();
   setPacket('outside', false);
   goToStep('packet');
   renderEstimate();
@@ -575,6 +682,30 @@ async function loadCustomers() {
     vehicle: customer.last_vehicle || '',
     vin: customer.last_vin || '',
   }));
+}
+
+async function loadOfficialTemplates() {
+  const data = await UN.api('GET', '/api/paperwork/templates');
+  officialTemplates = data.templates || [];
+}
+
+function renderOfficialTemplates() {
+  const panel = $('officialFormsPanel');
+  if (!panel) return;
+  if (!officialTemplates.length) {
+    panel.innerHTML = '<p class="form-hint">Official PDF template list could not be loaded.</p>';
+    return;
+  }
+  const ready = officialTemplates.filter(template => template.file);
+  const missing = officialTemplates.filter(template => !template.file);
+  panel.innerHTML = `
+    <div class="terms-line terms-total"><span>Official PDF originals</span><strong>${ready.length} ready</strong></div>
+    <p class="form-hint">These are the canonical source PDFs. The HTML preview is only a review screen until the filled-PDF generator is wired to these templates.</p>
+    <div class="paper-actions" style="margin-top:8px;">
+      ${ready.map(template => `<a class="btn btn-ghost btn-sm" href="${escapeHtml(template.file)}" target="_blank" rel="noopener">${escapeHtml(template.name)}</a>`).join('')}
+    </div>
+    ${missing.length ? `<p class="form-hint">${missing.length} dealer-specific source PDFs still needed: ${escapeHtml(missing.map(template => template.name).join(', '))}.</p>` : ''}
+  `;
 }
 
 function populateCustomerSelect() {
@@ -603,6 +734,80 @@ function goToStep(step) {
   document.querySelectorAll('[data-step-pill]').forEach(pill => {
     pill.classList.toggle('active', pill.dataset.stepPill === step);
   });
+  if (step === 'terms') renderQuestionFlow();
+}
+
+function startQuestionFlow() {
+  questionIndex = 0;
+  goToStep('terms');
+}
+
+function activeDealQuestions() {
+  return DEAL_QUESTIONS.filter(question => !question.when || question.when());
+}
+
+function renderQuestionFlow() {
+  const questions = activeDealQuestions();
+  if (!questions.length) return;
+  if (questionIndex >= questions.length) questionIndex = questions.length - 1;
+  const question = questions[questionIndex];
+  $('questionCounter').textContent = `Question ${questionIndex + 1} of ${questions.length}`;
+  $('questionTitle').textContent = question.title;
+  $('questionHint').textContent = question.hint || '';
+  $('questionInput').innerHTML = questionControl(question);
+  $('questionNextBtn').textContent = questionIndex === questions.length - 1 ? 'Build Packet →' : 'Next →';
+  const control = $('questionAnswer');
+  if (control) {
+    control.focus({ preventScroll: true });
+    if (control.select && ['text','number'].includes(control.type)) control.select();
+  }
+}
+
+function questionControl(question) {
+  const currentValue = val(question.id);
+  if (question.type === 'select') {
+    return `
+      <select class="form-select" id="questionAnswer" onchange="setQuestionValue('${question.id}', this.value)">
+        ${(question.options || []).map(([value, label]) => `<option value="${escapeHtml(value)}" ${String(currentValue) === String(value) ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('')}
+      </select>
+    `;
+  }
+  if (question.type === 'textarea') {
+    return `<textarea class="form-textarea" id="questionAnswer" oninput="setQuestionValue('${question.id}', this.value)">${escapeHtml(currentValue)}</textarea>`;
+  }
+  const type = question.type || 'text';
+  return `
+    <div class="question-answer-row">
+      ${question.prefix ? `<span class="question-prefix">${escapeHtml(question.prefix)}</span>` : ''}
+      <input class="form-input" id="questionAnswer" type="${escapeHtml(type)}" value="${escapeHtml(currentValue)}" ${type === 'number' ? 'step="0.01"' : ''} oninput="setQuestionValue('${question.id}', this.value)">
+      ${question.suffix ? `<span class="question-prefix">${escapeHtml(question.suffix)}</span>` : ''}
+    </div>
+  `;
+}
+
+function setQuestionValue(id, value) {
+  if ($(id)) $(id).value = value;
+  if (id === 'buyersGuideSaleType') renderBuyersGuideWarrantyFields();
+  renderEstimate();
+}
+
+function nextQuestion() {
+  const questions = activeDealQuestions();
+  if (questionIndex >= questions.length - 1) {
+    buildPacket();
+    return;
+  }
+  questionIndex += 1;
+  renderQuestionFlow();
+}
+
+function prevQuestion() {
+  if (questionIndex <= 0) {
+    goToStep('vehicle');
+    return;
+  }
+  questionIndex -= 1;
+  renderQuestionFlow();
 }
 
 function setPacket(type, advance = true) {
@@ -1860,6 +2065,30 @@ function downloadEsignPayload() {
     recommended_low_cost_provider: 'eSignatures.com API-first export, or SignWell for simple low-volume manual sending.',
     packet: data,
   });
+}
+
+async function downloadOfficialPacket() {
+  if (!built) buildPacket();
+  const data = packetData();
+  const response = await fetch('/api/paperwork/official-packet', {
+    method: 'POST',
+    headers: UN.headers(),
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    toast(error.error || 'Official PDF packet could not be generated.', 'warn');
+    return;
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${data.packetType}-official-packet.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 init().catch(err => {

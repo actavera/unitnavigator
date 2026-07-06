@@ -1,0 +1,96 @@
+[
+  {
+    "id": "agreement-insurance",
+    "name": "Agreement to Provide Insurance",
+    "status": "custom-template-needed",
+    "notes": "Dealer-provided source form still needed."
+  },
+  {
+    "id": "buyers-guide-english",
+    "name": "FTC Buyers Guide - English",
+    "file": "/forms/originals/ftc-buyers-guide-english.pdf",
+    "source": "https://www.ftc.gov/system/files/documents/plain-language/cfr_buyers_guides_english.pdf",
+    "status": "fillable-original"
+  },
+  {
+    "id": "buyers-guide-spanish",
+    "name": "FTC Buyers Guide - Spanish",
+    "file": "/forms/originals/ftc-buyers-guide-spanish.pdf",
+    "source": "https://www.consumer.ftc.gov/sites/default/files/articles/pdf/spdf-0083-guia-comprador.pdf",
+    "status": "original"
+  },
+  {
+    "id": "purchase-agreement",
+    "name": "Purchase Agreement",
+    "status": "custom-template-needed",
+    "notes": "Dealer language supplied; needs final dealer-approved PDF template."
+  },
+  {
+    "id": "tc-891",
+    "name": "UT DMV Odometer Statement - TC-891",
+    "file": "/forms/originals/tc-891.pdf",
+    "source": "https://files.tax.utah.gov/tax/forms/current/tc-891.pdf",
+    "status": "fillable-original"
+  },
+  {
+    "id": "tc-656",
+    "name": "Utah Title Application - TC-656",
+    "file": "/forms/originals/tc-656.pdf",
+    "source": "https://files.tax.utah.gov/tax/forms/current/tc-656.pdf",
+    "status": "fillable-original"
+  },
+  {
+    "id": "we-owe-you-owe",
+    "name": "We Owe / You Owe",
+    "status": "custom-template-needed",
+    "notes": "Dealer-provided source form still needed."
+  },
+  {
+    "id": "tc-466",
+    "name": "TC-466 Transaction Disclosure",
+    "file": "/forms/originals/tc-466.pdf",
+    "source": "https://files.tax.utah.gov/tax/forms/current/tc-466.pdf",
+    "status": "fillable-original"
+  },
+  {
+    "id": "credit-application",
+    "name": "Credit Application",
+    "status": "custom-template-needed",
+    "notes": "Dealer/lender-specific source form still needed."
+  },
+  {
+    "id": "tc-661",
+    "name": "TC-661 Certificate of Inspection",
+    "file": "/forms/originals/tc-661.pdf",
+    "source": "https://files.tax.utah.gov/tax/forms/current/tc-661.pdf",
+    "status": "fillable-original"
+  },
+  {
+    "id": "tc-814",
+    "name": "TC-814 Salvage Vehicle Disclosure",
+    "file": "/forms/originals/tc-814.pdf",
+    "source": "https://files.tax.utah.gov/tax/forms/current/tc-814.pdf",
+    "status": "fillable-original"
+  },
+  {
+    "id": "tc-123",
+    "name": "TC-123 Application for Duplicate Utah Title",
+    "file": "/forms/originals/tc-123.pdf",
+    "source": "https://files.tax.utah.gov/tax/forms/current/tc-123.pdf",
+    "status": "fillable-original"
+  },
+  {
+    "id": "tc-120",
+    "name": "TC-120 Application for Dealer Assignment",
+    "file": "/forms/originals/tc-120.pdf",
+    "source": "https://files.tax.utah.gov/tax/forms/current/tc-120.pdf",
+    "status": "fillable-original"
+  },
+  {
+    "id": "tc-820",
+    "name": "TC-820 Emissions Exemption Affidavit",
+    "file": "/forms/originals/tc-820.pdf",
+    "source": "https://files.tax.utah.gov/tax/forms/current/tc-820.pdf",
+    "status": "fillable-original"
+  }
+]
