@@ -962,6 +962,7 @@ function coreFormPages(data) {
     buyersGuidePage(data),
     buyersGuideDefectsPage(data),
     purchaseAgreementPage(data),
+    purchaseAgreementFinancingPage(data),
     purchaseAgreementDisclosuresPage(data),
     purchaseAgreementTradePage(data),
     purchaseAgreementSignaturePage(data),
@@ -1149,10 +1150,44 @@ function purchaseAgreementPage(data) {
   `;
 }
 
+function purchaseAgreementFinancingPage(data) {
+  return `
+    <article class="packet-page">
+      ${draftFormHeader('Purchase Agreement - Financing Arrangements', 'Retail Purchase Agreement Page 2')}
+      <p class="form-legal">In this Purchase Agreement ("Agreement"), "I," "me," "my," and "purchaser" mean the buyer and any co-buyer who signs this Agreement. "You" and "your" means the Seller identified above, or any assignee of my Contract (as defined below) and this Agreement. I am buying the vehicle described above ("Vehicle") according to the Terms and Conditions of this Agreement. Below is the Itemization of Vehicle Costs. If there is an Unpaid Balance Due, my obligation to buy and your obligation to sell the Vehicle are expressly conditioned upon me paying the Unpaid Balance Due to you in full within three business days from the date of this Agreement. I may pay the Unpaid Balance Due in cash, obtain financing from you or through a third party.</p>
+
+      <section class="packet-box">
+        <h4>Financing Arrangements</h4>
+        <div class="checkbox-line">If this box is checked, THE PURCHASER OF THE MOTOR VEHICLE DESCRIBED IN THIS CONTRACT ACKNOWLEDGES THAT THE SELLER OF THE MOTOR VEHICLE HAS MADE NO PROMISES, WARRANTIES, OR REPRESENTATIONS REGARDING SELLER'S ABILITY TO OBTAIN FINANCING FOR THE PURCHASE OF THE MOTOR VEHICLE. FURTHERMORE, PURCHASER UNDERSTANDS THAT IF FINANCING IS NECESSARY IN ORDER FOR THE PURCHASER TO COMPLETE THE PAYMENT TERMS OF THIS CONTRACT ALL THE FINANCING ARRANGEMENTS ARE THE SOLE RESPONSIBILITY OF THE PURCHASER.</div>
+        <div class="signature-grid">
+          <div class="signature-line">Signature of the purchaser</div>
+          <div class="signature-line">Signature of the purchaser</div>
+        </div>
+
+        <div class="checkbox-line">If this box is checked, Purchaser acknowledges that (1) THE PURCHASER OF THE MOTOR VEHICLE DESCRIBED IN THIS CONTRACT HAS EXECUTED THE CONTRACT IN RELIANCE UPON THE SELLER'S REPRESENTATION THAT THE SELLER CAN PROVIDE FINANCING ARRANGEMENTS FOR THE PURCHASE OF THE MOTOR VEHICLE. THE PRIMARY TERMS OF THE FINANCING ARE AS FOLLOWS:</div>
+        <p class="form-legal"><strong>INTEREST RATE BETWEEN</strong> ${escapeHtml(data.finance.apr ? data.finance.apr.toFixed(2) : '_____')}% <strong>AND</strong> ________% <strong>PER ANNUM, TERM BETWEEN</strong> ${escapeHtml(data.finance.termMonths || '____')} <strong>MONTHS AND</strong> ______ <strong>MONTHS. MONTHLY PAYMENTS BETWEEN</strong> ${money(data.finance.payment)} <strong>PER MONTH AND</strong> $_____________ <strong>PER MONTH BASED ON A DOWN PAYMENT OF</strong> ${money(data.pricing.downPayment)}.</p>
+        <p class="form-legal">(2) (a) IF SELLER IS NOT ABLE TO ARRANGE FINANCING WITHIN THE TERMS DISCLOSED, THEN SELLER MUST WITHIN SEVEN CALENDAR DAYS OF THE DATE OF SALE MAIL NOTICE TO THE PURCHASER THAT HE HAS NOT BEEN ABLE TO ARRANGE FINANCING.</p>
+        <p class="form-legal">(b) PURCHASER THEN HAS 14 DAYS FROM THE DATE OF SALE TO ELECT, IF PURCHASER CHOOSES, TO RESCIND THE CONTRACT OF SALE PURSUANT TO SECTION 41-3-401.</p>
+        <p class="form-legal">(c) IN ORDER TO RESCIND THE CONTRACT OF SALE, THE PURCHASER SHALL: (i) RETURN TO SELLER THE MOTOR VEHICLE HE PURCHASED; (ii) PAY THE SELLER AN AMOUNT EQUAL TO THE CURRENT STANDARD MILEAGE RATE FOR THE COST OF OPERATING A MOTOR VEHICLE ESTABLISHED BY THE FEDERAL INTERNAL REVENUE SERVICE FOR EACH MILE THE MOTOR VEHICLE HAS BEEN DRIVEN; AND (iii) COMPENSATE SELLER FOR ANY PHYSICAL DAMAGE TO THE MOTOR VEHICLE.</p>
+        <p class="form-legal">(3) IN RETURN, SELLER SHALL GIVE BACK TO THE PURCHASER ALL PAYMENTS OR OTHER CONSIDERATIONS PAID BY THE PURCHASER, INCLUDING ANY DOWN PAYMENT AND ANY MOTOR VEHICLE TRADED IN.</p>
+        <p class="form-legal">(4) IF THE TRADE-IN HAS BEEN SOLD OR OTHERWISE DISPOSED OF BEFORE THE PURCHASER RESCINDS THE TRANSACTION, THEN THE SELLER SHALL RETURN TO THE PURCHASER A SUM EQUIVALENT TO THE ALLOWANCE TOWARD THE PURCHASE PRICE GIVEN BY THE SELLER FOR THE TRADE-IN, AS NOTED IN THE DOCUMENT OF SALE.</p>
+        <p class="form-legal">(5) IF PURCHASER DOES NOT ELECT TO RESCIND THE CONTRACT OF SALE AS PROVIDED IN SUBSECTION (2)(b) OF THIS FORM: (a) THE PURCHASER IS RESPONSIBLE FOR ADHERENCE TO THE TERMS AND CONDITIONS OF THE CONTRACT OR RISKS BEING FOUND IN DEFAULT OF THE TERMS AND CONDITIONS; (b) THE TERMS AND CONDITIONS OF THE DISCLOSURES SET FORTH IN SECTION (1) OF THIS FORM ARE NOT BINDING ON THE SELLER; AND (c) IF FINANCING IS NECESSARY FOR THE PURCHASER TO COMPLETE THE PAYMENT TERMS OF THE CONTRACT OF SALE, THE PURCHASER IS SOLELY RESPONSIBLE FOR MAKING ALL THE FINANCING ARRANGEMENTS.</p>
+        <p class="form-legal">(6) SIGNING THIS DISCLOSURE DOES NOT PROHIBIT THE PURCHASER FROM SEEKING HIS OWN FINANCING.</p>
+        <div class="signature-grid">
+          <div class="signature-line">Signature of the purchaser</div>
+          <div class="signature-line">Signature of the purchaser</div>
+          <div class="signature-line">Signature of the seller</div>
+          <div class="signature-line">Date</div>
+        </div>
+      </section>
+    </article>
+  `;
+}
+
 function purchaseAgreementDisclosuresPage(data) {
   return `
     <article class="packet-page">
-      ${draftFormHeader('Purchase Agreement - Disclosures', 'Retail Purchase Agreement Page 2')}
+      ${draftFormHeader('Purchase Agreement - Disclosures', 'Retail Purchase Agreement Page 3')}
       <div class="packet-grid">
         <section class="packet-box">
           <h4>Itemization of Vehicle Costs</h4>
@@ -1180,7 +1215,7 @@ function purchaseAgreementDisclosuresPage(data) {
 function purchaseAgreementTradePage(data) {
   return `
     <article class="packet-page">
-      ${draftFormHeader('Purchase Agreement - Trade-In Information', 'Retail Purchase Agreement Page 3')}
+      ${draftFormHeader('Purchase Agreement - Trade-In Information', 'Retail Purchase Agreement Page 4')}
       <table class="form-table">
         <thead><tr><th>Trade Vehicle</th><th>VIN</th><th>Mileage</th><th>Allowance</th><th>Payoff</th></tr></thead>
         <tbody>
@@ -1201,7 +1236,7 @@ function purchaseAgreementTradePage(data) {
 function purchaseAgreementSignaturePage(data) {
   return `
     <article class="packet-page">
-      ${draftFormHeader('Purchase Agreement - Acceptance', 'Retail Purchase Agreement Page 4')}
+      ${draftFormHeader('Purchase Agreement - Acceptance', 'Retail Purchase Agreement Page 5')}
       <p class="form-legal">Buyer acknowledges receipt of the agreement and agrees to complete the vehicle purchase according to the terms shown in the packet. Buyer confirms the information provided for the transaction is complete and accurate.</p>
       <div class="form-field-grid">
         ${formField('Buyer', data.customer.name)}
