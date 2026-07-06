@@ -46,7 +46,7 @@
     .step-strip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-bottom: 18px; }
     .step-pill { border: 1px solid var(--border); border-radius: 999px; padding: 8px 10px; color: var(--muted); font-size: .76rem; font-weight: 800; text-align: center; text-transform: uppercase; letter-spacing: .04em; }
     .step-pill.active { color: var(--blue); border-color: var(--blue-border); background: var(--blue-gl); }
-    .choice-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .choice-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
     .packet-focus .choice-grid { gap: 28px; }
     .choice-card {
       --choice: var(--blue);
@@ -61,6 +61,7 @@
     }
     .packet-focus .choice-card { min-height: 430px; padding: 42px; border-radius: 30px; }
     .choice-card.bhph { --choice: var(--orange); }
+    .choice-card.cash { --choice: var(--green); }
     .choice-card:hover { transform: translateY(-3px); border-color: color-mix(in srgb, var(--choice), transparent 24%); box-shadow: 0 18px 55px color-mix(in srgb, var(--choice), transparent 84%); }
     .choice-card.active { border-color: var(--choice); box-shadow: 0 18px 60px color-mix(in srgb, var(--choice), transparent 78%); }
     .choice-card strong { display: block; font-size: 1.15rem; margin-bottom: 6px; letter-spacing: -.03em; }
@@ -220,7 +221,7 @@
     <div>
       <p class="home-kicker">Start Paperwork</p>
       <h1>Choose the packet, confirm the deal, then build it.</h1>
-      <p>Select outside financing or BHPH, pick a customer and vehicle, adjust the down payment and interest, then generate the pre-filled review packet.</p>
+      <p>Select outside financing, BHPH, or cash, pick a customer and vehicle, adjust the deal structure, then generate the pre-filled review packet.</p>
     </div>
     <button class="btn btn-primary no-print" onclick="goToStep('packet')">Start</button>
   </header>
@@ -258,6 +259,12 @@
               <span class="choice-icon"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M15 8h18l6 6v26H15Z"/><path d="M33 8v7h6"/><path d="M20 24h14M20 30h10"/><path d="M10 20h10M15 15v10"/></svg></span>
               <strong>BHPH</strong>
               <span>Retail sale package plus in-house finance terms and payment schedule.</span>
+              <span class="choice-sheen" aria-hidden="true"></span>
+            </button>
+            <button class="choice-card cash" id="packet-cash" onclick="setPacket('cash')">
+              <span class="choice-icon"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M9 16h30v20H9Z"/><path d="M14 22h10M14 29h6"/><circle cx="32" cy="26" r="5"/></svg></span>
+              <strong>Cash</strong>
+              <span>Paid-in-full retail sale packet without lender or BHPH finance terms.</span>
               <span class="choice-sheen" aria-hidden="true"></span>
             </button>
           </div>
@@ -323,6 +330,11 @@
             <div class="form-group"><label class="form-label">Fuel</label><select class="form-select" id="fuel" onchange="renderEstimate()"><option>Gas</option><option>Diesel</option><option>Hybrid</option><option>Electric</option></select></div>
             <div class="form-group"><label class="form-label">Unit Type</label><select class="form-select" id="unitType" onchange="renderEstimate()"><option>Passenger Vehicle</option><option>Motorcycle</option><option>ATV / UTV</option><option>Trailer</option><option>Watercraft</option></select></div>
           </div>
+          <div class="form-row form-row-3">
+            <div class="form-group"><label class="form-label">Title Brand</label><select class="form-select" id="titleBrand" onchange="renderEstimate()"><option>Clean</option><option>Salvage / Branded</option></select></div>
+            <div class="form-group"><label class="form-label">Emissions Status</label><select class="form-select" id="emissionsOverride" onchange="renderEstimate()"><option value="auto">Auto Determine</option><option value="required">Required</option><option value="exempt">Exempt / TC-820</option><option value="none">Not Required</option></select></div>
+            <div class="form-group"><label class="form-label">Registration Period</label><select class="form-select" id="registrationPeriod" onchange="renderEstimate()"><option value="12">12 Months</option><option value="6">6 Months</option></select></div>
+          </div>
           <div class="wizard-nav">
             <button class="btn btn-ghost" onclick="goToStep('customer')">← Customer</button>
             <button class="btn btn-primary" onclick="goToStep('terms')">Set Terms →</button>
@@ -330,21 +342,36 @@
         </div>
 
         <div class="builder-section step-section" data-step="terms">
-          <div class="section-heading"><h3>4. Deal Terms</h3></div>
+          <div class="section-heading"><h3>4. Deal Structure</h3></div>
           <div class="form-row form-row-3">
             <div class="form-group"><label class="form-label">Sale Price</label><input class="form-input" id="salePrice" type="number" oninput="renderEstimate()"></div>
             <div class="form-group"><label class="form-label">Down Payment</label><input class="form-input" id="downPayment" type="number" oninput="renderEstimate()"></div>
             <div class="form-group"><label class="form-label">Trade Allowance</label><input class="form-input" id="trade" type="number" oninput="renderEstimate()"></div>
           </div>
-          <div class="form-row form-row-3">
+          <div id="financeTerms" class="form-row form-row-3">
             <div class="form-group"><label class="form-label">APR %</label><input class="form-input" id="apr" type="number" step="0.01" oninput="renderEstimate()"></div>
             <div class="form-group"><label class="form-label">Term Months</label><input class="form-input" id="term" type="number" oninput="renderEstimate()"></div>
             <div class="form-group"><label class="form-label">Payment Frequency</label><select class="form-select" id="frequency" onchange="renderEstimate()"><option>Monthly</option><option>Biweekly</option><option>Weekly</option></select></div>
           </div>
           <div class="form-row form-row-3">
-            <div class="form-group"><label class="form-label">Doc Fee</label><input class="form-input" id="docFee" type="number" oninput="renderEstimate()"></div>
+            <div class="form-group"><label class="form-label">Insurance / GAP / VSI</label><input class="form-input" id="insuranceGapVsi" type="number" oninput="renderEstimate()"></div>
+            <div class="form-group"><label class="form-label">Accessories</label><input class="form-input" id="accessories" type="number" oninput="renderEstimate()"></div>
+            <div class="form-group"><label class="form-label">Products</label><input class="form-input" id="products" type="number" oninput="renderEstimate()"></div>
+          </div>
+          <div class="form-row form-row-3">
+            <div class="form-group"><label class="form-label">Dealer Doc Fee</label><input class="form-input" id="docFee" type="number" oninput="renderEstimate()"></div>
+            <div class="form-group"><label class="form-label">Filing Fee</label><input class="form-input" id="filingFee" type="number" oninput="renderEstimate()"></div>
+            <div class="form-group"><label class="form-label">Lender Processing Fee</label><input class="form-input" id="lenderFee" type="number" oninput="renderEstimate()"></div>
+          </div>
+          <div class="form-row form-row-3">
+            <div class="form-group"><label class="form-label">License Fee</label><input class="form-input" id="licenseFee" type="number" oninput="renderEstimate()"></div>
+            <div class="form-group"><label class="form-label">Plate Fee</label><input class="form-input" id="plateFee" type="number" oninput="renderEstimate()"></div>
+            <div class="form-group"><label class="form-label">Age Property Tax</label><input class="form-input" id="agePropertyTax" type="number" oninput="renderEstimate()"></div>
+          </div>
+          <div class="form-row form-row-3">
+            <div class="form-group"><label class="form-label">Title Fee</label><input class="form-input" id="titleFee" type="number" oninput="renderEstimate()"></div>
+            <div class="form-group"><label class="form-label">Emissions Fee</label><input class="form-input" id="emissionsFee" type="number" oninput="renderEstimate()"></div>
             <div class="form-group"><label class="form-label">Tax Rate %</label><input class="form-input" id="taxRate" type="number" step="0.001" oninput="renderEstimate()"></div>
-            <div class="form-group"><label class="form-label">Reg/Title/Plate Fees</label><input class="form-input" id="dmvFees" type="number" oninput="renderEstimate()"></div>
           </div>
           <div id="bhphExtra" class="form-row form-row-3">
             <div class="form-group"><label class="form-label">First Payment</label><input class="form-input" id="firstPayment" type="date" onchange="renderEstimate()"></div>
@@ -509,9 +536,12 @@ function setPacket(type, advance = true) {
   packetType = type;
   $('packet-outside').classList.toggle('active', type === 'outside');
   $('packet-bhph').classList.toggle('active', type === 'bhph');
+  $('packet-cash').classList.toggle('active', type === 'cash');
   $('bhphExtra').classList.toggle('hidden', type !== 'bhph');
+  $('financeTerms').classList.toggle('hidden', type === 'cash');
+  $('lenderFee').closest('.form-group').classList.toggle('hidden', type === 'cash');
   $('frequency').value = type === 'bhph' ? $('frequency').value : 'Monthly';
-  $('previewTitle').textContent = type === 'bhph' ? 'BHPH Packet Preview' : 'Outside Financing Packet Preview';
+  $('previewTitle').textContent = type === 'bhph' ? 'BHPH Packet Preview' : type === 'cash' ? 'Cash Packet Preview' : 'Outside Financing Packet Preview';
   renderEstimate();
   if (advance) goToStep('customer');
   if (built) renderPacket();
@@ -612,15 +642,27 @@ function loadSample() {
   $('county').value = 'Utah';
   $('fuel').value = 'Gas';
   $('unitType').value = 'Passenger Vehicle';
+  $('titleBrand').value = 'Clean';
+  $('emissionsOverride').value = 'auto';
+  $('registrationPeriod').value = '12';
   $('salePrice').value = '18995';
   $('downPayment').value = '2500';
   $('trade').value = '0';
   $('apr').value = packetType === 'bhph' ? '21.99' : '9.99';
   $('term').value = packetType === 'bhph' ? '36' : '60';
   $('frequency').value = 'Monthly';
-  $('docFee').value = '299';
+  $('insuranceGapVsi').value = packetType === 'cash' ? '0' : '895';
+  $('accessories').value = '0';
+  $('products').value = '0';
+  $('docFee').value = '399';
+  $('filingFee').value = '0';
+  $('lenderFee').value = packetType === 'cash' ? '0' : '0';
+  $('licenseFee').value = '75.50';
+  $('plateFee').value = '12.50';
+  $('agePropertyTax').value = '80';
+  $('titleFee').value = '6';
+  $('emissionsFee').value = '0';
   $('taxRate').value = '7.25';
-  $('dmvFees').value = '70.25';
   $('lateFee').value = '25';
   $('graceDays').value = '10';
   renderEstimate();
@@ -629,36 +671,89 @@ function loadSample() {
 function calculations() {
   const salePrice = num('salePrice');
   const docFee = num('docFee');
-  const dmvFees = num('dmvFees');
+  const filingFee = num('filingFee');
+  const lenderFee = packetType === 'cash' ? 0 : num('lenderFee');
+  const licenseFee = num('licenseFee');
+  const plateFee = num('plateFee');
+  const agePropertyTax = num('agePropertyTax');
+  const titleFee = num('titleFee');
+  const emissionsFee = num('emissionsFee');
+  const insuranceGapVsi = num('insuranceGapVsi');
+  const accessories = num('accessories');
+  const products = num('products');
+  const fees = docFee + filingFee + lenderFee + licenseFee + plateFee + agePropertyTax + titleFee + emissionsFee;
   const trade = num('trade');
   const downPayment = num('downPayment');
-  const taxable = Math.max(0, salePrice + docFee - trade);
+  const taxable = Math.max(0, salePrice + docFee + accessories + products + insuranceGapVsi - trade);
   const salesTax = taxable * (num('taxRate') / 100);
-  const total = salePrice + docFee + salesTax + dmvFees;
+  const total = salePrice + fees + insuranceGapVsi + accessories + products + salesTax;
   const amountFinanced = Math.max(0, total - downPayment - trade);
   const apr = num('apr') / 100;
   const term = Math.max(1, num('term') || 1);
   const monthlyRate = apr / 12;
-  const monthlyPayment = monthlyRate
+  const monthlyPayment = packetType === 'cash' ? 0 : monthlyRate
     ? amountFinanced * monthlyRate / (1 - Math.pow(1 + monthlyRate, -term))
     : amountFinanced / term;
   const frequency = val('frequency');
-  const payment = frequency === 'Weekly' ? monthlyPayment * 12 / 52 : frequency === 'Biweekly' ? monthlyPayment * 12 / 26 : monthlyPayment;
-  const paymentCount = frequency === 'Weekly' ? Math.round(term * 52 / 12) : frequency === 'Biweekly' ? Math.round(term * 26 / 12) : term;
-  return { salePrice, docFee, dmvFees, trade, downPayment, taxable, salesTax, total, amountFinanced, apr: num('apr'), term, frequency, payment, paymentCount };
+  const payment = packetType === 'cash' ? 0 : frequency === 'Weekly' ? monthlyPayment * 12 / 52 : frequency === 'Biweekly' ? monthlyPayment * 12 / 26 : monthlyPayment;
+  const paymentCount = packetType === 'cash' ? 0 : frequency === 'Weekly' ? Math.round(term * 52 / 12) : frequency === 'Biweekly' ? Math.round(term * 26 / 12) : term;
+  return { salePrice, docFee, filingFee, lenderFee, licenseFee, plateFee, agePropertyTax, titleFee, emissionsFee, fees, insuranceGapVsi, accessories, products, trade, downPayment, taxable, salesTax, total, amountFinanced, balanceDue: amountFinanced, apr: num('apr'), term, frequency, payment, paymentCount };
 }
 
 function renderEstimate() {
   const c = calculations();
+  const rules = packetRules();
   renderSelectionVisuals();
   $('estimateCard').innerHTML = `
     <div class="terms-line"><span>Estimated out-the-door</span><strong>${money(c.total)}</strong></div>
+    <div class="terms-line"><span>Fees / Products / Tax</span><strong>${money(c.fees)} / ${money(c.insuranceGapVsi + c.accessories + c.products)} / ${money(c.salesTax)}</strong></div>
     <div class="terms-line"><span>Down payment / trade</span><strong>${money(c.downPayment + c.trade)}</strong></div>
-    <div class="terms-line"><span>Estimated amount financed</span><strong>${money(c.amountFinanced)}</strong></div>
-    <div class="terms-line terms-total"><span>${packetType === 'bhph' ? 'BHPH payment' : 'Outside lender payment estimate'}</span><strong>${money(c.payment)}</strong></div>
-    <p class="form-hint">${c.paymentCount} ${c.frequency.toLowerCase()} payments at ${c.apr.toFixed(2)}% APR. This is an estimate until final lender/BHPH terms are approved.</p>
+    <div class="terms-line"><span>${packetType === 'cash' ? 'Balance due' : 'Estimated amount financed'}</span><strong>${money(c.amountFinanced)}</strong></div>
+    ${packetType === 'cash' ? '' : `<div class="terms-line terms-total"><span>${packetType === 'bhph' ? 'BHPH payment' : 'Outside lender payment estimate'}</span><strong>${money(c.payment)}</strong></div>`}
+    <p class="form-hint">${packetType === 'cash' ? 'Cash packet skips APR, months, lender processing fee, and payment schedule.' : `${c.paymentCount} ${c.frequency.toLowerCase()} payments at ${c.apr.toFixed(2)}% APR. This is an estimate until final lender/BHPH terms are approved.`}</p>
+    <p class="form-hint">Smart forms: ${escapeHtml(rules.summary)}</p>
   `;
   if (built) renderPacket();
+}
+
+function packetRules() {
+  const modelYear = Number(val('year')) || new Date().getFullYear();
+  const currentYear = new Date().getFullYear();
+  const county = val('county');
+  const fuel = val('fuel');
+  const unitType = val('unitType');
+  const override = val('emissionsOverride');
+  const titleBrand = val('titleBrand');
+  const isSalvage = titleBrand === 'Salvage / Branded';
+  const exemptByType = fuel === 'Electric' || unitType === 'Motorcycle' || unitType === 'ATV / UTV';
+  let emissions = 'none';
+  let reason = `${county} county does not require emissions in this workflow.`;
+  if (['Cache','Salt Lake','Davis','Weber','Utah'].includes(county)) {
+    if (exemptByType) {
+      emissions = 'exempt';
+      reason = `${fuel} ${unitType} is emissions exempt.`;
+    } else if (county === 'Cache') {
+      if (modelYear >= currentYear - 5 || modelYear <= 1995) {
+        emissions = 'exempt';
+        reason = 'Cache County emissions exemption based on model year.';
+      } else {
+        emissions = modelYear % 2 === currentYear % 2 ? 'required' : 'none';
+        reason = emissions === 'required' ? 'Cache County biennial emissions is due.' : 'Cache County biennial emissions is not due this year.';
+      }
+    } else {
+      emissions = modelYear >= currentYear - 5 ? 'exempt' : 'required';
+      reason = emissions === 'required' ? `${county} County emissions should be checked.` : `${county} County emissions exemption based on model year.`;
+    }
+  }
+  if (override !== 'auto') {
+    emissions = override;
+    reason = `Dealer override: emissions ${override}.`;
+  }
+  const optionalForms = [];
+  if (emissions === 'exempt' || emissions === 'none') optionalForms.push('TC-820 Emissions Exemption Affidavit');
+  if (emissions === 'required') optionalForms.push('Emissions Certificate / Requirement Check');
+  if (isSalvage) optionalForms.push('TC-814 Notice of Salvage Vehicle or Branded Title');
+  return { emissions, reason, isSalvage, optionalForms, summary: [reason, isSalvage ? 'Salvage/branded disclosure included.' : 'Clean title selected.'].join(' ') };
 }
 
 function renderSelectionVisuals() {
@@ -687,9 +782,10 @@ function renderSelectionVisuals() {
 
 function packetData() {
   const c = calculations();
+  const rules = packetRules();
   return {
     packetType,
-    packetLabel: packetType === 'bhph' ? 'BHPH Packet' : 'Outside Financing Packet',
+    packetLabel: packetType === 'bhph' ? 'BHPH Packet' : packetType === 'cash' ? 'Cash Packet' : 'Outside Financing Packet',
     dealer: { name: 'Unit Navigator Demo Dealer', number: 'TBD' },
     customer: {
       name: val('buyerName'),
@@ -708,8 +804,11 @@ function packetData() {
       county: val('county'),
       fuel: val('fuel'),
       unitType: val('unitType'),
+      titleBrand: val('titleBrand'),
+      registrationPeriod: val('registrationPeriod'),
     },
     pricing: c,
+    rules,
     finance: {
       apr: c.apr,
       termMonths: c.term,
@@ -742,7 +841,7 @@ function renderPacket() {
     coverPage(data),
     formChecklistPage(data),
     termsPage(data),
-    data.packetType === 'bhph' ? bhphPage(data) : outsideFinancingPage(data),
+    data.packetType === 'bhph' ? bhphPage(data) : data.packetType === 'cash' ? cashPage(data) : outsideFinancingPage(data),
     advancedMapPage(data),
   ].join('');
 }
@@ -785,21 +884,26 @@ function coverPage(data) {
           ${line('Mileage', data.vehicle.mileage ? `${Number(data.vehicle.mileage).toLocaleString()} mi` : '')}
           ${line('County', data.vehicle.county)}
           ${line('Fuel / Unit Type', `${data.vehicle.fuel} / ${data.vehicle.unitType}`)}
+          ${line('Title Brand', data.vehicle.titleBrand)}
         </section>
         <section class="packet-box">
           <h4>Deal Estimate</h4>
           ${line('Sale Price', money(data.pricing.salePrice))}
+          ${line('Fees', money(data.pricing.fees))}
+          ${line('Insurance / GAP / VSI', money(data.pricing.insuranceGapVsi))}
+          ${line('Accessories / Products', money(data.pricing.accessories + data.pricing.products))}
           ${line('Tax', money(data.pricing.salesTax))}
-          ${line('Doc + DMV Fees', money(data.pricing.docFee + data.pricing.dmvFees))}
           ${line('Down Payment', money(data.pricing.downPayment))}
-          ${line('Amount Financed', money(data.pricing.amountFinanced))}
+          ${line('Trade-In', money(data.pricing.trade))}
+          ${line(data.packetType === 'cash' ? 'Balance Due' : 'Amount Financed', money(data.pricing.amountFinanced))}
         </section>
         <section class="packet-box">
-          <h4>Payment Estimate</h4>
-          ${line('APR', `${data.finance.apr.toFixed(2)}%`)}
-          ${line('Term', `${data.finance.termMonths} months`)}
-          ${line('Frequency', data.finance.frequency)}
-          ${line('Estimated Payment', money(data.finance.payment))}
+          <h4>${data.packetType === 'cash' ? 'Cash Summary' : 'Payment Estimate'}</h4>
+          ${data.packetType === 'cash' ? line('Payment Type', 'Paid in full / balance due') : line('APR', `${data.finance.apr.toFixed(2)}%`)}
+          ${data.packetType === 'cash' ? line('Finance Terms', 'Not applicable') : line('Term', `${data.finance.termMonths} months`)}
+          ${data.packetType === 'cash' ? line('Estimated Payment', 'Not applicable') : line('Frequency', data.finance.frequency)}
+          ${data.packetType === 'cash' ? line('Balance Due', money(data.pricing.balanceDue)) : line('Estimated Payment', money(data.finance.payment))}
+          ${line('Smart Forms', data.rules.summary)}
         </section>
       </div>
       <div class="packet-warning">Draft workflow only. Official forms, contract language, finance disclosures, and Utah-specific requirements should be reviewed before live use.</div>
@@ -813,17 +917,24 @@ function coverPage(data) {
 
 function formChecklistPage(data) {
   const forms = [
-    'TC-466 Bill of Sale / purchase documentation',
-    'TC-656 Utah Application for Title',
-    'FTC Buyers Guide',
-    'Odometer disclosure / TC-891 as applicable',
-    'County emissions requirement check',
-    'Fee calculation worksheet',
+    'Agreement to Provide Insurance',
+    'Buyers Guide',
+    'Purchase Agreement / Buyers Order',
+    'UT DMV Odometer Disclosure Statement Sold',
+    'UT Title Application / TC-656',
+    'We Owe / You Owe',
+    'TC-466 Transaction Disclosure',
+    'Credit Application',
   ];
+  forms.push(...data.rules.optionalForms);
   if (data.packetType === 'bhph') {
-    forms.push('Retail installment / BHPH contract draft', 'Truth in Lending / Reg Z disclosure draft', 'Payment schedule and late-fee acknowledgment');
-  } else {
-    forms.push('Outside lender funding checklist', 'Cash/down payment receipt');
+    forms.push('BHPH Contract / Retail Installment Draft', 'Truth in Lending / Reg Z Disclosure Draft', 'Payment Schedule and Late-Fee Acknowledgment');
+  }
+  if (data.packetType === 'outside') {
+    forms.push('Outside Lender Funding Checklist');
+  }
+  if (data.packetType === 'cash') {
+    forms.push('Cash Receipt / Balance Due Worksheet');
   }
   return `
     <article class="packet-page">
@@ -831,6 +942,12 @@ function formChecklistPage(data) {
       <section class="packet-box">
         <h4>Packet Checklist</h4>
         <div class="packet-checklist">${forms.map(form => `<div class="packet-check">${escapeHtml(form)}</div>`).join('')}</div>
+      </section>
+      <section class="packet-box">
+        <h4>Smart Form Logic</h4>
+        ${line('Emissions', data.rules.reason)}
+        ${line('Title Brand', data.rules.isSalvage ? 'Salvage/branded form included' : 'Clean title selected')}
+        ${line('Dealer Custom Fees', 'Filing fee and lender processing fee are editable dealer settings.')}
       </section>
       <div class="packet-note">The old "Build Utah Packet" workbench belongs in dealer setup/settings. This Start Paperwork screen is now the daily workflow for actual deals.</div>
     </article>
@@ -845,23 +962,29 @@ function termsPage(data) {
         <section class="packet-box">
           <h4>Pricing</h4>
           ${line('Sale Price', money(data.pricing.salePrice))}
-          ${line('Doc Fee', money(data.pricing.docFee))}
+          ${line('Dealer Doc Fee', money(data.pricing.docFee))}
+          ${line('Filing Fee', money(data.pricing.filingFee))}
+          ${line('Lender Processing Fee', money(data.pricing.lenderFee))}
+          ${line('License / Plate / Age Property', money(data.pricing.licenseFee + data.pricing.plateFee + data.pricing.agePropertyTax))}
+          ${line('Title / Emissions Fee', money(data.pricing.titleFee + data.pricing.emissionsFee))}
+          ${line('Insurance / GAP / VSI', money(data.pricing.insuranceGapVsi))}
+          ${line('Accessories', money(data.pricing.accessories))}
+          ${line('Products', money(data.pricing.products))}
           ${line('Taxable Amount', money(data.pricing.taxable))}
-          ${line('Sales Tax', money(data.pricing.salesTax))}
-          ${line('Registration / Title / Plate Fees', money(data.pricing.dmvFees))}
+          ${line('Total Tax', money(data.pricing.salesTax))}
           ${line('Out-the-Door Total', money(data.pricing.total))}
         </section>
         <section class="packet-box">
-          <h4>Finance Estimate</h4>
+          <h4>${data.packetType === 'cash' ? 'Cash Balance' : 'Finance Estimate'}</h4>
           ${line('Down Payment', money(data.pricing.downPayment))}
           ${line('Trade Allowance', money(data.pricing.trade))}
-          ${line('Amount Financed', money(data.pricing.amountFinanced))}
-          ${line('APR', `${data.finance.apr.toFixed(2)}%`)}
-          ${line('Estimated Payment', money(data.finance.payment))}
-          ${line('Payments', `${data.finance.paymentCount} ${data.finance.frequency.toLowerCase()} payments`)}
+          ${line(data.packetType === 'cash' ? 'Balance Due' : 'Amount Financed', money(data.pricing.amountFinanced))}
+          ${data.packetType === 'cash' ? line('APR / Term', 'Not applicable') : line('APR', `${data.finance.apr.toFixed(2)}%`)}
+          ${data.packetType === 'cash' ? line('Estimated Payment', 'Not applicable') : line('Estimated Payment', money(data.finance.payment))}
+          ${data.packetType === 'cash' ? line('Payments', 'Paid in full') : line('Payments', `${data.finance.paymentCount} ${data.finance.frequency.toLowerCase()} payments`)}
         </section>
       </div>
-      <div class="packet-note">For outside financing, this payment is a worksheet estimate. The lender approval controls the final APR, term, down payment, and payment amount.</div>
+      <div class="packet-note">${data.packetType === 'cash' ? 'Cash deals skip finance disclosures unless the dealer manually adds another form.' : 'For outside financing, this payment is a worksheet estimate. The lender approval controls the final APR, term, down payment, and payment amount.'}</div>
     </article>
   `;
 }
@@ -877,6 +1000,27 @@ function outsideFinancingPage(data) {
           <div class="packet-check">Collect down payment and verify cashier check/wire when required.</div>
           <div class="packet-check">Attach title application, bill of sale, odometer disclosure, Buyers Guide, and emissions/fee worksheet.</div>
           <div class="packet-check">Mark deal funded once lender proceeds are received.</div>
+        </div>
+      </section>
+      <div class="signature-grid">
+        <div class="signature-line">Buyer Signature</div>
+        <div class="signature-line">Dealer Signature</div>
+      </div>
+    </article>
+  `;
+}
+
+function cashPage(data) {
+  return `
+    <article class="packet-page">
+      ${packetTop(data, 'Cash deal handoff.')}
+      <section class="packet-box">
+        <h4>Cash Deal Tasks</h4>
+        <div class="packet-checklist">
+          <div class="packet-check">Confirm paid-in-full funds before delivery.</div>
+          <div class="packet-check">Collect cash/check/wire receipt details.</div>
+          <div class="packet-check">Attach title application, purchase agreement, odometer disclosure, Buyers Guide, TC-466, and We Owe / You Owe.</div>
+          <div class="packet-check">Review emissions and salvage/branded title forms automatically included above.</div>
         </div>
       </section>
       <div class="signature-grid">
