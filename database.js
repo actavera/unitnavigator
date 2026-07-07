@@ -231,6 +231,46 @@ if (!customerColumns.includes('id_number')) {
   db.exec("ALTER TABLE customers ADD COLUMN id_number TEXT");
 }
 
+const dealershipColumns = db.prepare("PRAGMA table_info(dealerships)").all().map(col => col.name);
+function addDealershipColumn(column, ddl) {
+  if (!dealershipColumns.includes(column)) db.exec(`ALTER TABLE dealerships ADD COLUMN ${ddl}`);
+}
+addDealershipColumn('legal_name', 'legal_name TEXT');
+addDealershipColumn('dealer_number', 'dealer_number TEXT');
+addDealershipColumn('address', 'address TEXT');
+addDealershipColumn('city', 'city TEXT');
+addDealershipColumn('state', "state TEXT DEFAULT 'UT'");
+addDealershipColumn('zip', 'zip TEXT');
+addDealershipColumn('phone', 'phone TEXT');
+addDealershipColumn('email', 'email TEXT');
+addDealershipColumn('website', 'website TEXT');
+addDealershipColumn('representative_name', 'representative_name TEXT');
+addDealershipColumn('representative_title', 'representative_title TEXT');
+addDealershipColumn('default_doc_fee', 'default_doc_fee REAL DEFAULT 399');
+addDealershipColumn('default_filing_fee', 'default_filing_fee REAL DEFAULT 0');
+addDealershipColumn('default_lender_fee', 'default_lender_fee REAL DEFAULT 0');
+addDealershipColumn('default_license_fee', 'default_license_fee REAL DEFAULT 75.5');
+addDealershipColumn('default_plate_fee', 'default_plate_fee REAL DEFAULT 12.5');
+addDealershipColumn('default_age_property_tax', 'default_age_property_tax REAL DEFAULT 80');
+addDealershipColumn('default_title_fee', 'default_title_fee REAL DEFAULT 6');
+addDealershipColumn('default_emissions_fee', 'default_emissions_fee REAL DEFAULT 30');
+addDealershipColumn('default_tax_rate', 'default_tax_rate REAL DEFAULT 7.25');
+
+db.prepare(`
+  UPDATE dealerships
+  SET legal_name = COALESCE(NULLIF(legal_name, ''), name),
+      state = COALESCE(NULLIF(state, ''), 'UT'),
+      default_doc_fee = COALESCE(default_doc_fee, 399),
+      default_filing_fee = COALESCE(default_filing_fee, 0),
+      default_lender_fee = COALESCE(default_lender_fee, 0),
+      default_license_fee = COALESCE(default_license_fee, 75.5),
+      default_plate_fee = COALESCE(default_plate_fee, 12.5),
+      default_age_property_tax = COALESCE(default_age_property_tax, 80),
+      default_title_fee = COALESCE(default_title_fee, 6),
+      default_emissions_fee = COALESCE(default_emissions_fee, 30),
+      default_tax_rate = COALESCE(default_tax_rate, 7.25)
+`).run();
+
 const userSchema = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'").get()?.sql || '';
 const userColumns = db.prepare("PRAGMA table_info(users)").all().map(col => col.name);
 if (userSchema && (!userSchema.includes("'super_admin'") || !userColumns.includes('status'))) {

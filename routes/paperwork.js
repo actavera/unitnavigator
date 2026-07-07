@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
 const { requireAuth } = require('../middleware/auth');
+const db = require('../database');
 
 const manifestPath = path.join(__dirname, '..', 'public', 'forms', 'originals', 'manifest.json');
 const originalsDir = path.join(__dirname, '..', 'public', 'forms', 'originals');
@@ -50,6 +51,34 @@ function splitAddress(address) {
     city: parts[1] || '',
     state: parts[2]?.split(/\s+/)[0] || 'UT',
     zip: parts[2]?.match(/\b\d{5}(?:-\d{4})?\b/)?.[0] || '',
+  };
+}
+
+function dealerFromDb(req) {
+  const row = db.prepare('SELECT * FROM dealerships WHERE id = ?').get(req.user.dealership_id);
+  if (!row) return {};
+  return {
+    name: row.legal_name || row.name || '',
+    displayName: row.name || row.legal_name || '',
+    number: row.dealer_number || '',
+    address: row.address || '',
+    city: row.city || '',
+    state: row.state || 'UT',
+    zip: row.zip || '',
+    phone: row.phone || '',
+    email: row.email || '',
+    website: row.website || '',
+    representativeName: row.representative_name || '',
+    representativeTitle: row.representative_title || '',
+  };
+}
+
+function dealerAddress(dealer) {
+  return {
+    street: dealer?.address || '',
+    city: dealer?.city || '',
+    state: dealer?.state || 'UT',
+    zip: dealer?.zip || '',
   };
 }
 
@@ -283,6 +312,12 @@ function fillTc656(form, data) {
 
 function fillTc891(form, data) {
   const address = splitAddress(data.customer?.address);
+  const seller = dealerAddress(data.dealer);
+  setText(form, "Transferor's name", data.dealer?.name || '');
+  setText(form, "Transferor's Address", seller.street);
+  setText(form, "Transferor's city", seller.city);
+  setText(form, "Transferor's state", seller.state);
+  setText(form, "Transferor's ZIP", seller.zip);
   setText(form, 'Year', data.vehicle?.year || '');
   setText(form, 'Make', data.vehicle?.make || '');
   setText(form, 'Model', data.vehicle?.model || '');
@@ -343,11 +378,13 @@ function fillBuyersGuide(form, data) {
   setText(form, `${prefix}.Duration1[0]`, answers.warrantyDuration || '');
   setText(form, 'topmostSubform[0].BG-Back[0].DealerName[0]', data.dealer?.name || '');
   setText(form, 'topmostSubform[0].BG-Back[0].DealerEmail[0]', data.dealer?.email || '');
+  setText(form, 'topmostSubform[0].BG-Back[0].DealerPhone[0]', data.dealer?.phone || '');
 }
 
 router.post('/official-packet', requireAuth, async (req, res) => {
   try {
     const data = req.body || {};
+    data.dealer = { ...(data.dealer || {}), ...dealerFromDb(req) };
     const merged = await PDFDocument.create();
     await appendPdf(merged, await createCustomPages(data));
     await appendPdf(merged, await fillTemplate('ftc-buyers-guide-english.pdf', data, fillBuyersGuide));

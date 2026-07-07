@@ -58,7 +58,9 @@ const UN = {
     if (!el) return;
     const initials = user?.name ? user.name.split(' ').map(n => n[0]).join('').slice(0,2).toUpperCase() : '?';
     const canSeeAdmin = user?.role === 'super_admin' || String(user?.email || '').toLowerCase() === 'admin@unitnavigator.com';
+    const canSeeSettings = ['super_admin', 'admin', 'manager'].includes(user?.role);
     const adminLink = canSeeAdmin ? '<a class="nav-menu-item" href="/admin">Admin</a>' : '';
+    const settingsLink = canSeeSettings ? '<a class="nav-menu-item" href="/settings">Dealership Settings</a>' : '';
     el.innerHTML = `
       <nav class="nav">
         <a href="/home" class="nav-logo" aria-label="Unit Navigator home">
@@ -76,6 +78,7 @@ const UN = {
             </button>
             <div class="nav-account-menu" role="menu">
               ${adminLink}
+              ${settingsLink}
               <button class="nav-menu-item danger" type="button" onclick="UN.logout()">Log out</button>
             </div>
           </div>

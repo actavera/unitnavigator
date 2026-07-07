@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dealership Settings - Unit Navigator</title>
+  <script>(function(){var t=localStorage.getItem('un_theme')||'dark';document.documentElement.dataset.theme=t;})()</script>
+  <link rel="stylesheet" href="/css/main.css">
+  <style>
+    .settings-shell { width: min(100% - 44px, 1240px); margin: 0 auto; padding: 30px 0 80px; }
+    .settings-hero { display:flex; justify-content:space-between; gap:18px; align-items:end; margin-bottom:22px; }
+    .settings-hero h1 { font-size: clamp(2.3rem, 5vw, 5rem); line-height:.92; letter-spacing:-.055em; margin: 8px 0 10px; }
+    .settings-hero p { color: var(--text-2); max-width: 740px; line-height: 1.55; }
+    .settings-grid { display:grid; grid-template-columns: 1fr 1fr; gap:18px; align-items:start; }
+    .settings-card { border:1px solid var(--border); border-radius: var(--r-lg); background: var(--s1); box-shadow: var(--sh); overflow:hidden; }
+    .settings-card.full { grid-column: 1 / -1; }
+    .settings-card-head { padding:18px 20px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; gap:12px; align-items:center; }
+    .settings-card-head h2 { font-size:.92rem; text-transform:uppercase; letter-spacing:.06em; }
+    .settings-card-body { padding:20px; display:grid; gap:14px; }
+    .settings-form-grid { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:14px; }
+    .settings-form-grid .wide { grid-column: 1 / -1; }
+    .settings-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:18px; }
+    .settings-note { color: var(--muted); font-size:.9rem; line-height:1.5; }
+    @media(max-width: 860px) {
+      .settings-hero, .settings-grid, .settings-form-grid { grid-template-columns:1fr; display:grid; }
+      .settings-card.full, .settings-form-grid .wide { grid-column:auto; }
+      .settings-actions { justify-content:stretch; }
+      .settings-actions .btn { width:100%; }
+    }
+  </style>
+</head>
+<body>
+<div id="nav-container"></div>
+<main class="settings-shell">
+  <section class="settings-hero">
+    <div>
+      <p class="home-kicker">Dealership Setup</p>
+      <h1>Dealer info and default fees.</h1>
+      <p>These values feed the paperwork packet, Utah forms, seller fields, and the default fee stack before a deal-specific override.</p>
+    </div>
+    <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
+  </section>
+
+  <div class="settings-card full" id="platformDealerPicker" style="display:none;">
+    <div class="settings-card-head"><h2>Platform Admin Dealer Picker</h2></div>
+    <div class="settings-card-body">
+      <div class="form-group">
+        <label class="form-label">Editing Dealership</label>
+        <select class="form-select" id="dealershipId" onchange="loadSettings()"></select>
+      </div>
+      <p class="settings-note">You are logged in as platform admin, so you can edit settings for any dealership.</p>
+    </div>
+  </div>
+
+  <section class="settings-grid">
+    <article class="settings-card">
+      <div class="settings-card-head"><h2>Dealer Identity</h2></div>
+      <div class="settings-card-body settings-form-grid">
+        <div class="form-group">
+          <label class="form-label">Display Name</label>
+          <input class="form-input" id="name" placeholder="New Era Auto Sales">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Legal Seller Name</label>
+          <input class="form-input" id="legal_name" placeholder="New Era Auto Sales LLC">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Utah Dealer Number</label>
+          <input class="form-input" id="dealer_number" placeholder="Dealer number">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Website</label>
+          <input class="form-input" id="website" placeholder="https://example.com">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Phone</label>
+          <input class="form-input" id="phone" placeholder="(801) 555-0123">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email</label>
+          <input class="form-input" id="email" type="email" placeholder="sales@example.com">
+        </div>
+      </div>
+    </article>
+
+    <article class="settings-card">
+      <div class="settings-card-head"><h2>Address & Signer</h2></div>
+      <div class="settings-card-body settings-form-grid">
+        <div class="form-group wide">
+          <label class="form-label">Street Address</label>
+          <input class="form-input" id="address" placeholder="123 State St">
+        </div>
+        <div class="form-group">
+          <label class="form-label">City</label>
+          <input class="form-input" id="city" placeholder="Orem">
+        </div>
+        <div class="form-group">
+          <label class="form-label">State</label>
+          <input class="form-input" id="state" placeholder="UT" maxlength="2">
+        </div>
+        <div class="form-group">
+          <label class="form-label">ZIP</label>
+          <input class="form-input" id="zip" placeholder="84057">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Dealer Representative</label>
+          <input class="form-input" id="representative_name" placeholder="Robert Rees">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Representative Title</label>
+          <input class="form-input" id="representative_title" placeholder="Owner / Manager">
+        </div>
+      </div>
+    </article>
+
+    <article class="settings-card full">
+      <div class="settings-card-head"><h2>Default Fees</h2></div>
+      <div class="settings-card-body">
+        <p class="settings-note">These are the standard defaults used during Start Paperwork. A deal can still override them when the dealer says the fees changed.</p>
+        <div class="settings-form-grid">
+          <div class="form-group"><label class="form-label">Dealer Doc Fee</label><input class="form-input" id="default_doc_fee" type="number" step="0.01"></div>
+          <div class="form-group"><label class="form-label">Filing Fee</label><input class="form-input" id="default_filing_fee" type="number" step="0.01"></div>
+          <div class="form-group"><label class="form-label">Lender Processing Fee</label><input class="form-input" id="default_lender_fee" type="number" step="0.01"></div>
+          <div class="form-group"><label class="form-label">License Fee</label><input class="form-input" id="default_license_fee" type="number" step="0.01"></div>
+          <div class="form-group"><label class="form-label">Plate Fee</label><input class="form-input" id="default_plate_fee" type="number" step="0.01"></div>
+          <div class="form-group"><label class="form-label">Age / Property Tax</label><input class="form-input" id="default_age_property_tax" type="number" step="0.01"></div>
+          <div class="form-group"><label class="form-label">Title Fee</label><input class="form-input" id="default_title_fee" type="number" step="0.01"></div>
+          <div class="form-group"><label class="form-label">Emissions Fee</label><input class="form-input" id="default_emissions_fee" type="number" step="0.01"></div>
+          <div class="form-group"><label class="form-label">Sales Tax Rate (%)</label><input class="form-input" id="default_tax_rate" type="number" step="0.001"></div>
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <div class="settings-actions">
+    <a class="btn btn-ghost" href="/paperwork/start">Back to Paperwork</a>
+    <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
+  </div>
+</main>
+
+<script src="/js/nav.js"></script>
+<script>
+if (UN.requireAuth()) {
+  UN.renderNav();
+  initSettings();
+}
+
+const SETTING_FIELDS = [
+  'name', 'legal_name', 'dealer_number', 'address', 'city', 'state', 'zip', 'phone', 'email', 'website',
+  'representative_name', 'representative_title',
+  'default_doc_fee', 'default_filing_fee', 'default_lender_fee', 'default_license_fee', 'default_plate_fee',
+  'default_age_property_tax', 'default_title_fee', 'default_emissions_fee', 'default_tax_rate',
+];
+
+async function initSettings() {
+  const user = UN.getUser() || {};
+  if (user.role === 'super_admin') {
+    document.getElementById('platformDealerPicker').style.display = '';
+    try {
+      const data = await UN.api('GET', '/api/admin/overview');
+      const dealers = data.dealerships || [];
+      document.getElementById('dealershipId').innerHTML = dealers.map(dealer =>
+        `<option value="${dealer.id}">${escapeHtml(dealer.name)}${dealer.status === 'revoked' ? ' (revoked)' : ''}</option>`
+      ).join('');
+      const requestedDealerId = new URLSearchParams(location.search).get('dealership_id');
+      if (requestedDealerId && dealers.some(dealer => String(dealer.id) === String(requestedDealerId))) {
+        document.getElementById('dealershipId').value = requestedDealerId;
+      }
+    } catch (err) {
+      toast(err.message, 'err');
+    }
+  }
+  await loadSettings();
+}
+
+function selectedDealerQuery() {
+  const picker = document.getElementById('dealershipId');
+  return picker?.value ? `?dealership_id=${encodeURIComponent(picker.value)}` : '';
+}
+
+async function loadSettings() {
+  try {
+    const data = await UN.api('GET', `/api/admin/dealership-settings${selectedDealerQuery()}`);
+    const dealer = data.dealership || {};
+    SETTING_FIELDS.forEach(field => {
+      const el = document.getElementById(field);
+      if (el) el.value = dealer[field] ?? '';
+    });
+  } catch (err) {
+    toast(err.message, 'err');
+  }
+}
+
+async function saveSettings() {
+  const body = {};
+  const picker = document.getElementById('dealershipId');
+  if (picker?.value) body.dealership_id = Number(picker.value);
+  SETTING_FIELDS.forEach(field => {
+    const el = document.getElementById(field);
+    body[field] = el?.value ?? '';
+  });
+  try {
+    await UN.api('PUT', '/api/admin/dealership-settings', body);
+    toast('Dealership settings saved');
+    await loadSettings();
+  } catch (err) {
+    toast(err.message, 'err');
+  }
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch]));
+}
+</script>
+</body>
+</html>

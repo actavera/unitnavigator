@@ -130,6 +130,7 @@ function renderDealerships() {
       </div>
       <div class="row-actions">
         <span class="status-pill ${esc(d.status)}">${esc(d.status)}</span>
+        <a class="btn btn-ghost btn-sm" href="/settings?dealership_id=${d.id}">Settings</a>
         <button class="btn btn-ghost btn-sm" onclick="renameDealership(${d.id})">Rename</button>
         <button class="btn ${d.status === 'revoked' ? 'btn-primary' : 'btn-danger'} btn-sm" onclick="setDealershipStatus(${d.id}, '${d.status === 'revoked' ? 'active' : 'revoked'}')">${d.status === 'revoked' ? 'Reactivate' : 'Revoke'}</button>
         <button class="btn btn-danger btn-sm" onclick="deleteDealership(${d.id})">Delete</button>

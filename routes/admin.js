@@ -2,7 +2,92 @@
 const router = require('express').Router();
 const bcrypt = require('bcryptjs');
 const db = require('../database');
-const { requireRole } = require('../middleware/auth');
+const { requireAuth, requireRole } = require('../middleware/auth');
+
+const DEALER_SETTING_FIELDS = [
+  'name',
+  'legal_name',
+  'dealer_number',
+  'address',
+  'city',
+  'state',
+  'zip',
+  'phone',
+  'email',
+  'website',
+  'representative_name',
+  'representative_title',
+  'default_doc_fee',
+  'default_filing_fee',
+  'default_lender_fee',
+  'default_license_fee',
+  'default_plate_fee',
+  'default_age_property_tax',
+  'default_title_fee',
+  'default_emissions_fee',
+  'default_tax_rate',
+];
+
+const NUMERIC_SETTING_FIELDS = new Set([
+  'default_doc_fee',
+  'default_filing_fee',
+  'default_lender_fee',
+  'default_license_fee',
+  'default_plate_fee',
+  'default_age_property_tax',
+  'default_title_fee',
+  'default_emissions_fee',
+  'default_tax_rate',
+]);
+
+function canManageDealerSettings(req, dealershipId) {
+  if (req.user.role === 'super_admin') return true;
+  if (!['admin', 'manager'].includes(req.user.role)) return false;
+  return Number(req.user.dealership_id) === Number(dealershipId);
+}
+
+function canViewDealerSettings(req, dealershipId) {
+  if (req.user.role === 'super_admin') return true;
+  return Number(req.user.dealership_id) === Number(dealershipId);
+}
+
+function settingsRow(id) {
+  return db.prepare(`SELECT ${DEALER_SETTING_FIELDS.join(', ')}, id, status, created_at FROM dealerships WHERE id = ?`).get(id);
+}
+
+router.get('/dealership-settings', requireAuth, (req, res) => {
+  const dealershipId = Number(req.query.dealership_id || req.user.dealership_id);
+  if (!canViewDealerSettings(req, dealershipId)) return res.status(403).json({ error: 'Insufficient permissions' });
+  const dealership = settingsRow(dealershipId);
+  if (!dealership) return res.status(404).json({ error: 'Dealership not found' });
+  res.json({ dealership });
+});
+
+router.put('/dealership-settings', requireAuth, (req, res) => {
+  const dealershipId = Number(req.body.dealership_id || req.user.dealership_id);
+  if (!canManageDealerSettings(req, dealershipId)) return res.status(403).json({ error: 'Insufficient permissions' });
+  const existing = settingsRow(dealershipId);
+  if (!existing) return res.status(404).json({ error: 'Dealership not found' });
+
+  const values = {};
+  DEALER_SETTING_FIELDS.forEach(field => {
+    if (field === 'status' || field === 'created_at') return;
+    if (NUMERIC_SETTING_FIELDS.has(field)) {
+      const value = Number(req.body[field] ?? existing[field] ?? 0);
+      values[field] = Number.isFinite(value) ? value : 0;
+    } else {
+      values[field] = String(req.body[field] ?? existing[field] ?? '').trim();
+    }
+  });
+  if (!values.name) return res.status(400).json({ error: 'Dealership name is required' });
+  if (!values.legal_name) values.legal_name = values.name;
+  if (!values.state) values.state = 'UT';
+
+  const assignments = DEALER_SETTING_FIELDS.map(field => `${field} = ?`).join(', ');
+  db.prepare(`UPDATE dealerships SET ${assignments} WHERE id = ?`)
+    .run(...DEALER_SETTING_FIELDS.map(field => values[field]), dealershipId);
+  res.json({ dealership: settingsRow(dealershipId) });
+});
 
 router.use(...requireRole('super_admin'));
 
@@ -45,7 +130,7 @@ router.get('/overview', (_req, res) => {
 router.post('/dealerships', (req, res) => {
   const name = String(req.body.name || '').trim();
   if (!name) return res.status(400).json({ error: 'Dealership name required' });
-  const info = db.prepare('INSERT INTO dealerships (name, status) VALUES (?, ?)').run(name, req.body.status === 'revoked' ? 'revoked' : 'active');
+  const info = db.prepare('INSERT INTO dealerships (name, legal_name, status) VALUES (?, ?, ?)').run(name, name, req.body.status === 'revoked' ? 'revoked' : 'active');
   const dealership = db.prepare('SELECT * FROM dealerships WHERE id = ?').get(info.lastInsertRowid);
   res.status(201).json({ dealership });
 });

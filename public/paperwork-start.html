@@ -564,6 +564,7 @@ let savedDealId = null;
 let questionIndex = 0;
 let officialPacketUrl = null;
 let packetRenderToken = 0;
+let dealershipSettings = {};
 const DEFAULT_EMISSIONS_FEE = 30;
 
 const SAMPLE_CUSTOMERS = [
@@ -695,6 +696,7 @@ async function init() {
   const firstPayment = new Date();
   firstPayment.setDate(firstPayment.getDate() + 30);
   $('firstPayment').value = firstPayment.toISOString().slice(0, 10);
+  await loadDealershipSettings();
   loadSample();
   await Promise.allSettled([loadInventory(), loadCustomers(), loadOfficialTemplates()]);
   populateVehicleSelect();
@@ -728,6 +730,41 @@ async function loadCustomers() {
 async function loadOfficialTemplates() {
   const data = await UN.api('GET', '/api/paperwork/templates');
   officialTemplates = data.templates || [];
+}
+
+async function loadDealershipSettings() {
+  try {
+    const data = await UN.api('GET', '/api/admin/dealership-settings');
+    dealershipSettings = data.dealership || {};
+  } catch {
+    dealershipSettings = {};
+  }
+}
+
+function settingNumber(field, fallback) {
+  const value = Number(dealershipSettings[field]);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function defaultEmissionsFee() {
+  return settingNumber('default_emissions_fee', DEFAULT_EMISSIONS_FEE);
+}
+
+function dealerForPacket() {
+  return {
+    name: dealershipSettings.legal_name || dealershipSettings.name || 'Unit Navigator Demo Dealer',
+    displayName: dealershipSettings.name || dealershipSettings.legal_name || 'Unit Navigator Demo Dealer',
+    number: dealershipSettings.dealer_number || '',
+    address: dealershipSettings.address || '',
+    city: dealershipSettings.city || '',
+    state: dealershipSettings.state || 'UT',
+    zip: dealershipSettings.zip || '',
+    phone: dealershipSettings.phone || '',
+    email: dealershipSettings.email || '',
+    website: dealershipSettings.website || '',
+    representativeName: dealershipSettings.representative_name || '',
+    representativeTitle: dealershipSettings.representative_title || '',
+  };
 }
 
 function renderOfficialTemplates() {
@@ -1002,15 +1039,15 @@ function loadSample() {
   $('productsDescription').value = '';
   $('products').value = '0';
   $('standardFeesChanged').value = 'no';
-  $('docFee').value = '399';
-  $('filingFee').value = '0';
-  $('lenderFee').value = packetType === 'cash' ? '0' : '0';
-  $('licenseFee').value = '75.50';
-  $('plateFee').value = '12.50';
-  $('agePropertyTax').value = '80';
-  $('titleFee').value = '6';
+  $('docFee').value = settingNumber('default_doc_fee', 399);
+  $('filingFee').value = settingNumber('default_filing_fee', 0);
+  $('lenderFee').value = packetType === 'cash' ? '0' : settingNumber('default_lender_fee', 0);
+  $('licenseFee').value = settingNumber('default_license_fee', 75.50);
+  $('plateFee').value = settingNumber('default_plate_fee', 12.50);
+  $('agePropertyTax').value = settingNumber('default_age_property_tax', 80);
+  $('titleFee').value = settingNumber('default_title_fee', 6);
   $('emissionsFee').value = '0';
-  $('taxRate').value = '7.25';
+  $('taxRate').value = settingNumber('default_tax_rate', 7.25);
   $('lateFee').value = '25';
   $('graceDays').value = '10';
   $('insuranceCompany').value = '';
@@ -1040,7 +1077,7 @@ function calculations() {
   const agePropertyTax = num('agePropertyTax');
   const titleFee = num('titleFee');
   const emissionsFeeInput = num('emissionsFee');
-  const emissionsFee = rules.emissions === 'required' && emissionsFeeInput <= 0 ? DEFAULT_EMISSIONS_FEE : emissionsFeeInput;
+  const emissionsFee = rules.emissions === 'required' && emissionsFeeInput <= 0 ? defaultEmissionsFee() : emissionsFeeInput;
   const insuranceGapVsi = num('insuranceGapVsi');
   const accessories = val('accessoriesIncluded') === 'yes' ? num('accessories') : 0;
   const products = val('productsIncluded') === 'yes' ? num('products') : 0;
@@ -1067,7 +1104,7 @@ function calculations() {
 function renderEstimate() {
   const rules = packetRules();
   if (rules.emissions === 'required' && num('emissionsFee') <= 0) {
-    $('emissionsFee').value = String(DEFAULT_EMISSIONS_FEE);
+    $('emissionsFee').value = String(defaultEmissionsFee());
   }
   const c = calculations();
   renderSelectionVisuals();
@@ -1158,7 +1195,7 @@ function packetData() {
   return {
     packetType,
     packetLabel: packetType === 'bhph' ? 'BHPH Packet' : packetType === 'cash' ? 'Cash Packet' : 'Outside Financing Packet',
-    dealer: { name: 'Unit Navigator Demo Dealer', number: 'TBD' },
+    dealer: dealerForPacket(),
     customer: {
       name: val('buyerName'),
       coBuyer: val('coBuyer'),
