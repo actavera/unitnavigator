@@ -42,6 +42,35 @@ router.get('/inventory', (_req, res) => {
   });
 });
 
+router.get('/dealer', (_req, res) => {
+  const row = db.prepare(`
+    SELECT name, legal_name, address, city, state, zip, phone, email, website
+    FROM dealerships
+    WHERE status = 'active'
+    ORDER BY id
+    LIMIT 1
+  `).get();
+  res.json({
+    dealer: row ? {
+      name: row.legal_name || row.name || 'Dealer Inventory',
+      display_name: row.name || row.legal_name || 'Dealer Inventory',
+      address: [row.address, row.city, row.zip].some(Boolean)
+        ? [row.address, row.city, row.state, row.zip].filter(Boolean).join(' ')
+        : '',
+      phone: row.phone || '',
+      email: row.email || '',
+      website: row.website || '',
+    } : {
+      name: 'Dealer Inventory',
+      display_name: 'Dealer Inventory',
+      address: '',
+      phone: '',
+      email: '',
+      website: '',
+    },
+  });
+});
+
 router.get('/inventory/:id', (req, res) => {
   const row = db.prepare(`
     SELECT id, vin, year, make, model, trim, body_style, color, mileage, asking_price, minimum_price, photos, stage

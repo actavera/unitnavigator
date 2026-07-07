@@ -41,28 +41,21 @@
         linear-gradient(180deg, var(--show-bg-a), var(--show-bg-b) 54%, var(--show-bg-a));
       color: var(--show-text);
     }
-    .showroom-shell { width: min(100% - 44px, 1500px); margin: 0 auto; padding: 34px 0 80px; }
-    .showroom-nav { display: flex; justify-content: space-between; align-items: center; gap: 18px; margin-bottom: 46px; }
-    .showroom-brand { display: flex; align-items: center; gap: 12px; color: var(--show-text); font-weight: 900; letter-spacing: -.035em; }
-    .showroom-brand img { width: 176px; height: auto; }
-    .showroom-nav-actions { display: flex; gap: 10px; flex-wrap: wrap; }
-    .showroom-hero { display: grid; grid-template-columns: minmax(0, .9fr) minmax(340px, .5fr); gap: 32px; align-items: end; margin-bottom: 34px; }
-    .showroom-kicker { color: #60a5fa; text-transform: uppercase; letter-spacing: .14em; font-size: .78rem; font-weight: 900; }
-    .showroom-hero h1 { font-size: clamp(3rem, 7vw, 7.5rem); line-height: .86; letter-spacing: -.075em; margin: 12px 0 18px; }
-    .showroom-hero p { color: var(--show-muted); font-size: 1.12rem; line-height: 1.55; max-width: 760px; }
-    .showroom-panel {
-      border: 1px solid var(--show-line); border-radius: 28px; padding: 22px;
-      background:
-        radial-gradient(circle at 92% 0%, rgba(59,130,246,.26), transparent 34%),
-        var(--show-panel);
-      box-shadow: 0 30px 90px var(--show-shadow);
-      backdrop-filter: blur(18px);
+    .showroom-shell { width: min(100% - 44px, 1500px); margin: 0 auto; padding: 16px 0 80px; }
+    .showroom-nav {
+      display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 18px;
+      margin-bottom: 14px; padding: 10px 0 14px; border-bottom: 1px solid var(--show-line);
     }
-    .payment-tease strong { display: block; font-size: 2.2rem; letter-spacing: -.06em; margin: 8px 0; }
-    .payment-tease span { color: rgba(226,232,240,.7); line-height: 1.45; }
+    .showroom-brand { display: flex; align-items: center; gap: 12px; color: var(--show-text); font-weight: 900; letter-spacing: -.035em; }
+    .showroom-brand img { width: 138px; max-height: 52px; object-fit: contain; height: auto; }
+    .dealer-contact { min-width: 0; display: flex; justify-content: center; align-items: center; gap: 14px; flex-wrap: wrap; color: var(--show-muted); font-size: .9rem; line-height: 1.35; }
+    .dealer-contact strong { color: var(--show-text); font-size: .95rem; }
+    .dealer-contact a { color: var(--show-muted); font-weight: 800; }
+    .dealer-contact a:hover { color: var(--show-text); }
+    .showroom-nav-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
     .showroom-tools {
-      display: grid; grid-template-columns: minmax(240px,1fr) 180px 180px auto; gap: 12px;
-      margin-bottom: 22px; position: sticky; top: 10px; z-index: 20;
+      display: grid; grid-template-columns: minmax(240px,1fr) 180px 180px auto auto; gap: 12px;
+      margin-bottom: 22px; position: sticky; top: 0; z-index: 20;
       padding: 10px; margin-left: -10px; margin-right: -10px; border-radius: 24px;
       background: var(--show-tool); backdrop-filter: blur(18px);
     }
@@ -159,7 +152,8 @@
     }
     @media(max-width: 1180px) {
       .vehicle-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
-      .showroom-hero { grid-template-columns: 1fr; }
+      .showroom-nav { grid-template-columns: 1fr auto; align-items: start; }
+      .dealer-contact { grid-column: 1 / -1; justify-content: flex-start; order: 3; }
     }
     @media(max-width: 760px) {
       body {
@@ -167,17 +161,16 @@
           radial-gradient(circle at 20% 0%, rgba(59,130,246,.24), transparent 34%),
           linear-gradient(180deg, #05070c, #0b111d 58%, #06080d);
       }
-      .showroom-shell { width: min(100% - 24px, 560px); padding: 18px 0 92px; }
-      .showroom-brand img { width: 148px; }
-      .showroom-nav { gap: 14px; margin-bottom: 28px; }
-      .showroom-nav-actions { width: 100%; display: grid; grid-template-columns: 1fr 1fr; }
+      .showroom-shell { width: min(100% - 24px, 560px); padding: 10px 0 92px; }
+      .showroom-brand img { width: 126px; max-height: 46px; }
+      .showroom-nav { gap: 10px; margin-bottom: 10px; grid-template-columns: 1fr auto; align-items: center; }
+      .dealer-contact { justify-content: flex-start; gap: 8px 12px; font-size: .82rem; }
+      .dealer-contact strong { width: 100%; font-size: .9rem; }
+      .showroom-nav-actions { width: auto; display: flex; }
       .showroom-nav-actions .btn { justify-content: center; padding: 10px 12px; }
-      .showroom-hero { gap: 18px; margin-bottom: 22px; }
-      .showroom-hero h1 { font-size: clamp(2.85rem, 17vw, 4.8rem); line-height: .88; margin-bottom: 14px; }
-      .showroom-hero p { font-size: .98rem; }
-      .showroom-panel { border-radius: 22px; padding: 16px; }
-      .payment-tease strong { font-size: 1.45rem; }
-      .showroom-tools, .vehicle-grid { grid-template-columns: 1fr; }
+      .showroom-tools { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .showroom-tools .showroom-input { grid-column: 1 / -1; }
+      .vehicle-grid { grid-template-columns: 1fr; }
       .showroom-tools {
         top: 0; gap: 8px; padding: 10px 0 12px; margin: 0 0 16px;
         border-radius: 0 0 24px 24px;
@@ -199,7 +192,6 @@
       .photo-arrow.prev { left: 10px; }
       .photo-arrow.next { right: 10px; }
       .photo-count { top: 12px; right: 12px; }
-      .showroom-nav { align-items: flex-start; flex-direction: column; }
       .mobile-quickbar {
         position: fixed; z-index: 60; left: 12px; right: 12px; bottom: 12px;
         display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
@@ -227,27 +219,16 @@
     <a class="showroom-brand" href="/">
       <img id="brandLogo" src="/assets/unit-navigator-logo-on-dark.png" alt="Unit Navigator">
     </a>
+    <div class="dealer-contact" id="dealerContact">
+      <strong id="dealerName">Dealer Inventory</strong>
+      <span id="dealerAddress"></span>
+      <a id="dealerPhone" href="#" hidden></a>
+      <a id="dealerEmail" href="#" hidden></a>
+    </div>
     <div class="showroom-nav-actions">
-      <div class="theme-toggle" aria-label="Theme">
-        <button class="toggle-btn" id="lightBtn" type="button" onclick="setTheme('light')">Light</button>
-        <button class="toggle-btn" id="darkBtn" type="button" onclick="setTheme('dark')">Dark</button>
-      </div>
-      <a class="btn btn-primary" href="/credit/new">Apply for Credit</a>
+      <a class="btn btn-primary" href="/credit/new">Credit App</a>
     </div>
   </nav>
-
-  <section class="showroom-hero">
-    <div>
-      <p class="showroom-kicker">Available Inventory</p>
-      <h1>Find the unit that fits the payment.</h1>
-      <p>Browse dealer inventory with quick photo switching, clean payment estimates, and a full calculator on every vehicle detail page.</p>
-    </div>
-    <aside class="showroom-panel payment-tease">
-      <span>Tap any vehicle</span>
-      <strong>Customize the payment</strong>
-      <span>Details include a simple calculator for down payment, term, APR, and estimated monthly payment.</span>
-    </aside>
-  </section>
 
   <section class="showroom-tools">
     <input class="showroom-input" id="search" placeholder="Search year, make, model, trim..." oninput="renderInventory()">
@@ -267,6 +248,10 @@
     <div class="view-toggle" aria-label="Inventory view">
       <button class="toggle-btn" id="cardsBtn" type="button" onclick="setView('cards')">Cards</button>
       <button class="toggle-btn" id="listBtn" type="button" onclick="setView('list')">List</button>
+    </div>
+    <div class="theme-toggle" aria-label="Theme">
+      <button class="toggle-btn" id="lightBtn" type="button" onclick="setTheme('light')">Light</button>
+      <button class="toggle-btn" id="darkBtn" type="button" onclick="setTheme('dark')">Dark</button>
     </div>
   </section>
 
@@ -326,6 +311,34 @@ function setView(mode) {
   document.getElementById('cardsBtn')?.classList.toggle('active', mode === 'cards');
   document.getElementById('listBtn')?.classList.toggle('active', mode === 'list');
   renderInventory();
+}
+
+function contactLink(id, value, hrefPrefix) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (!value) {
+    el.hidden = true;
+    el.removeAttribute('href');
+    el.textContent = '';
+    return;
+  }
+  el.hidden = false;
+  el.href = `${hrefPrefix}${value}`;
+  el.textContent = value;
+}
+
+async function loadDealer() {
+  try {
+    const res = await fetch('/api/public/dealer');
+    const data = await res.json();
+    const dealer = data.dealer || {};
+    document.getElementById('dealerName').textContent = dealer.display_name || dealer.name || 'Dealer Inventory';
+    document.getElementById('dealerAddress').textContent = dealer.address || '';
+    contactLink('dealerPhone', dealer.phone, 'tel:');
+    contactLink('dealerEmail', dealer.email, 'mailto:');
+  } catch {
+    document.getElementById('dealerName').textContent = 'Dealer Inventory';
+  }
 }
 
 function escapeHtml(value) {
@@ -419,6 +432,7 @@ function movePhoto(event, id, dir) {
 
 setTheme(localStorage.getItem('un_public_theme') || 'dark');
 setView(viewMode);
+loadDealer();
 loadInventory().catch(() => {
   document.getElementById('vehicleGrid').innerHTML = `
     <div class="empty-showroom">
