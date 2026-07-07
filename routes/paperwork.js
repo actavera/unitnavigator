@@ -2,7 +2,7 @@
 const router = require('express').Router();
 const fs = require('fs');
 const path = require('path');
-const { PDFDocument } = require('pdf-lib');
+const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
 const { requireAuth } = require('../middleware/auth');
 
 const manifestPath = path.join(__dirname, '..', 'public', 'forms', 'originals', 'manifest.json');
@@ -53,6 +53,30 @@ function splitAddress(address) {
   };
 }
 
+function todayLabel() {
+  return new Date().toLocaleDateString('en-US');
+}
+
+function odometerCertLabel(value) {
+  if (value === 'exceeds') return "Mileage in excess of odometer's mechanical limits";
+  if (value === 'not_actual') return 'Not the actual mileage.';
+  return 'Actual mileage';
+}
+
+function tc891OdometerCertLabel(value) {
+  if (value === 'exceeds') return "the mileage in excess of odometer's mechanical limits";
+  if (value === 'not_actual') return 'Not the actual mileage (Warning: odometer discrepancy)';
+  return 'the actual mileage';
+}
+
+function vehicleTypeOption(unitType) {
+  if (unitType === 'Motorcycle') return 'Street motorcycle';
+  if (unitType === 'ATV / UTV') return 'Street-legal ATV';
+  if (unitType === 'Trailer') return 'Trailer';
+  if (unitType === 'Watercraft') return '';
+  return 'Passenger, light truck, van or utility';
+}
+
 function setText(form, names, value) {
   for (const name of Array.isArray(names) ? names : [names]) {
     try {
@@ -84,6 +108,78 @@ function selectRadio(form, name, option, shouldSelect = true) {
   }
 }
 
+async function createCustomPages(data) {
+  const pdf = await PDFDocument.create();
+  await addSimplePage(pdf, 'Agreement to Provide Insurance', [
+    ['Buyer', data.customer?.name],
+    ['Vehicle', vehicleLabel(data)],
+    ['VIN', data.vehicle?.vin],
+    ['Insurance Company', data.formAnswers?.insuranceCompany],
+    ['Agent / Phone', [data.formAnswers?.insuranceAgent, data.formAnswers?.insuranceAgentPhone].filter(Boolean).join(' / ')],
+    ['Policy Number', data.formAnswers?.insurancePolicy],
+    ['Effective Date', data.formAnswers?.insuranceEffective],
+    ['Coverage', data.formAnswers?.insuranceCoverage],
+  ], 'Buyer agrees to keep required insurance coverage in force and provide proof of insurance before delivery when required by the dealer or lender.');
+
+  await addSimplePage(pdf, 'Retail Purchase Agreement', [
+    ['Buyer', data.customer?.name],
+    ['Vehicle', vehicleLabel(data)],
+    ['VIN', data.vehicle?.vin],
+    ['Sale Price', `$${moneyValue(data.pricing?.salePrice)}`],
+    ['Fees', `$${moneyValue(data.pricing?.fees)}`],
+    ['Insurance / GAP / VSI', `$${moneyValue(data.pricing?.insuranceGapVsi)}`],
+    ['Accessories', `${data.formAnswers?.accessoriesDescription || '-'} $${moneyValue(data.pricing?.accessories)}`],
+    ['Products', `${data.formAnswers?.productsDescription || '-'} $${moneyValue(data.pricing?.products)}`],
+    ['Tax', `$${moneyValue(data.pricing?.salesTax)}`],
+    ['Down Payment', `$${moneyValue(data.pricing?.downPayment)}`],
+    ['Trade-In', `$${moneyValue(data.pricing?.trade)}`],
+    ['Balance / Amount Financed', `$${moneyValue(data.pricing?.amountFinanced)}`],
+    ['Payment Type', data.packetType],
+  ], 'Purchase agreement language and final dealer-approved terms should be reviewed before live use. This page is a dealer packet template until the dealer-specific original PDF is supplied.');
+
+  await addSimplePage(pdf, 'We Owe / You Owe', [
+    ['Dealer Owes Customer', data.formAnswers?.weOwe],
+    ['Customer Owes Dealer', data.formAnswers?.youOwe],
+  ], 'Only written promises listed here are included in this packet.');
+
+  await addSimplePage(pdf, 'Credit Application', [
+    ['Applicant', data.customer?.name],
+    ['Co-Buyer', data.customer?.coBuyer],
+    ['Phone', data.customer?.phone],
+    ['Email', data.customer?.email],
+    ['ID Number', data.customer?.idNumber],
+    ['Address', data.customer?.address],
+  ], 'Credit application source PDF is dealer/lender-specific. This temporary packet page captures the required fields until that original template is supplied.');
+  return pdf;
+}
+
+async function addSimplePage(pdf, title, rows, note) {
+  const page = pdf.addPage([612, 792]);
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  let y = 736;
+  page.drawText(title, { x: 54, y, size: 22, font: bold, color: rgb(0.04, 0.07, 0.14) });
+  y -= 28;
+  page.drawLine({ start: { x: 54, y }, end: { x: 558, y }, thickness: 1.5, color: rgb(0.08, 0.1, 0.16) });
+  y -= 30;
+  for (const [label, value] of rows) {
+    page.drawText(String(label || ''), { x: 54, y, size: 9, font: bold, color: rgb(0.29, 0.36, 0.46) });
+    page.drawText(String(value || '-').slice(0, 86), { x: 190, y, size: 11, font, color: rgb(0.04, 0.07, 0.14) });
+    y -= 24;
+    if (y < 140) break;
+  }
+  y -= 10;
+  const noteLines = String(note || '').match(/.{1,92}(\s|$)/g) || [];
+  for (const line of noteLines.slice(0, 5)) {
+    page.drawText(line.trim(), { x: 54, y, size: 10, font, color: rgb(0.2, 0.25, 0.34) });
+    y -= 15;
+  }
+  page.drawLine({ start: { x: 54, y: 92 }, end: { x: 270, y: 92 }, thickness: 1, color: rgb(0.08, 0.1, 0.16) });
+  page.drawText('Buyer Signature', { x: 54, y: 76, size: 10, font, color: rgb(0.2, 0.25, 0.34) });
+  page.drawLine({ start: { x: 318, y: 92 }, end: { x: 558, y: 92 }, thickness: 1, color: rgb(0.08, 0.1, 0.16) });
+  page.drawText('Dealer Signature / Date', { x: 318, y: 76, size: 10, font, color: rgb(0.2, 0.25, 0.34) });
+}
+
 async function fillTemplate(templateFile, data, fill) {
   const pdf = await PDFDocument.load(fs.readFileSync(path.join(originalsDir, templateFile)));
   const form = pdf.getForm();
@@ -103,6 +199,13 @@ async function appendPdf(target, source) {
 
 function fillTc466(form, data) {
   const pricing = data.pricing || {};
+  const answers = data.formAnswers || {};
+  const optionalCharges = (pricing.insuranceGapVsi || 0) + (pricing.accessories || 0) + (pricing.products || 0);
+  const govFees = (pricing.licenseFee || 0) + (pricing.plateFee || 0) + (pricing.agePropertyTax || 0) + (pricing.titleFee || 0) + (pricing.emissionsFee || 0);
+  const filingAndLenderFees = (pricing.filingFee || 0) + (pricing.lenderFee || 0);
+  const line5Total = (pricing.salePrice || 0) + (pricing.docFee || 0) + optionalCharges;
+  const line6Total = (pricing.fees || 0) + (pricing.salesTax || 0);
+  const adjustedTotal = pricing.total || (line5Total + line6Total);
   setText(form, 'dealer', data.dealer?.name || '');
   setText(form, 'dealer number', data.dealer?.number || '');
   setText(form, 'trans date', new Date().toLocaleDateString('en-US'));
@@ -113,23 +216,47 @@ function fillTc466(form, data) {
   setText(form, 'model', data.vehicle?.model || '');
   setText(form, 'year', data.vehicle?.year || '');
   setText(form, 'line 1', moneyValue(pricing.salePrice));
-  setText(form, ['line 4-a', 'line 4a'], moneyValue(pricing.docFee));
-  setText(form, 'line 5', moneyValue((pricing.salesTax || 0) + (pricing.fees || 0)));
-  setText(form, 'line 8a', moneyValue(pricing.downPayment));
-  setText(form, 'line 8b', moneyValue(pricing.trade));
+  setText(form, 'line 2', moneyValue(pricing.docFee));
+  setText(form, 'line 3', moneyValue((pricing.salePrice || 0) + (pricing.docFee || 0)));
+  setText(form, 'line 4-a', 'Insurance / GAP / VSI');
+  setText(form, 'line 4a', moneyValue(pricing.insuranceGapVsi));
+  setText(form, 'line 4-b', answers.accessoriesDescription || 'Accessories');
+  setText(form, 'line 4b', moneyValue(pricing.accessories));
+  setText(form, 'line 4-c', answers.productsDescription || 'Products');
+  setText(form, 'line 4c', moneyValue(pricing.products));
+  setText(form, 'line 4', moneyValue(optionalCharges));
+  setText(form, 'line 5', moneyValue(line5Total));
+  setText(form, 'line 6b', moneyValue(govFees));
+  setText(form, 'line 6d', moneyValue(pricing.salesTax));
+  setText(form, 'line 6e', moneyValue(filingAndLenderFees));
+  setText(form, 'line 6', moneyValue(line6Total));
+  setText(form, 'line 7', moneyValue(adjustedTotal));
+  setText(form, 'line 8a', moneyValue(pricing.trade));
+  setText(form, 'line 8b', '0.00');
+  setText(form, 'line 8c', moneyValue(pricing.trade));
+  setText(form, 'line 8e', moneyValue(pricing.downPayment));
+  setText(form, 'line 8', moneyValue((pricing.downPayment || 0) + (pricing.trade || 0)));
   setText(form, 'line 9', moneyValue(pricing.amountFinanced));
 }
 
 function fillTc656(form, data) {
   const address = splitAddress(data.customer?.address);
+  const pricing = data.pricing || {};
   checkBox(form, ['new title', 'Registration', 'change of ownership'], true);
+  selectRadio(form, 'owner and/or', 'And');
   setText(form, 'primary owner name', data.customer?.name || '');
   setText(form, "primary owner's email", data.customer?.email || '');
   setText(form, ["primary owner's I.D. number", "primary owner's I.D"], data.customer?.idNumber || '');
+  selectRadio(form, 'ID type', "Driver's license");
+  setText(form, 'primary owner state/country', 'UT');
   setText(form, "primary owner's address", address.street);
   setText(form, "primary owner's city", address.city);
   setText(form, "primary owner's state", address.state);
   setText(form, "primary owner's zip code", address.zip);
+  setText(form, "primary owner's mailing address ", address.street);
+  setText(form, "primary owner's mailing address city ", address.city);
+  setText(form, "primary owner's mailing address state", address.state);
+  setText(form, "primary owner's mailing address zip code", address.zip);
   setText(form, 'co-owner name 1', data.customer?.coBuyer || '');
   setText(form, 'year', data.vehicle?.year || '');
   setText(form, 'make', data.vehicle?.make || '');
@@ -138,6 +265,20 @@ function fillTc656(form, data) {
   setText(form, 'VIN', data.vehicle?.vin || '');
   setText(form, 'fuel', data.vehicle?.fuel || '');
   setText(form, 'body type', data.vehicle?.unitType || '');
+  setText(form, 'purchase price', moneyValue(pricing.salePrice));
+  setText(form, 'purchase date', todayLabel());
+  setText(form, 'dealer number', data.dealer?.number || '');
+  selectRadio(form, 'dealer new/used', 'Used');
+  selectRadio(form, 'commercial use', 'No');
+  selectRadio(form, 'farm use', 'No');
+  selectRadio(form, 'vehcile type', vehicleTypeOption(data.vehicle?.unitType));
+  setText(form, 'odometer', data.vehicle?.mileage || '');
+  selectRadio(form, 'odometer reading', 'Miles');
+  selectRadio(form, 'odometer certification', odometerCertLabel(data.formAnswers?.odometerCertification));
+  selectRadio(form, 'plate type', 'Life Elevated Arches');
+  selectRadio(form, 'title type', 'Paper');
+  setText(form, 'owner sig date', todayLabel());
+  setText(form, 'dealer sig date', todayLabel());
 }
 
 function fillTc891(form, data) {
@@ -146,12 +287,18 @@ function fillTc891(form, data) {
   setText(form, 'Make', data.vehicle?.make || '');
   setText(form, 'Model', data.vehicle?.model || '');
   setText(form, 'VIN', data.vehicle?.vin || '');
+  setText(form, 'Body type', data.vehicle?.unitType || '');
   setText(form, 'Reading', data.vehicle?.mileage || '');
+  setText(form, 'odometer 3', data.vehicle?.mileage || '');
+  selectRadio(form, 'Reading', 'Miles');
+  selectRadio(form, 'I certify', tc891OdometerCertLabel(data.formAnswers?.odometerCertification));
+  setText(form, 'sig date', todayLabel());
   setText(form, "Transferee's name", data.customer?.name || '');
   setText(form, "Transferee's Address", address.street);
   setText(form, "Transferee's city", address.city);
   setText(form, "Transferee's state", address.state);
   setText(form, "Transferee's  ZIP", address.zip);
+  setText(form, 'sig date 2', todayLabel());
 }
 
 function fillTc820(form, data) {
@@ -202,6 +349,7 @@ router.post('/official-packet', requireAuth, async (req, res) => {
   try {
     const data = req.body || {};
     const merged = await PDFDocument.create();
+    await appendPdf(merged, await createCustomPages(data));
     await appendPdf(merged, await fillTemplate('ftc-buyers-guide-english.pdf', data, fillBuyersGuide));
     await appendPdf(merged, await fillTemplate('tc-466.pdf', data, fillTc466));
     await appendPdf(merged, await fillTemplate('tc-656.pdf', data, fillTc656));

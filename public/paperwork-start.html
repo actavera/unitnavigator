@@ -43,7 +43,7 @@
       border: 0; background: transparent; box-shadow: none; border-radius: 0; overflow: visible;
     }
     .packet-focus .paper-panel-body { padding: 0; }
-    .step-strip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-bottom: 18px; }
+    .step-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 18px; }
     .step-pill { border: 1px solid var(--border); border-radius: 999px; padding: 8px 10px; color: var(--muted); font-size: .76rem; font-weight: 800; text-align: center; text-transform: uppercase; letter-spacing: .04em; }
     .step-pill.active { color: var(--blue); border-color: var(--blue-border); background: var(--blue-gl); }
     .choice-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
@@ -265,10 +265,10 @@
   <header class="paper-hero">
     <div>
       <p class="home-kicker">Start Paperwork</p>
-      <h1>Choose the packet, confirm the deal, then build it.</h1>
-      <p>Select outside financing, BHPH, or cash, pick a customer and vehicle, adjust the deal structure, then generate the pre-filled review packet.</p>
+      <h1>Choose the client, vehicle, then build it.</h1>
+      <p>Start with the customer and unit. The packet type is decided later from the financing answer.</p>
     </div>
-    <button class="btn btn-primary no-print" onclick="goToStep('packet')">Start</button>
+    <button class="btn btn-primary no-print" onclick="goToStep('customer')">Start</button>
   </header>
 
   <section class="workflow-grid">
@@ -279,14 +279,13 @@
       </div>
       <div class="paper-panel-body">
         <div class="step-strip" aria-label="Paperwork steps">
-          <div class="step-pill active" data-step-pill="packet">Packet</div>
-          <div class="step-pill" data-step-pill="customer">Customer</div>
+          <div class="step-pill active" data-step-pill="customer">Customer</div>
           <div class="step-pill" data-step-pill="vehicle">Vehicle</div>
           <div class="step-pill" data-step-pill="terms">Questions</div>
           <div class="step-pill" data-step-pill="build">Build</div>
         </div>
 
-        <div class="builder-section step-section active" data-step="packet">
+        <div class="builder-section step-section hidden" data-step="packet">
           <div class="packet-intro">
             <p class="home-kicker">Start Paperwork</p>
             <h1>Pick the packet.</h1>
@@ -350,7 +349,7 @@
             <div class="form-group"><label class="form-label">Address</label><input class="form-input" id="buyerAddress" oninput="renderEstimate()"></div>
           </div>
           <div class="wizard-nav">
-            <button class="btn btn-ghost" onclick="goToStep('packet')">← Packet</button>
+            <button class="btn btn-ghost" onclick="location.href='/home'">← Home</button>
             <button class="btn btn-primary" onclick="goToStep('vehicle')">Choose Vehicle →</button>
           </div>
         </div>
@@ -422,8 +421,17 @@
           </div>
           <div class="form-row form-row-3">
             <div class="form-group"><label class="form-label">Insurance / GAP / VSI</label><input class="form-input" id="insuranceGapVsi" type="number" oninput="renderEstimate()"></div>
+            <div class="form-group"><label class="form-label">Accessories Included</label><select class="form-select" id="accessoriesIncluded" onchange="renderEstimate()"><option value="no">No</option><option value="yes">Yes</option></select></div>
+            <div class="form-group"><label class="form-label">Products Included</label><select class="form-select" id="productsIncluded" onchange="renderEstimate()"><option value="no">No</option><option value="yes">Yes</option></select></div>
+          </div>
+          <div class="form-row form-row-2">
+            <div class="form-group"><label class="form-label">Accessories Description</label><textarea class="form-textarea" id="accessoriesDescription" oninput="renderEstimate()"></textarea></div>
+            <div class="form-group"><label class="form-label">Products Description</label><textarea class="form-textarea" id="productsDescription" oninput="renderEstimate()"></textarea></div>
+          </div>
+          <div class="form-row form-row-3">
             <div class="form-group"><label class="form-label">Accessories</label><input class="form-input" id="accessories" type="number" oninput="renderEstimate()"></div>
             <div class="form-group"><label class="form-label">Products</label><input class="form-input" id="products" type="number" oninput="renderEstimate()"></div>
+            <div class="form-group"><label class="form-label">Standard Fees Changed</label><select class="form-select" id="standardFeesChanged" onchange="renderEstimate()"><option value="no">No</option><option value="yes">Yes</option></select></div>
           </div>
           <div class="form-row form-row-3">
             <div class="form-group"><label class="form-label">Dealer Doc Fee</label><input class="form-input" id="docFee" type="number" oninput="renderEstimate()"></div>
@@ -478,6 +486,14 @@
             <div class="form-group"><label class="form-label">Systems Covered</label><input class="form-input" id="warrantySystems" placeholder="Engine, transmission..." oninput="renderEstimate()"></div>
             <div class="form-group"><label class="form-label">Warranty Duration</label><input class="form-input" id="warrantyDuration" placeholder="30 days / 1,000 miles" oninput="renderEstimate()"></div>
             <div class="form-group"><label class="form-label">Dealer Pays</label><input class="form-input" id="warrantyDealerPays" placeholder="100% parts / 100% labor" oninput="renderEstimate()"></div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Odometer Certification</label>
+            <select class="form-select" id="odometerCertification" onchange="renderEstimate()">
+              <option value="actual">Actual miles</option>
+              <option value="exceeds">Mileage exceeds mechanical limits</option>
+              <option value="not_actual">Not actual mileage / odometer discrepancy</option>
+            </select>
           </div>
           <div class="form-group">
             <label class="form-label">We Owe</label>
@@ -595,36 +611,42 @@ const DEAL_QUESTIONS = [
   {
     id: 'financingResponsibility',
     type: 'select',
-    title: 'Who is handling the financing?',
-    hint: 'This checks the correct financing-arrangement box on the purchase agreement for print or e-sign.',
-    when: () => packetType !== 'cash',
+    title: 'How is the customer paying for the vehicle?',
+    hint: 'This answer decides whether the packet is cash, BHPH, customer-arranged outside financing, or dealer-assisted outside financing.',
     options: [
-      ['dealer', 'Dealer is helping arrange financing'],
       ['customer', 'Customer is taking this to their bank / arranging their own financing'],
+      ['dealer', 'Dealer is helping arrange outside financing'],
+      ['bhph', 'BHPH / dealer is carrying the note'],
+      ['cash', 'Cash / paid in full'],
     ],
   },
-  { id: 'apr', type: 'number', suffix: '%', title: 'What is the estimated interest rate?', hint: 'Use the current expected APR. You can update it later if the lender changes terms.', when: () => packetType !== 'cash' },
-  { id: 'term', type: 'number', suffix: 'months', title: 'How many months is the note?', hint: 'For BHPH this becomes part of the payment schedule. For outside financing, it is still an estimate.', when: () => packetType !== 'cash' },
+  { id: 'apr', type: 'number', suffix: '%', title: 'What is the BHPH interest rate?', hint: 'Only used when the dealer is carrying the note.', when: () => packetType === 'bhph' },
+  { id: 'term', type: 'number', suffix: 'months', title: 'How many months is the BHPH note?', hint: 'Only used for the BHPH payment schedule.', when: () => packetType === 'bhph' },
   {
     id: 'frequency',
     type: 'select',
     title: 'How often are payments due?',
-    hint: 'Monthly is the default unless this is a BHPH deal with a different schedule.',
-    when: () => packetType !== 'cash',
+    hint: 'Only used for BHPH.',
+    when: () => packetType === 'bhph',
     options: [['Monthly', 'Monthly'], ['Biweekly', 'Biweekly'], ['Weekly', 'Weekly']],
   },
   { id: 'insuranceGapVsi', type: 'number', prefix: '$', title: 'Are you selling Insurance, GAP, or VSI?', hint: 'Enter the total add-on amount, or 0 if none.' },
-  { id: 'accessories', type: 'number', prefix: '$', title: 'Are there accessories being added?', hint: 'Enter the accessory total, or 0 if none.' },
-  { id: 'products', type: 'number', prefix: '$', title: 'Are any other products being sold?', hint: 'Enter the product total, or 0 if none.' },
-  { id: 'docFee', type: 'number', prefix: '$', title: 'Is this the correct dealer doc fee?', hint: 'This defaults to the dealer setting. Adjust for this deal if needed.' },
-  { id: 'filingFee', type: 'number', prefix: '$', title: 'Is there a filing fee?', hint: 'Use the dealer custom fee. Enter 0 if it does not apply.' },
-  { id: 'lenderFee', type: 'number', prefix: '$', title: 'Is there a lender processing fee?', hint: 'Enter the lender processing fee, or 0 if it does not apply.', when: () => packetType !== 'cash' },
-  { id: 'licenseFee', type: 'number', prefix: '$', title: 'Is this the correct license fee?', hint: 'This should follow the Utah fee schedule, but can be adjusted before building.' },
-  { id: 'plateFee', type: 'number', prefix: '$', title: 'Is this the correct plate fee?', hint: 'Use the correct plate amount for this vehicle.' },
-  { id: 'agePropertyTax', type: 'number', prefix: '$', title: 'Is this the correct age/property tax?', hint: 'Use the Utah age-based fee/property tax amount for the unit.' },
-  { id: 'titleFee', type: 'number', prefix: '$', title: 'Is this the correct title fee?', hint: 'Utah title fee defaults here, but can be adjusted.' },
-  { id: 'emissionsFee', type: 'number', prefix: '$', title: 'Is there an emissions fee?', hint: 'If emissions are required, the system defaults a fee. If exempt or not required, this should be 0.' },
-  { id: 'taxRate', type: 'number', suffix: '%', title: 'What tax rate should be used?', hint: 'Enter the sales tax rate for this deal.' },
+  { id: 'accessoriesIncluded', type: 'select', title: 'Are accessories being added?', hint: 'Example: lift kit, leather seats, wheels, audio, tint.', options: [['no', 'No'], ['yes', 'Yes']] },
+  { id: 'accessoriesDescription', type: 'textarea', title: 'What accessories are being added?', hint: 'List what is included.', when: () => val('accessoriesIncluded') === 'yes' },
+  { id: 'accessories', type: 'number', prefix: '$', title: 'How much are the accessories?', hint: 'Enter the accessory total.', when: () => val('accessoriesIncluded') === 'yes' },
+  { id: 'productsIncluded', type: 'select', title: 'Are any products being sold?', hint: 'Example: service contract, protection package, GPS, warranty product.', options: [['no', 'No'], ['yes', 'Yes']] },
+  { id: 'productsDescription', type: 'textarea', title: 'What products are being sold?', hint: 'List the products included.', when: () => val('productsIncluded') === 'yes' },
+  { id: 'products', type: 'number', prefix: '$', title: 'How much are the products?', hint: 'Enter the product total.', when: () => val('productsIncluded') === 'yes' },
+  { id: 'standardFeesChanged', type: 'select', title: 'Are any changes needed to the standard fees?', hint: 'If no, the dealer defaults stay in place. If yes, you can adjust the fees one by one.', options: [['no', 'No'], ['yes', 'Yes']] },
+  { id: 'docFee', type: 'number', prefix: '$', title: 'Dealer doc fee', hint: 'Adjust only if this deal differs from the default.', when: () => val('standardFeesChanged') === 'yes' },
+  { id: 'filingFee', type: 'number', prefix: '$', title: 'Filing fee', hint: 'Adjust only if needed.', when: () => val('standardFeesChanged') === 'yes' },
+  { id: 'lenderFee', type: 'number', prefix: '$', title: 'Lender processing fee', hint: 'Adjust only if needed.', when: () => val('standardFeesChanged') === 'yes' && packetType !== 'cash' },
+  { id: 'licenseFee', type: 'number', prefix: '$', title: 'License fee', hint: 'Adjust only if needed.', when: () => val('standardFeesChanged') === 'yes' },
+  { id: 'plateFee', type: 'number', prefix: '$', title: 'Plate fee', hint: 'Adjust only if needed.', when: () => val('standardFeesChanged') === 'yes' },
+  { id: 'agePropertyTax', type: 'number', prefix: '$', title: 'Age/property tax', hint: 'Adjust only if needed.', when: () => val('standardFeesChanged') === 'yes' },
+  { id: 'titleFee', type: 'number', prefix: '$', title: 'Title fee', hint: 'Adjust only if needed.', when: () => val('standardFeesChanged') === 'yes' },
+  { id: 'emissionsFee', type: 'number', prefix: '$', title: 'Emissions fee', hint: 'Adjust only if needed.', when: () => val('standardFeesChanged') === 'yes' },
+  { id: 'taxRate', type: 'number', suffix: '%', title: 'Tax rate', hint: 'Adjust only if needed.', when: () => val('standardFeesChanged') === 'yes' },
   { id: 'firstPayment', type: 'date', title: 'When is the first payment due?', hint: 'Only used for BHPH payment scheduling.', when: () => packetType === 'bhph' },
   { id: 'lateFee', type: 'number', prefix: '$', title: 'What is the late fee?', hint: 'Only used for BHPH contracts.', when: () => packetType === 'bhph' },
   { id: 'graceDays', type: 'number', suffix: 'days', title: 'How many grace days?', hint: 'Only used for BHPH contracts.', when: () => packetType === 'bhph' },
@@ -651,6 +673,17 @@ const DEAL_QUESTIONS = [
       ['service_contract', 'Service Contract Included / Available'],
     ],
   },
+  {
+    id: 'odometerCertification',
+    type: 'select',
+    title: 'How should the odometer be certified?',
+    hint: 'This fills TC-891 and TC-656.',
+    options: [
+      ['actual', 'Actual miles'],
+      ['exceeds', 'Mileage exceeds mechanical limits'],
+      ['not_actual', 'Not actual mileage / odometer discrepancy'],
+    ],
+  },
   { id: 'warrantySystems', type: 'text', title: 'What systems are covered by the warranty?', hint: 'Example: engine, transmission, drivetrain.', when: () => val('buyersGuideSaleType') === 'dealer_warranty' },
   { id: 'warrantyDuration', type: 'text', title: 'How long is the warranty?', hint: 'Example: 30 days / 1,000 miles.', when: () => val('buyersGuideSaleType') === 'dealer_warranty' },
   { id: 'warrantyDealerPays', type: 'text', title: 'What does the dealer pay under warranty?', hint: 'Example: 100% parts / 100% labor.', when: () => val('buyersGuideSaleType') === 'dealer_warranty' },
@@ -668,7 +701,7 @@ async function init() {
   populateCustomerSelect();
   renderOfficialTemplates();
   setPacket('outside', false);
-  goToStep('packet');
+  goToStep('customer');
   renderEstimate();
 }
 
@@ -708,7 +741,7 @@ function renderOfficialTemplates() {
   const missing = officialTemplates.filter(template => !template.file);
   panel.innerHTML = `
     <div class="terms-line terms-total"><span>Official PDF originals</span><strong>${ready.length} ready</strong></div>
-    <p class="form-hint">These are the canonical source PDFs. The HTML preview is only a review screen until the filled-PDF generator is wired to these templates.</p>
+    <p class="form-hint">These are the canonical source PDFs used for the generated packet preview/download.</p>
     <div class="paper-actions" style="margin-top:8px;">
       ${ready.map(template => `<a class="btn btn-ghost btn-sm" href="${escapeHtml(template.file)}" target="_blank" rel="noopener">${escapeHtml(template.name)}</a>`).join('')}
     </div>
@@ -795,6 +828,19 @@ function questionControl(question) {
 
 function setQuestionValue(id, value) {
   if ($(id)) $(id).value = value;
+  if (id === 'financingResponsibility') {
+    if (value === 'cash') setPacket('cash', false);
+    else if (value === 'bhph') setPacket('bhph', false);
+    else setPacket('outside', false);
+  }
+  if (id === 'accessoriesIncluded' && value !== 'yes') {
+    $('accessories').value = '0';
+    $('accessoriesDescription').value = '';
+  }
+  if (id === 'productsIncluded' && value !== 'yes') {
+    $('products').value = '0';
+    $('productsDescription').value = '';
+  }
   if (id === 'buyersGuideSaleType') renderBuyersGuideWarrantyFields();
   renderEstimate();
 }
@@ -820,14 +866,15 @@ function prevQuestion() {
 
 function setPacket(type, advance = true) {
   packetType = type;
-  $('packet-outside').classList.toggle('active', type === 'outside');
-  $('packet-bhph').classList.toggle('active', type === 'bhph');
-  $('packet-cash').classList.toggle('active', type === 'cash');
+  if ($('packet-outside')) $('packet-outside').classList.toggle('active', type === 'outside');
+  if ($('packet-bhph')) $('packet-bhph').classList.toggle('active', type === 'bhph');
+  if ($('packet-cash')) $('packet-cash').classList.toggle('active', type === 'cash');
   $('bhphExtra').classList.toggle('hidden', type !== 'bhph');
-  $('financeTerms').classList.toggle('hidden', type === 'cash');
-  $('financingResponsibilityBlock').classList.toggle('hidden', type === 'cash');
+  $('financeTerms').classList.toggle('hidden', type !== 'bhph');
   $('lenderFee').closest('.form-group').classList.toggle('hidden', type === 'cash');
-  $('financingResponsibility').value = type === 'outside' ? 'customer' : 'dealer';
+  if (type === 'cash') $('financingResponsibility').value = 'cash';
+  else if (type === 'bhph') $('financingResponsibility').value = 'bhph';
+  else if (!['customer', 'dealer'].includes($('financingResponsibility').value)) $('financingResponsibility').value = 'customer';
   $('frequency').value = type === 'bhph' ? $('frequency').value : 'Monthly';
   $('previewTitle').textContent = type === 'bhph' ? 'BHPH Packet Preview' : type === 'cash' ? 'Cash Packet Preview' : 'Outside Financing Packet Preview';
   renderEstimate();
@@ -948,8 +995,13 @@ function loadSample() {
   $('frequency').value = 'Monthly';
   $('financingResponsibility').value = packetType === 'outside' ? 'customer' : 'dealer';
   $('insuranceGapVsi').value = packetType === 'cash' ? '0' : '895';
+  $('accessoriesIncluded').value = 'no';
+  $('accessoriesDescription').value = '';
   $('accessories').value = '0';
+  $('productsIncluded').value = 'no';
+  $('productsDescription').value = '';
   $('products').value = '0';
+  $('standardFeesChanged').value = 'no';
   $('docFee').value = '399';
   $('filingFee').value = '0';
   $('lenderFee').value = packetType === 'cash' ? '0' : '0';
@@ -967,6 +1019,7 @@ function loadSample() {
   $('insurancePolicy').value = '';
   $('insuranceCoverage').value = 'Full Coverage';
   $('buyersGuideSaleType').value = 'as_is';
+  $('odometerCertification').value = 'actual';
   $('warrantySystems').value = '';
   $('warrantyDuration').value = '';
   $('warrantyDealerPays').value = '';
@@ -989,8 +1042,8 @@ function calculations() {
   const emissionsFeeInput = num('emissionsFee');
   const emissionsFee = rules.emissions === 'required' && emissionsFeeInput <= 0 ? DEFAULT_EMISSIONS_FEE : emissionsFeeInput;
   const insuranceGapVsi = num('insuranceGapVsi');
-  const accessories = num('accessories');
-  const products = num('products');
+  const accessories = val('accessoriesIncluded') === 'yes' ? num('accessories') : 0;
+  const products = val('productsIncluded') === 'yes' ? num('products') : 0;
   const fees = docFee + filingFee + lenderFee + licenseFee + plateFee + agePropertyTax + titleFee + emissionsFee;
   const trade = num('trade');
   const downPayment = num('downPayment');
@@ -1001,12 +1054,13 @@ function calculations() {
   const apr = num('apr') / 100;
   const term = Math.max(1, num('term') || 1);
   const monthlyRate = apr / 12;
-  const monthlyPayment = packetType === 'cash' ? 0 : monthlyRate
+  const shouldCalculatePayment = packetType === 'bhph';
+  const monthlyPayment = !shouldCalculatePayment ? 0 : monthlyRate
     ? amountFinanced * monthlyRate / (1 - Math.pow(1 + monthlyRate, -term))
     : amountFinanced / term;
   const frequency = val('frequency');
-  const payment = packetType === 'cash' ? 0 : frequency === 'Weekly' ? monthlyPayment * 12 / 52 : frequency === 'Biweekly' ? monthlyPayment * 12 / 26 : monthlyPayment;
-  const paymentCount = packetType === 'cash' ? 0 : frequency === 'Weekly' ? Math.round(term * 52 / 12) : frequency === 'Biweekly' ? Math.round(term * 26 / 12) : term;
+  const payment = !shouldCalculatePayment ? 0 : frequency === 'Weekly' ? monthlyPayment * 12 / 52 : frequency === 'Biweekly' ? monthlyPayment * 12 / 26 : monthlyPayment;
+  const paymentCount = !shouldCalculatePayment ? 0 : frequency === 'Weekly' ? Math.round(term * 52 / 12) : frequency === 'Biweekly' ? Math.round(term * 26 / 12) : term;
   return { salePrice, docFee, filingFee, lenderFee, licenseFee, plateFee, agePropertyTax, titleFee, emissionsFee, fees, insuranceGapVsi, accessories, products, trade, downPayment, taxable, salesTax, total, amountFinanced, balanceDue: amountFinanced, apr: num('apr'), term, frequency, payment, paymentCount };
 }
 
@@ -1022,8 +1076,8 @@ function renderEstimate() {
     <div class="terms-line"><span>Fees / Products / Tax</span><strong>${money(c.fees)} / ${money(c.insuranceGapVsi + c.accessories + c.products)} / ${money(c.salesTax)}</strong></div>
     <div class="terms-line"><span>Down payment / trade</span><strong>${money(c.downPayment + c.trade)}</strong></div>
     <div class="terms-line"><span>${packetType === 'cash' ? 'Balance due' : 'Estimated amount financed'}</span><strong>${money(c.amountFinanced)}</strong></div>
-    ${packetType === 'cash' ? '' : `<div class="terms-line terms-total"><span>${packetType === 'bhph' ? 'BHPH payment' : 'Outside lender payment estimate'}</span><strong>${money(c.payment)}</strong></div>`}
-    <p class="form-hint">${packetType === 'cash' ? 'Cash packet skips APR, months, lender processing fee, and payment schedule.' : `${c.paymentCount} ${c.frequency.toLowerCase()} payments at ${c.apr.toFixed(2)}% APR. This is an estimate until final lender/BHPH terms are approved.`}</p>
+    ${packetType === 'bhph' ? `<div class="terms-line terms-total"><span>BHPH payment</span><strong>${money(c.payment)}</strong></div>` : ''}
+    <p class="form-hint">${packetType === 'cash' ? 'Cash packet skips APR, months, lender processing fee, and payment schedule.' : packetType === 'bhph' ? `${c.paymentCount} ${c.frequency.toLowerCase()} payments at ${c.apr.toFixed(2)}% APR.` : 'Outside financing packet does not calculate bank APR, term, first payment, or payment frequency.'}</p>
     <p class="form-hint">Smart forms: ${escapeHtml(rules.summary)}</p>
   `;
   if (built && currentStep === 'build') renderPacket();
@@ -1146,7 +1200,13 @@ function packetData() {
       insurancePolicy: val('insurancePolicy'),
       insuranceEffective: val('insuranceEffective'),
       insuranceCoverage: val('insuranceCoverage'),
+      accessoriesIncluded: val('accessoriesIncluded'),
+      accessoriesDescription: val('accessoriesDescription'),
+      productsIncluded: val('productsIncluded'),
+      productsDescription: val('productsDescription'),
+      standardFeesChanged: val('standardFeesChanged'),
       buyersGuideSaleType: val('buyersGuideSaleType'),
+      odometerCertification: val('odometerCertification'),
       warrantySystems: val('warrantySystems'),
       warrantyDuration: val('warrantyDuration'),
       warrantyDealerPays: val('warrantyDealerPays'),
