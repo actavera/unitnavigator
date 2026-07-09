@@ -26,8 +26,26 @@ app.use('/api/paperwork', require('./routes/paperwork'));
 app.use('/api/public',    require('./routes/public'));
 app.use('/api/admin',     require('./routes/admin'));
 
+function normalizedHost(req) {
+  return String(req.headers['x-forwarded-host'] || req.headers.host || '')
+    .toLowerCase()
+    .split(',')[0]
+    .trim()
+    .replace(/:\d+$/, '')
+    .replace(/^www\./, '');
+}
+
+function isPlatformHost(req) {
+  const host = normalizedHost(req);
+  return !host || ['localhost', '127.0.0.1', '::1', 'unitnavigator.com'].includes(host);
+}
+
+app.get('/', (req, res) => {
+  const file = isPlatformHost(req) ? 'index.html' : 'showroom.html';
+  res.sendFile(path.join(__dirname, 'public', file));
+});
+
 const staticPages = {
-  '/':              'index.html',
   '/demo':          'demo.html',
   '/showroom':      'showroom.html',
   '/login':         'login.html',
