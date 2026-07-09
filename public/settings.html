@@ -132,6 +132,11 @@
             <option value="0">Disabled - hide customer-facing inventory</option>
           </select>
         </div>
+        <div class="form-group wide">
+          <label class="form-label">APR Dropdown Options</label>
+          <input class="form-input" id="public_apr_options" placeholder="9.99, 12.99, 18.99">
+          <p class="settings-note">Comma-separated APRs shown on the public showroom payment estimate.</p>
+        </div>
         <p class="settings-note wide">Point the dealer domain to the Unit Navigator server, then put that domain here. The preview link uses the slug so you can check the customer side before DNS is live.</p>
       </div>
     </article>
@@ -200,7 +205,7 @@ if (UN.requireAuth()) {
 
 const SETTING_FIELDS = [
   'name', 'legal_name', 'dealer_number', 'address', 'city', 'state', 'zip', 'phone', 'email', 'website',
-  'public_slug', 'public_domain', 'logo_url', 'public_site_enabled',
+  'public_slug', 'public_domain', 'logo_url', 'public_site_enabled', 'public_apr_options',
   'representative_name', 'representative_title',
   'default_doc_fee', 'default_filing_fee', 'default_lender_fee', 'default_license_fee', 'default_plate_fee',
   'default_age_property_tax', 'default_title_fee', 'default_emissions_fee', 'default_tax_rate',

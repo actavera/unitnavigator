@@ -264,6 +264,7 @@ addDealershipColumn('public_slug', 'public_slug TEXT');
 addDealershipColumn('public_domain', 'public_domain TEXT');
 addDealershipColumn('logo_url', 'logo_url TEXT');
 addDealershipColumn('public_site_enabled', 'public_site_enabled INTEGER DEFAULT 1');
+addDealershipColumn('public_apr_options', "public_apr_options TEXT DEFAULT '9.99,7.99,12.99,18.99'");
 
 db.prepare(`
   UPDATE dealerships
@@ -278,7 +279,8 @@ db.prepare(`
       default_title_fee = COALESCE(default_title_fee, 6),
       default_emissions_fee = COALESCE(default_emissions_fee, 30),
       default_tax_rate = COALESCE(default_tax_rate, 7.25),
-      public_site_enabled = COALESCE(public_site_enabled, 1)
+      public_site_enabled = COALESCE(public_site_enabled, 1),
+      public_apr_options = COALESCE(NULLIF(public_apr_options, ''), '9.99,7.99,12.99,18.99')
 `).run();
 
 function slugify(value) {

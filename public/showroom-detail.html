@@ -134,6 +134,7 @@ let photoIndex = 0;
 const fallbackPhoto = '/assets/home-hero-car.png';
 const dealerParam = new URLSearchParams(location.search).get('dealer') || '';
 let dealerLogoUrl = '';
+let defaultApr = 9.99;
 
 function publicUrl(path) {
   if (!dealerParam) return path;
@@ -214,7 +215,7 @@ function renderDetail() {
       <div class="calculator">
         <div class="calc-row"><label for="downPct">Down payment</label><input id="downPct" type="number" min="0" max="100" value="20" oninput="calcPayment()"></div>
         <div class="calc-row"><label for="months">Term months</label><input id="months" type="number" min="12" max="96" value="60" oninput="calcPayment()"></div>
-        <div class="calc-row"><label for="apr">APR</label><input id="apr" type="number" min="0" step=".01" value="9.99" oninput="calcPayment()"></div>
+        <div class="calc-row"><label for="apr">APR</label><input id="apr" type="number" min="0" step=".01" value="${escapeHtml(defaultApr)}" oninput="calcPayment()"></div>
       </div>
       <div class="payment-result">
         <span>Estimated monthly payment</span>
@@ -244,6 +245,8 @@ async function loadDetail() {
   if (!res.ok) throw new Error('not found');
   const data = await res.json();
   dealerLogoUrl = data.dealer?.logo_url || '';
+  const aprOptions = (data.dealer?.apr_options || []).map(Number).filter(value => Number.isFinite(value) && value >= 0 && value <= 40);
+  defaultApr = aprOptions[0] || 9.99;
   if (dealerLogoUrl) document.getElementById('brandLogo').src = dealerLogoUrl;
   unit = data.unit;
   renderDetail();

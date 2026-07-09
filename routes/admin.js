@@ -42,6 +42,7 @@ const DEALER_SETTING_FIELDS = [
   'public_domain',
   'logo_url',
   'public_site_enabled',
+  'public_apr_options',
   'representative_name',
   'representative_title',
   'default_doc_fee',
@@ -122,6 +123,13 @@ router.put('/dealership-settings', requireAuth, (req, res) => {
   values.public_site_enabled = values.public_site_enabled ? 1 : 0;
   values.public_slug = slugify(values.public_slug || values.name);
   values.public_domain = String(values.public_domain || '').toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '').trim();
+  values.public_apr_options = String(values.public_apr_options || '')
+    .split(/[\n,]+/)
+    .map(value => Number(String(value).replace(/[^0-9.]/g, '')))
+    .filter(value => Number.isFinite(value) && value >= 0 && value <= 40)
+    .map(value => value.toFixed(2).replace(/\.00$/, ''))
+    .join(',');
+  if (!values.public_apr_options) values.public_apr_options = '9.99,7.99,12.99,18.99';
 
   const assignments = DEALER_SETTING_FIELDS.map(field => `${field} = ?`).join(', ');
   db.prepare(`UPDATE dealerships SET ${assignments} WHERE id = ?`)

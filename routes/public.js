@@ -72,6 +72,10 @@ function publicDealer(req) {
 }
 
 function dealerPayload(row) {
+  const aprOptions = String(row?.public_apr_options || '9.99,7.99,12.99,18.99')
+    .split(',')
+    .map(value => Number(value))
+    .filter(value => Number.isFinite(value) && value >= 0 && value <= 40);
   return row ? {
     id: row.id,
     slug: row.public_slug || '',
@@ -83,6 +87,7 @@ function dealerPayload(row) {
     phone: row.phone || '',
     email: row.email || '',
     website: row.website || '',
+    apr_options: aprOptions.length ? aprOptions : [9.99, 7.99, 12.99, 18.99],
   } : {
     id: null,
     slug: '',
@@ -94,6 +99,7 @@ function dealerPayload(row) {
     phone: '',
     email: '',
     website: '',
+    apr_options: [9.99, 7.99, 12.99, 18.99],
   };
 }
 

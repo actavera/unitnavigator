@@ -128,6 +128,16 @@
     .vehicle-grid.list-view .vehicle-photo { position: relative; min-height: 210px; }
     .vehicle-grid.list-view .vehicle-photo::after { background: linear-gradient(90deg, transparent, rgba(2,6,23,.16)); }
     .vehicle-grid.list-view .vehicle-content { position: relative; inset: auto; padding: 24px; align-content: center; }
+    :root[data-public-theme="light"] .vehicle-grid.list-view .vehicle-card { border-color: rgba(15,23,42,.1); background: rgba(255,255,255,.82); }
+    :root[data-public-theme="light"] .vehicle-grid.list-view .vehicle-title h2 { color: #071120; }
+    :root[data-public-theme="light"] .vehicle-grid.list-view .vehicle-title p { color: rgba(71,85,105,.94); }
+    :root[data-public-theme="light"] .vehicle-grid.list-view .price-pill {
+      color: #071120; background: rgba(15,23,42,.055); border-color: rgba(15,23,42,.1);
+    }
+    :root[data-public-theme="light"] .vehicle-grid.list-view .price-pill small { color: rgba(71,85,105,.86); }
+    :root[data-public-theme="light"] .vehicle-grid.list-view .show-btn:not(.primary) {
+      color: #071120; background: rgba(15,23,42,.055); border-color: rgba(15,23,42,.1);
+    }
     .vehicle-grid.list-view .photo-count,
     .vehicle-grid.list-view .photo-arrow { display: none; }
     .mobile-quickbar { display: none; }
@@ -270,6 +280,7 @@ const fallbackPhoto = '/assets/home-hero-car.png';
 let viewMode = localStorage.getItem('un_public_view') || 'cards';
 const dealerParam = new URLSearchParams(location.search).get('dealer') || '';
 let dealerLogoUrl = '';
+let aprOptions = [9.99, 7.99, 12.99, 18.99];
 
 function publicUrl(path) {
   if (!dealerParam) return path;
@@ -290,7 +301,7 @@ function miles(n) {
 function monthly(price) {
   if (!price) return null;
   const principal = Number(price) * 0.8;
-  const apr = Number(document.getElementById('apr').value) / 100;
+  const apr = Number(document.getElementById('apr').value || aprOptions[0] || 9.99) / 100;
   const r = apr / 12;
   const months = 60;
   return r ? principal * r / (1 - Math.pow(1 + r, -months)) : principal / months;
@@ -310,6 +321,16 @@ function setTheme(theme) {
   document.getElementById('darkBtn')?.classList.toggle('active', theme === 'dark');
   const logo = document.getElementById('brandLogo');
   if (logo) logo.src = dealerLogoUrl || (theme === 'light' ? '/assets/unit-navigator-logo-transparent.png' : '/assets/unit-navigator-logo-on-dark.png');
+}
+
+function renderAprOptions(options) {
+  const select = document.getElementById('apr');
+  const clean = (options || []).map(Number).filter(value => Number.isFinite(value) && value >= 0 && value <= 40);
+  aprOptions = clean.length ? clean : [9.99, 7.99, 12.99, 18.99];
+  select.innerHTML = aprOptions.map(value => {
+    const label = value.toFixed(2).replace(/\.00$/, '');
+    return `<option value="${label}">Est. APR ${label}%</option>`;
+  }).join('');
 }
 
 function setView(mode) {
@@ -344,6 +365,8 @@ async function loadDealer() {
     document.getElementById('dealerAddress').textContent = dealer.address || '';
     contactLink('dealerPhone', dealer.phone, 'tel:');
     contactLink('dealerEmail', dealer.email, 'mailto:');
+    renderAprOptions(dealer.apr_options);
+    if (units.length) renderInventory();
     dealerLogoUrl = dealer.logo_url || '';
     if (dealerLogoUrl) document.getElementById('brandLogo').src = dealerLogoUrl;
   } catch {
