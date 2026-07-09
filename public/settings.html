@@ -84,6 +84,35 @@
     </article>
 
     <article class="settings-card">
+      <div class="settings-card-head">
+        <h2>Public Website</h2>
+        <a class="btn btn-ghost btn-sm" id="showroomPreviewLink" href="/showroom" target="_blank" rel="noreferrer">Preview Showroom</a>
+      </div>
+      <div class="settings-card-body settings-form-grid">
+        <div class="form-group">
+          <label class="form-label">Customer-Facing Domain</label>
+          <input class="form-input" id="public_domain" placeholder="neweraauto.com">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Public Slug</label>
+          <input class="form-input" id="public_slug" placeholder="new-era-auto-sales" oninput="updateShowroomPreview()">
+        </div>
+        <div class="form-group wide">
+          <label class="form-label">Dealer Logo URL</label>
+          <input class="form-input" id="logo_url" placeholder="/uploads/dealers/new-era-logo.png or https://...">
+        </div>
+        <div class="form-group wide">
+          <label class="form-label">Public Site Enabled</label>
+          <select class="form-select" id="public_site_enabled">
+            <option value="1">Enabled - show inventory publicly</option>
+            <option value="0">Disabled - hide customer-facing inventory</option>
+          </select>
+        </div>
+        <p class="settings-note wide">Point the dealer domain to the Unit Navigator server, then put that domain here. The preview link uses the slug so you can check the customer side before DNS is live.</p>
+      </div>
+    </article>
+
+    <article class="settings-card">
       <div class="settings-card-head"><h2>Address & Signer</h2></div>
       <div class="settings-card-body settings-form-grid">
         <div class="form-group wide">
@@ -147,6 +176,7 @@ if (UN.requireAuth()) {
 
 const SETTING_FIELDS = [
   'name', 'legal_name', 'dealer_number', 'address', 'city', 'state', 'zip', 'phone', 'email', 'website',
+  'public_slug', 'public_domain', 'logo_url', 'public_site_enabled',
   'representative_name', 'representative_title',
   'default_doc_fee', 'default_filing_fee', 'default_lender_fee', 'default_license_fee', 'default_plate_fee',
   'default_age_property_tax', 'default_title_fee', 'default_emissions_fee', 'default_tax_rate',
@@ -186,6 +216,7 @@ async function loadSettings() {
       const el = document.getElementById(field);
       if (el) el.value = dealer[field] ?? '';
     });
+    updateShowroomPreview();
   } catch (err) {
     toast(err.message, 'err');
   }
@@ -206,6 +237,12 @@ async function saveSettings() {
   } catch (err) {
     toast(err.message, 'err');
   }
+}
+
+function updateShowroomPreview() {
+  const slug = document.getElementById('public_slug')?.value || '';
+  const link = document.getElementById('showroomPreviewLink');
+  if (link) link.href = slug ? `/showroom?dealer=${encodeURIComponent(slug)}` : '/showroom';
 }
 
 function escapeHtml(value) {

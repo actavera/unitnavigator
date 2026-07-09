@@ -113,7 +113,7 @@
 <body>
 <main class="detail-shell">
   <nav class="showroom-nav">
-    <a class="showroom-brand" href="/showroom">
+    <a class="showroom-brand" id="brandHomeLink" href="/showroom">
       <img id="brandLogo" src="/assets/unit-navigator-logo-on-dark.png" alt="Unit Navigator">
     </a>
     <div class="showroom-nav-actions">
@@ -121,7 +121,7 @@
         <button class="toggle-btn" id="lightBtn" type="button" onclick="setTheme('light')">Light</button>
         <button class="toggle-btn" id="darkBtn" type="button" onclick="setTheme('dark')">Dark</button>
       </div>
-      <a class="btn btn-ghost" href="/showroom">Back to Inventory</a>
+      <a class="btn btn-ghost" id="backInventoryLink" href="/showroom">Back to Inventory</a>
       <a class="btn btn-primary" href="/credit/new">Apply for Credit</a>
     </div>
   </nav>
@@ -132,6 +132,14 @@
 let unit = null;
 let photoIndex = 0;
 const fallbackPhoto = '/assets/home-hero-car.png';
+const dealerParam = new URLSearchParams(location.search).get('dealer') || '';
+let dealerLogoUrl = '';
+
+function publicUrl(path) {
+  if (!dealerParam) return path;
+  const join = path.includes('?') ? '&' : '?';
+  return `${path}${join}dealer=${encodeURIComponent(dealerParam)}`;
+}
 
 function money(n) {
   if (!n) return 'Call for price';
@@ -153,7 +161,12 @@ function setTheme(theme) {
   document.getElementById('lightBtn')?.classList.toggle('active', theme === 'light');
   document.getElementById('darkBtn')?.classList.toggle('active', theme === 'dark');
   const logo = document.getElementById('brandLogo');
-  if (logo) logo.src = theme === 'light' ? '/assets/unit-navigator-logo-transparent.png' : '/assets/unit-navigator-logo-on-dark.png';
+  if (logo) logo.src = dealerLogoUrl || (theme === 'light' ? '/assets/unit-navigator-logo-transparent.png' : '/assets/unit-navigator-logo-on-dark.png');
+}
+
+function syncDealerLinks() {
+  document.getElementById('brandHomeLink')?.setAttribute('href', publicUrl('/showroom'));
+  document.getElementById('backInventoryLink')?.setAttribute('href', publicUrl('/showroom'));
 }
 
 function titleFor(u) {
@@ -210,7 +223,7 @@ function renderDetail() {
       <p class="muted">Estimate only. Final payment depends on approved credit, taxes, fees, lender terms, and dealer documentation.</p>
       <div class="actions">
         <a class="btn btn-primary" href="/credit/new">Apply for Credit</a>
-        <a class="btn btn-ghost" href="/showroom">Keep Browsing</a>
+        <a class="btn btn-ghost" href="${publicUrl('/showroom')}">Keep Browsing</a>
       </div>
     </aside>
   `;
@@ -225,16 +238,19 @@ function movePhoto(dir) {
 
 async function loadDetail() {
   setTheme(localStorage.getItem('un_public_theme') || 'dark');
+  syncDealerLinks();
   const id = location.pathname.split('/').filter(Boolean).pop();
-  const res = await fetch(`/api/public/inventory/${encodeURIComponent(id)}`);
+  const res = await fetch(publicUrl(`/api/public/inventory/${encodeURIComponent(id)}`));
   if (!res.ok) throw new Error('not found');
   const data = await res.json();
+  dealerLogoUrl = data.dealer?.logo_url || '';
+  if (dealerLogoUrl) document.getElementById('brandLogo').src = dealerLogoUrl;
   unit = data.unit;
   renderDetail();
 }
 
 loadDetail().catch(() => {
-  document.getElementById('detailRoot').innerHTML = '<h1>Vehicle unavailable</h1><p>This unit may have sold or is no longer public.</p><p><a class="btn btn-primary" href="/showroom">Back to Inventory</a></p>';
+  document.getElementById('detailRoot').innerHTML = `<h1>Vehicle unavailable</h1><p>This unit may have sold or is no longer public.</p><p><a class="btn btn-primary" href="${publicUrl('/showroom')}">Back to Inventory</a></p>`;
 });
 </script>
 </body>

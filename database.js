@@ -33,6 +33,7 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     dealership_id INTEGER REFERENCES dealerships(id),
     vin TEXT NOT NULL,
+    stock_number TEXT,
     year INTEGER,
     make TEXT,
     model TEXT,
@@ -138,6 +139,7 @@ if (unitSchema && !unitSchema.includes("'screening'")) {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       dealership_id INTEGER REFERENCES dealerships(id),
       vin TEXT NOT NULL,
+      stock_number TEXT,
       year INTEGER,
       make TEXT,
       model TEXT,
@@ -165,13 +167,13 @@ if (unitSchema && !unitSchema.includes("'screening'")) {
       archived_at TEXT
     );
     INSERT INTO units (
-      id, dealership_id, vin, year, make, model, trim, body_style, color, mileage, stage,
+      id, dealership_id, vin, stock_number, year, make, model, trim, body_style, color, mileage, stage,
       acquisition_cost, transport_cost, repair_cost, detail_cost, other_cost, asking_price,
       minimum_price, sold_price, acquisition_source, acquisition_date, notes, photos,
       created_at, sold_at, archived_at
     )
     SELECT
-      id, dealership_id, vin, year, make, model, trim, body_style, color, mileage, stage,
+      id, dealership_id, vin, NULL AS stock_number, year, make, model, trim, body_style, color, mileage, stage,
       acquisition_cost, transport_cost, repair_cost, detail_cost, other_cost, asking_price,
       minimum_price, sold_price, acquisition_source, acquisition_date, notes, photos,
       created_at, sold_at, archived_at
@@ -217,6 +219,9 @@ const unitColumns = db.prepare("PRAGMA table_info(units)").all().map(col => col.
 if (!unitColumns.includes('repair_items')) {
   db.exec("ALTER TABLE units ADD COLUMN repair_items TEXT DEFAULT '[]'");
 }
+if (!unitColumns.includes('stock_number')) {
+  db.exec("ALTER TABLE units ADD COLUMN stock_number TEXT");
+}
 if (!unitColumns.includes('last_age_check_at')) {
   db.exec("ALTER TABLE units ADD COLUMN last_age_check_at TEXT");
 }
@@ -255,6 +260,10 @@ addDealershipColumn('default_age_property_tax', 'default_age_property_tax REAL D
 addDealershipColumn('default_title_fee', 'default_title_fee REAL DEFAULT 6');
 addDealershipColumn('default_emissions_fee', 'default_emissions_fee REAL DEFAULT 30');
 addDealershipColumn('default_tax_rate', 'default_tax_rate REAL DEFAULT 7.25');
+addDealershipColumn('public_slug', 'public_slug TEXT');
+addDealershipColumn('public_domain', 'public_domain TEXT');
+addDealershipColumn('logo_url', 'logo_url TEXT');
+addDealershipColumn('public_site_enabled', 'public_site_enabled INTEGER DEFAULT 1');
 
 db.prepare(`
   UPDATE dealerships
@@ -268,8 +277,36 @@ db.prepare(`
       default_age_property_tax = COALESCE(default_age_property_tax, 80),
       default_title_fee = COALESCE(default_title_fee, 6),
       default_emissions_fee = COALESCE(default_emissions_fee, 30),
-      default_tax_rate = COALESCE(default_tax_rate, 7.25)
+      default_tax_rate = COALESCE(default_tax_rate, 7.25),
+      public_site_enabled = COALESCE(public_site_enabled, 1)
 `).run();
+
+function slugify(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+}
+
+db.prepare(`
+  UPDATE dealerships
+  SET public_slug = lower(
+    trim(
+      replace(replace(replace(replace(replace(name, '&', ' and '), '.', ''), ',', ''), '''', ''), ' ', '-'),
+      '-'
+    )
+  )
+  WHERE public_slug IS NULL OR public_slug = ''
+`).run();
+
+db.prepare('SELECT id, name, public_slug FROM dealerships').all().forEach(row => {
+  const clean = slugify(row.public_slug || row.name);
+  if (clean && clean !== row.public_slug) {
+    db.prepare('UPDATE dealerships SET public_slug = ? WHERE id = ?').run(clean, row.id);
+  }
+});
 
 const userSchema = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'").get()?.sql || '';
 const userColumns = db.prepare("PRAGMA table_info(users)").all().map(col => col.name);

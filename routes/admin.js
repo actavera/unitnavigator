@@ -15,6 +15,10 @@ const DEALER_SETTING_FIELDS = [
   'phone',
   'email',
   'website',
+  'public_slug',
+  'public_domain',
+  'logo_url',
+  'public_site_enabled',
   'representative_name',
   'representative_title',
   'default_doc_fee',
@@ -38,7 +42,17 @@ const NUMERIC_SETTING_FIELDS = new Set([
   'default_title_fee',
   'default_emissions_fee',
   'default_tax_rate',
+  'public_site_enabled',
 ]);
+
+function slugify(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+}
 
 function canManageDealerSettings(req, dealershipId) {
   if (req.user.role === 'super_admin') return true;
@@ -82,6 +96,9 @@ router.put('/dealership-settings', requireAuth, (req, res) => {
   if (!values.name) return res.status(400).json({ error: 'Dealership name is required' });
   if (!values.legal_name) values.legal_name = values.name;
   if (!values.state) values.state = 'UT';
+  values.public_site_enabled = values.public_site_enabled ? 1 : 0;
+  values.public_slug = slugify(values.public_slug || values.name);
+  values.public_domain = String(values.public_domain || '').toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '').trim();
 
   const assignments = DEALER_SETTING_FIELDS.map(field => `${field} = ?`).join(', ');
   db.prepare(`UPDATE dealerships SET ${assignments} WHERE id = ?`)
@@ -130,7 +147,8 @@ router.get('/overview', (_req, res) => {
 router.post('/dealerships', (req, res) => {
   const name = String(req.body.name || '').trim();
   if (!name) return res.status(400).json({ error: 'Dealership name required' });
-  const info = db.prepare('INSERT INTO dealerships (name, legal_name, status) VALUES (?, ?, ?)').run(name, name, req.body.status === 'revoked' ? 'revoked' : 'active');
+  const info = db.prepare('INSERT INTO dealerships (name, legal_name, public_slug, public_site_enabled, status) VALUES (?, ?, ?, ?, ?)')
+    .run(name, name, slugify(req.body.public_slug || name), 1, req.body.status === 'revoked' ? 'revoked' : 'active');
   const dealership = db.prepare('SELECT * FROM dealerships WHERE id = ?').get(info.lastInsertRowid);
   res.status(201).json({ dealership });
 });
@@ -140,7 +158,8 @@ router.patch('/dealerships/:id', (req, res) => {
   if (!dealership) return res.status(404).json({ error: 'Dealership not found' });
   const name = String(req.body.name ?? dealership.name).trim();
   const status = req.body.status === 'revoked' ? 'revoked' : 'active';
-  db.prepare('UPDATE dealerships SET name = ?, status = ? WHERE id = ?').run(name, status, dealership.id);
+  const publicSlug = req.body.public_slug !== undefined ? slugify(req.body.public_slug) : (dealership.public_slug || slugify(name));
+  db.prepare('UPDATE dealerships SET name = ?, public_slug = ?, status = ? WHERE id = ?').run(name, publicSlug, status, dealership.id);
   res.json({ dealership: db.prepare('SELECT * FROM dealerships WHERE id = ?').get(dealership.id) });
 });
 

@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Import Inventory - Unit Navigator</title>
+  <script>(function(){var t=localStorage.getItem('un_theme')||'dark';document.documentElement.dataset.theme=t;})()</script>
+  <link rel="stylesheet" href="/css/main.css">
+  <style>
+    .import-shell { width: min(100% - 44px, 1240px); margin: 0 auto; padding: 30px 0 80px; }
+    .import-hero { display:flex; justify-content:space-between; gap:18px; align-items:end; margin-bottom:22px; }
+    .import-hero h1 { font-size: clamp(2.4rem, 5vw, 5rem); line-height:.92; letter-spacing:-.055em; margin: 8px 0 10px; }
+    .import-hero p { color: var(--text-2); max-width: 760px; line-height: 1.55; }
+    .import-grid { display:grid; grid-template-columns: .8fr 1.2fr; gap:18px; align-items:start; }
+    .import-card { border:1px solid var(--border); border-radius: var(--r-lg); background: var(--s1); box-shadow: var(--sh); overflow:hidden; }
+    .import-card-head { padding:18px 20px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; gap:12px; align-items:center; }
+    .import-card-head h2 { font-size:.92rem; text-transform:uppercase; letter-spacing:.06em; }
+    .import-card-body { padding:20px; display:grid; gap:14px; }
+    .drop-zone { border:1px dashed var(--border-hi); border-radius: var(--r); padding:26px; text-align:center; background: var(--s2); }
+    .drop-zone input { display:none; }
+    .import-preview { overflow:auto; max-height: 560px; }
+    .import-table { width:100%; border-collapse:collapse; min-width:920px; }
+    .import-table th, .import-table td { border-bottom:1px solid var(--border); padding:10px 12px; text-align:left; font-size:.84rem; vertical-align:top; }
+    .import-table th { color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-size:.72rem; }
+    .status-pill { display:inline-flex; border-radius:999px; padding:4px 8px; background:var(--blue-gl); color:var(--blue); font-weight:800; font-size:.72rem; }
+    .import-actions { display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap; }
+    .sample-code { border:1px solid var(--border); border-radius:var(--r); background:var(--bg); padding:14px; overflow:auto; color:var(--text-2); font-size:.82rem; }
+    @media(max-width: 900px) {
+      .import-hero, .import-grid { grid-template-columns:1fr; display:grid; }
+      .import-actions .btn { flex:1; }
+    }
+  </style>
+</head>
+<body>
+<div id="nav-container"></div>
+<main class="import-shell">
+  <section class="import-hero">
+    <div>
+      <p class="home-kicker">Inventory Import</p>
+      <h1>Bring cars over from another system.</h1>
+      <p>Upload a CSV from DealerCenter or another inventory tool. Unit Navigator will map common column names, preview the cars, then create or update units by VIN inside this dealership only.</p>
+    </div>
+    <div class="import-actions">
+      <a class="btn btn-ghost" href="/inventory">Back to Inventory</a>
+      <button class="btn btn-primary" id="importBtn" onclick="importRows()" disabled>Import Previewed Units</button>
+    </div>
+  </section>
+
+  <section class="import-grid">
+    <article class="import-card">
+      <div class="import-card-head"><h2>Upload CSV</h2></div>
+      <div class="import-card-body">
+        <label class="drop-zone">
+          <strong>Choose CSV file</strong>
+          <p class="text-muted mt-8">VIN, year, make, model, mileage, price, cost, photos, status, and stock number are recognized automatically.</p>
+          <input id="csvFile" type="file" accept=".csv,text/csv" onchange="handleFile(this.files[0])">
+          <button class="btn btn-ghost mt-16" type="button" onclick="document.getElementById('csvFile').click()">Select File</button>
+        </label>
+        <div class="form-group">
+          <label class="form-label">Or Paste CSV</label>
+          <textarea class="form-input" id="csvText" rows="10" placeholder="VIN,Year,Make,Model,Mileage,Price..."></textarea>
+        </div>
+        <button class="btn btn-ghost" onclick="parseCsvText()">Preview Pasted CSV</button>
+        <div class="sample-code">
+VIN,Stock #,Year,Make,Model,Trim,Mileage,Color,Price,Cost,Status,Photos
+1FTEX1CP0KFA00000,A102,2019,Ford,F-150,XLT,88420,White,24995,18500,Ready,https://...
+        </div>
+      </div>
+    </article>
+
+    <article class="import-card">
+      <div class="import-card-head">
+        <h2>Preview</h2>
+        <span class="status-pill" id="previewCount">No file loaded</span>
+      </div>
+      <div class="import-card-body">
+        <div class="import-preview" id="preview">
+          <p class="text-muted">Your mapped rows will show here before anything is added.</p>
+        </div>
+      </div>
+    </article>
+  </section>
+</main>
+
+<script src="/js/nav.js"></script>
+<script>
+UN.requireAuth();
+UN.renderNav();
+
+let mappedRows = [];
+
+const aliases = {
+  vin: ['vin', 'vehicle vin', 'vehicle_vin'],
+  stock_number: ['stock #', 'stock', 'stock no', 'stock number', 'stock_number', 'unit number'],
+  year: ['year', 'model year', 'model_year'],
+  make: ['make'],
+  model: ['model'],
+  trim: ['trim'],
+  body_style: ['body', 'body style', 'body_style', 'vehicle type'],
+  color: ['color', 'exterior color', 'exterior_color'],
+  mileage: ['mileage', 'miles', 'odometer'],
+  asking_price: ['price', 'asking price', 'asking_price', 'retail price', 'retail_price', 'internet price'],
+  acquisition_cost: ['cost', 'acquisition cost', 'acquisition_cost', 'inventory cost', 'purchase price'],
+  minimum_price: ['minimum price', 'minimum_price', 'min price', 'floor price'],
+  stage: ['stage', 'status'],
+  acquisition_source: ['source', 'acquisition source'],
+  acquisition_date: ['acquisition date', 'date acquired', 'purchase date'],
+  notes: ['notes', 'description'],
+  photos: ['photos', 'photo urls', 'images', 'image urls'],
+};
+
+function csvParse(text) {
+  const rows = [];
+  let row = [];
+  let field = '';
+  let quoted = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    const next = text[i + 1];
+    if (quoted && ch === '"' && next === '"') { field += '"'; i += 1; continue; }
+    if (ch === '"') { quoted = !quoted; continue; }
+    if (!quoted && ch === ',') { row.push(field); field = ''; continue; }
+    if (!quoted && (ch === '\n' || ch === '\r')) {
+      if (ch === '\r' && next === '\n') i += 1;
+      row.push(field);
+      if (row.some(cell => cell.trim())) rows.push(row);
+      row = [];
+      field = '';
+      continue;
+    }
+    field += ch;
+  }
+  row.push(field);
+  if (row.some(cell => cell.trim())) rows.push(row);
+  return rows;
+}
+
+function normalizeHeader(value) {
+  return String(value || '').trim().toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ');
+}
+
+function parseMoney(value) {
+  const n = Number(String(value || '').replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function parseRows(text) {
+  const rows = csvParse(text);
+  if (rows.length < 2) throw new Error('CSV needs a header row and at least one inventory row.');
+  const headers = rows[0].map(normalizeHeader);
+  return rows.slice(1).map(raw => {
+    const source = {};
+    headers.forEach((header, i) => { source[header] = raw[i] || ''; });
+    const mapped = {};
+    Object.entries(aliases).forEach(([field, names]) => {
+      const match = names.map(normalizeHeader).find(name => Object.prototype.hasOwnProperty.call(source, name));
+      mapped[field] = match ? String(source[match] || '').trim() : '';
+    });
+    mapped.acquisition_cost = parseMoney(mapped.acquisition_cost);
+    mapped.asking_price = parseMoney(mapped.asking_price);
+    mapped.minimum_price = parseMoney(mapped.minimum_price);
+    return mapped;
+  }).filter(row => row.vin || (row.year && row.make && row.model));
+}
+
+async function handleFile(file) {
+  if (!file) return;
+  const text = await file.text();
+  document.getElementById('csvText').value = text;
+  previewRows(text);
+}
+
+function parseCsvText() {
+  previewRows(document.getElementById('csvText').value);
+}
+
+function previewRows(text) {
+  try {
+    mappedRows = parseRows(text);
+    document.getElementById('importBtn').disabled = !mappedRows.length;
+    document.getElementById('previewCount').textContent = `${mappedRows.length} row${mappedRows.length === 1 ? '' : 's'} ready`;
+    renderPreview();
+  } catch (err) {
+    mappedRows = [];
+    document.getElementById('importBtn').disabled = true;
+    document.getElementById('previewCount').textContent = 'Needs review';
+    document.getElementById('preview').innerHTML = `<p class="text-muted">${escapeHtml(err.message)}</p>`;
+  }
+}
+
+function renderPreview() {
+  if (!mappedRows.length) {
+    document.getElementById('preview').innerHTML = '<p class="text-muted">No valid rows found.</p>';
+    return;
+  }
+  document.getElementById('preview').innerHTML = `
+    <table class="import-table">
+      <thead><tr><th>VIN</th><th>Stock</th><th>Unit</th><th>Miles</th><th>Price</th><th>Cost</th><th>Status</th></tr></thead>
+      <tbody>
+        ${mappedRows.slice(0, 80).map(row => `
+          <tr>
+            <td>${escapeHtml(row.vin || '-')}</td>
+            <td>${escapeHtml(row.stock_number || '-')}</td>
+            <td>${escapeHtml([row.year, row.make, row.model, row.trim].filter(Boolean).join(' ') || '-')}</td>
+            <td>${escapeHtml(row.mileage || '-')}</td>
+            <td>${row.asking_price ? UN.fmt.money(row.asking_price) : '-'}</td>
+            <td>${row.acquisition_cost ? UN.fmt.money(row.acquisition_cost) : '-'}</td>
+            <td>${escapeHtml(row.stage || 'Ready')}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>`;
+}
+
+async function importRows() {
+  if (!mappedRows.length) return;
+  document.getElementById('importBtn').disabled = true;
+  try {
+    const result = await UN.api('POST', '/api/inventory/import', { source: 'CSV import', rows: mappedRows });
+    toast(`Imported ${result.created} new, updated ${result.updated}, skipped ${result.skipped}`);
+    setTimeout(() => { location.href = '/inventory'; }, 900);
+  } catch (err) {
+    document.getElementById('importBtn').disabled = false;
+    toast(err.message, 'err');
+  }
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch]));
+}
+</script>
+</body>
+</html>

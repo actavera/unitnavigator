@@ -40,6 +40,7 @@ const staticPages = {
   '/paperwork/start':'paperwork-start.html',
   '/inventory':     'inventory.html',
   '/inventory/list':'inventory.html',
+  '/inventory/import':'inventory-import.html',
   '/inventory/new': 'inventory-new.html',
 };
 Object.entries(staticPages).forEach(([route, file]) => {

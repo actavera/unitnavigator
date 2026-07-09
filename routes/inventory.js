@@ -35,6 +35,55 @@ function parseMoney(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function parseInteger(value) {
+  const parsed = Number(String(value ?? '').replace(/[^0-9-]/g, ''));
+  return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : 0;
+}
+
+function cleanText(value) {
+  return String(value ?? '').trim();
+}
+
+function normalizeVin(value) {
+  return cleanText(value).toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+function normalizePhotos(value) {
+  if (Array.isArray(value)) return value.map(cleanText).filter(Boolean);
+  const text = cleanText(value);
+  if (!text) return [];
+  try {
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed)) return parsed.map(cleanText).filter(Boolean);
+  } catch {}
+  return text.split(/[\n;,|]+/).map(cleanText).filter(Boolean);
+}
+
+function normalizeStage(value) {
+  const key = cleanText(value).toLowerCase();
+  const compact = key.replace(/[^a-z0-9]/g, '');
+  const map = {
+    acquired: 'acquired',
+    atauction: 'acquired',
+    auction: 'acquired',
+    transport: 'transport',
+    transported: 'transport',
+    beingtransported: 'transport',
+    screening: 'screening',
+    needsscreening: 'screening',
+    recon: 'recon',
+    reconditioning: 'recon',
+    ready: 'ready',
+    readytosell: 'ready',
+    available: 'ready',
+    active: 'ready',
+    pending: 'pending',
+    sold: 'sold',
+    archived: 'archived',
+  };
+  return map[compact] || 'ready';
+}
+
 function normalizeRepairItems(value) {
   return parseRepairItems(value).map(item => {
     const description = String(item.description || item.repair_needed || item.name || '').trim();
@@ -121,14 +170,98 @@ router.get('/', requireAuth, (req, res) => {
     params.push(stage);
   }
   if (search) {
-    sql += ' AND (make LIKE ? OR model LIKE ? OR vin LIKE ? OR CAST(year AS TEXT) LIKE ?)';
+    sql += ' AND (make LIKE ? OR model LIKE ? OR vin LIKE ? OR stock_number LIKE ? OR CAST(year AS TEXT) LIKE ?)';
     const s = `%${search}%`;
-    params.push(s, s, s, s);
+    params.push(s, s, s, s, s);
   }
   sql += ' ORDER BY created_at DESC';
 
   const units = db.prepare(sql).all(...params).map(enrichUnit);
   res.json({ units });
+});
+
+// ── Bulk import units from CSV/other systems ───────────────────────────────
+router.post('/import', requireAuth, (req, res) => {
+  const rows = Array.isArray(req.body.rows) ? req.body.rows : [];
+  if (!rows.length) return res.status(400).json({ error: 'No import rows received' });
+  if (rows.length > 500) return res.status(400).json({ error: 'Import is limited to 500 units at a time' });
+
+  const results = { created: 0, updated: 0, skipped: 0, errors: [] };
+  const source = cleanText(req.body.source || 'Inventory import');
+
+  const tx = db.transaction(() => {
+    rows.forEach((row, index) => {
+      const vin = normalizeVin(row.vin || row.VIN || row.vehicle_vin);
+      const year = parseInteger(row.year || row.Year || row.model_year);
+      const make = cleanText(row.make || row.Make);
+      const model = cleanText(row.model || row.Model);
+      const trim = cleanText(row.trim || row.Trim);
+      const stockNumber = cleanText(row.stock_number || row.stock || row['Stock #'] || row.stock_no || row.unit_number);
+
+      if (!vin && (!year || !make || !model)) {
+        results.skipped += 1;
+        results.errors.push({ row: index + 1, error: 'Missing VIN or year/make/model' });
+        return;
+      }
+
+      const unit = {
+        vin,
+        stock_number: stockNumber,
+        year: year || null,
+        make,
+        model,
+        trim,
+        body_style: cleanText(row.body_style || row.body || row.Body || row.vehicle_type),
+        color: cleanText(row.color || row.Color || row.exterior_color),
+        mileage: parseInteger(row.mileage || row.miles || row.odometer || row.Odometer),
+        stage: VALID_STAGES.includes(normalizeStage(row.stage || row.status || row.Status)) ? normalizeStage(row.stage || row.status || row.Status) : 'ready',
+        acquisition_cost: parseMoney(row.acquisition_cost || row.cost || row.Cost || row.inventory_cost || row.purchase_price),
+        asking_price: parseMoney(row.asking_price || row.price || row.Price || row.retail_price || row.internet_price),
+        minimum_price: parseMoney(row.minimum_price || row.min_price || row.floor_price),
+        acquisition_source: cleanText(row.acquisition_source || row.source || source),
+        acquisition_date: cleanText(row.acquisition_date || row.date_acquired || row.purchase_date),
+        notes: cleanText(row.notes || row.Notes),
+        photos: normalizePhotos(row.photos || row.photo_urls || row.images || row.image_urls),
+      };
+
+      const existing = vin ? db.prepare(`
+        SELECT id FROM units
+        WHERE dealership_id = ? AND vin = ? AND archived_at IS NULL
+      `).get(req.user.dealership_id, vin) : null;
+
+      if (existing) {
+        db.prepare(`
+          UPDATE units
+          SET stock_number = ?, year = ?, make = ?, model = ?, trim = ?, body_style = ?, color = ?, mileage = ?,
+              stage = ?, acquisition_cost = ?, asking_price = ?, minimum_price = ?, acquisition_source = ?,
+              acquisition_date = ?, notes = ?, photos = CASE WHEN ? != '[]' THEN ? ELSE photos END
+          WHERE id = ? AND dealership_id = ?
+        `).run(
+          unit.stock_number, unit.year, unit.make, unit.model, unit.trim, unit.body_style, unit.color, unit.mileage,
+          unit.stage, unit.acquisition_cost, unit.asking_price || null, unit.minimum_price || null, unit.acquisition_source,
+          unit.acquisition_date || null, unit.notes || null, JSON.stringify(unit.photos), JSON.stringify(unit.photos),
+          existing.id, req.user.dealership_id,
+        );
+        logActivity(req.user.dealership_id, existing.id, 'Unit imported', `Updated from ${source}`, req.user.id);
+        results.updated += 1;
+      } else {
+        const info = db.prepare(`
+          INSERT INTO units (dealership_id, vin, stock_number, year, make, model, trim, body_style, color, mileage, stage,
+            acquisition_cost, asking_price, minimum_price, acquisition_source, acquisition_date, notes, photos)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        `).run(
+          req.user.dealership_id, vin, unit.stock_number, unit.year, unit.make, unit.model, unit.trim, unit.body_style,
+          unit.color, unit.mileage, unit.stage, unit.acquisition_cost, unit.asking_price || null, unit.minimum_price || null,
+          unit.acquisition_source, unit.acquisition_date || null, unit.notes || null, JSON.stringify(unit.photos),
+        );
+        logActivity(req.user.dealership_id, info.lastInsertRowid, 'Unit imported', `${unit.year || ''} ${unit.make} ${unit.model} imported from ${source}`.trim(), req.user.id);
+        results.created += 1;
+      }
+    });
+  });
+
+  tx();
+  res.status(201).json(results);
 });
 
 // ── Get single unit ─────────────────────────────────────────────────────────
@@ -156,7 +289,7 @@ router.get('/:id', requireAuth, (req, res) => {
 // ── Create unit ─────────────────────────────────────────────────────────────
 router.post('/', requireAuth, (req, res) => {
   const {
-    vin, year, make, model, trim, body_style, color, mileage,
+    vin, stock_number, year, make, model, trim, body_style, color, mileage,
     acquisition_cost, transport_cost, repair_cost, detail_cost, other_cost,
     asking_price, minimum_price, acquisition_source, acquisition_date, notes, stage,
     repair_items,
@@ -181,12 +314,12 @@ router.post('/', requireAuth, (req, res) => {
   const repairCostNum = repairItems.length ? repairItemsTotal(repairItems) : parseMoney(repair_cost);
 
   const info = db.prepare(`
-    INSERT INTO units (dealership_id, vin, year, make, model, trim, body_style, color, mileage, stage,
+    INSERT INTO units (dealership_id, vin, stock_number, year, make, model, trim, body_style, color, mileage, stage,
       acquisition_cost, transport_cost, repair_cost, repair_items, detail_cost, other_cost,
       asking_price, minimum_price, acquisition_source, acquisition_date, notes)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(
-    req.user.dealership_id, vinClean, year, make, model, trim, body_style, color,
+    req.user.dealership_id, vinClean, stock_number || null, year, make, model, trim, body_style, color,
     mileage || 0, initialStage,
     acquisitionCostNum, transport_cost || 0, repairCostNum, JSON.stringify(repairItems), detail_cost || 0, other_cost || 0,
     asking_price || null, minimum_price || null, acquisition_source || null, acquisition_date || null, notes || null,
@@ -205,7 +338,7 @@ router.put('/:id', requireAuth, (req, res) => {
   if (!unit) return res.status(404).json({ error: 'Unit not found' });
 
   const fields = [
-    'year','make','model','trim','body_style','color','mileage',
+    'stock_number','year','make','model','trim','body_style','color','mileage',
     'acquisition_cost','transport_cost','repair_cost','detail_cost','other_cost',
     'asking_price','minimum_price','sold_price','acquisition_source','acquisition_date','notes',
   ];
