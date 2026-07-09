@@ -21,11 +21,21 @@
     .settings-form-grid .wide { grid-column: 1 / -1; }
     .settings-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:18px; }
     .settings-note { color: var(--muted); font-size:.9rem; line-height:1.5; }
+    .logo-upload-row { display:grid; grid-template-columns: 150px minmax(0, 1fr); gap:14px; align-items:center; }
+    .logo-preview {
+      min-height: 86px; border:1px solid var(--border); border-radius: var(--r);
+      background: var(--s2); display:grid; place-items:center; overflow:hidden; padding:12px;
+      color: var(--muted); font-size:.85rem; text-align:center;
+    }
+    .logo-preview img { max-width:100%; max-height:72px; object-fit:contain; }
+    .logo-upload-controls { display:grid; gap:10px; }
+    .logo-upload-actions { display:flex; gap:10px; flex-wrap:wrap; }
     @media(max-width: 860px) {
       .settings-hero, .settings-grid, .settings-form-grid { grid-template-columns:1fr; display:grid; }
       .settings-card.full, .settings-form-grid .wide { grid-column:auto; }
       .settings-actions { justify-content:stretch; }
       .settings-actions .btn { width:100%; }
+      .logo-upload-row { grid-template-columns:1fr; }
     }
   </style>
 </head>
@@ -99,7 +109,21 @@
         </div>
         <div class="form-group wide">
           <label class="form-label">Dealer Logo URL</label>
-          <input class="form-input" id="logo_url" placeholder="/uploads/dealers/new-era-logo.png or https://...">
+          <input class="form-input" id="logo_url" placeholder="/uploads/dealers/new-era-logo.png or https://..." oninput="updateLogoPreview()">
+        </div>
+        <div class="form-group wide">
+          <label class="form-label">Upload Dealer Logo</label>
+          <div class="logo-upload-row">
+            <div class="logo-preview" id="logoPreview">No logo uploaded</div>
+            <div class="logo-upload-controls">
+              <input class="form-input" id="logoFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml">
+              <div class="logo-upload-actions">
+                <button class="btn btn-ghost" type="button" onclick="uploadLogo()">Upload Logo</button>
+                <button class="btn btn-ghost" type="button" onclick="clearLogo()">Clear Logo</button>
+              </div>
+              <p class="settings-note">PNG or transparent WEBP is best. The upload fills the logo URL automatically.</p>
+            </div>
+          </div>
         </div>
         <div class="form-group wide">
           <label class="form-label">Public Site Enabled</label>
@@ -216,6 +240,7 @@ async function loadSettings() {
       const el = document.getElementById(field);
       if (el) el.value = dealer[field] ?? '';
     });
+    updateLogoPreview();
     updateShowroomPreview();
   } catch (err) {
     toast(err.message, 'err');
@@ -237,6 +262,47 @@ async function saveSettings() {
   } catch (err) {
     toast(err.message, 'err');
   }
+}
+
+async function uploadLogo() {
+  const fileInput = document.getElementById('logoFile');
+  const file = fileInput?.files?.[0];
+  if (!file) return toast('Choose a logo file first', 'err');
+
+  const form = new FormData();
+  const picker = document.getElementById('dealershipId');
+  if (picker?.value) form.append('dealership_id', picker.value);
+  form.append('logo', file);
+
+  try {
+    const res = await fetch('/api/admin/dealership-settings/logo', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${UN.getToken()}` },
+      body: form,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    document.getElementById('logo_url').value = data.logo_url || '';
+    fileInput.value = '';
+    updateLogoPreview();
+    updateShowroomPreview();
+    toast('Logo uploaded');
+  } catch (err) {
+    toast(err.message, 'err');
+  }
+}
+
+function clearLogo() {
+  document.getElementById('logo_url').value = '';
+  updateLogoPreview();
+  toast('Logo cleared - save settings to keep it cleared');
+}
+
+function updateLogoPreview() {
+  const value = document.getElementById('logo_url')?.value || '';
+  const preview = document.getElementById('logoPreview');
+  if (!preview) return;
+  preview.innerHTML = value ? `<img src="${escapeHtml(value)}" alt="Dealer logo preview">` : 'No logo uploaded';
 }
 
 function updateShowroomPreview() {

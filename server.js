@@ -6,7 +6,7 @@ const fs = require('fs');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-['data', 'public/uploads/units'].forEach(d => {
+['data', 'public/uploads/units', 'public/uploads/dealers'].forEach(d => {
   const full = path.join(__dirname, d);
   if (!fs.existsSync(full)) fs.mkdirSync(full, { recursive: true });
 });

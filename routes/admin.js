@@ -1,8 +1,31 @@
 'use strict';
 const router = require('express').Router();
 const bcrypt = require('bcryptjs');
+const path = require('path');
+const fs = require('fs');
+const multer = require('multer');
 const db = require('../database');
 const { requireAuth, requireRole } = require('../middleware/auth');
+
+const dealerUploadDir = path.join(__dirname, '../public/uploads/dealers');
+if (!fs.existsSync(dealerUploadDir)) fs.mkdirSync(dealerUploadDir, { recursive: true });
+
+const logoUpload = multer({
+  storage: multer.diskStorage({
+    destination: dealerUploadDir,
+    filename: (req, file, cb) => {
+      const dealershipId = req.body.dealership_id || req.user?.dealership_id || 'dealer';
+      const ext = path.extname(file.originalname || '').toLowerCase() || '.png';
+      const base = slugify(`${dealershipId}-${Date.now()}-${path.basename(file.originalname || 'logo', ext)}`) || `${dealershipId}-${Date.now()}`;
+      cb(null, `${base}${ext}`);
+    },
+  }),
+  limits: { fileSize: 3 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (/^image\/(png|jpe?g|webp|gif|svg\+xml)$/.test(file.mimetype)) return cb(null, true);
+    cb(new Error('Logo must be a PNG, JPG, WEBP, GIF, or SVG image'));
+  },
+});
 
 const DEALER_SETTING_FIELDS = [
   'name',
@@ -104,6 +127,17 @@ router.put('/dealership-settings', requireAuth, (req, res) => {
   db.prepare(`UPDATE dealerships SET ${assignments} WHERE id = ?`)
     .run(...DEALER_SETTING_FIELDS.map(field => values[field]), dealershipId);
   res.json({ dealership: settingsRow(dealershipId) });
+});
+
+router.post('/dealership-settings/logo', requireAuth, logoUpload.single('logo'), (req, res) => {
+  const dealershipId = Number(req.body.dealership_id || req.user.dealership_id);
+  if (!canManageDealerSettings(req, dealershipId)) return res.status(403).json({ error: 'Insufficient permissions' });
+  if (!settingsRow(dealershipId)) return res.status(404).json({ error: 'Dealership not found' });
+  if (!req.file) return res.status(400).json({ error: 'Choose a logo file first' });
+
+  const logoUrl = `/uploads/dealers/${req.file.filename}`;
+  db.prepare('UPDATE dealerships SET logo_url = ? WHERE id = ?').run(logoUrl, dealershipId);
+  res.status(201).json({ logo_url: logoUrl, dealership: settingsRow(dealershipId) });
 });
 
 router.use(...requireRole('super_admin'));
