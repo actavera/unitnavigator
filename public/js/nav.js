@@ -61,6 +61,7 @@ const UN = {
     const canSeeSettings = ['super_admin', 'admin', 'manager'].includes(user?.role);
     const adminLink = canSeeAdmin ? '<a class="nav-menu-item" href="/admin">Admin</a>' : '';
     const settingsLink = canSeeSettings ? '<a class="nav-menu-item" href="/settings">Dealership Settings</a>' : '';
+    const bulkImportLink = canSeeSettings ? '<a class="nav-menu-item" href="/inventory/import">Bulk Import Inventory</a>' : '';
     el.innerHTML = `
       <nav class="nav">
         <a href="/home" class="nav-logo" aria-label="Unit Navigator home">
@@ -79,6 +80,7 @@ const UN = {
             <div class="nav-account-menu" role="menu">
               ${adminLink}
               ${settingsLink}
+              ${bulkImportLink}
               <button class="nav-menu-item danger" type="button" onclick="UN.logout()">Log out</button>
             </div>
           </div>

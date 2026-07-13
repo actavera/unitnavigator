@@ -265,6 +265,9 @@ addDealershipColumn('public_domain', 'public_domain TEXT');
 addDealershipColumn('logo_url', 'logo_url TEXT');
 addDealershipColumn('public_site_enabled', 'public_site_enabled INTEGER DEFAULT 1');
 addDealershipColumn('public_apr_options', "public_apr_options TEXT DEFAULT '9.99,7.99,12.99,18.99'");
+addDealershipColumn('public_share_title', 'public_share_title TEXT');
+addDealershipColumn('public_share_description', 'public_share_description TEXT');
+addDealershipColumn('public_share_image_url', 'public_share_image_url TEXT');
 
 db.prepare(`
   UPDATE dealerships

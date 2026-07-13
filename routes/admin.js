@@ -27,6 +27,8 @@ const logoUpload = multer({
   },
 });
 
+const imageUpload = logoUpload;
+
 const DEALER_SETTING_FIELDS = [
   'name',
   'legal_name',
@@ -43,6 +45,9 @@ const DEALER_SETTING_FIELDS = [
   'logo_url',
   'public_site_enabled',
   'public_apr_options',
+  'public_share_title',
+  'public_share_description',
+  'public_share_image_url',
   'representative_name',
   'representative_title',
   'default_doc_fee',
@@ -146,6 +151,17 @@ router.post('/dealership-settings/logo', requireAuth, logoUpload.single('logo'),
   const logoUrl = `/uploads/dealers/${req.file.filename}`;
   db.prepare('UPDATE dealerships SET logo_url = ? WHERE id = ?').run(logoUrl, dealershipId);
   res.status(201).json({ logo_url: logoUrl, dealership: settingsRow(dealershipId) });
+});
+
+router.post('/dealership-settings/share-image', requireAuth, imageUpload.single('image'), (req, res) => {
+  const dealershipId = Number(req.body.dealership_id || req.user.dealership_id);
+  if (!canManageDealerSettings(req, dealershipId)) return res.status(403).json({ error: 'Insufficient permissions' });
+  if (!settingsRow(dealershipId)) return res.status(404).json({ error: 'Dealership not found' });
+  if (!req.file) return res.status(400).json({ error: 'Choose a share image first' });
+
+  const imageUrl = `/uploads/dealers/${req.file.filename}`;
+  db.prepare('UPDATE dealerships SET public_share_image_url = ? WHERE id = ?').run(imageUrl, dealershipId);
+  res.status(201).json({ image_url: imageUrl, dealership: settingsRow(dealershipId) });
 });
 
 router.use(...requireRole('super_admin'));

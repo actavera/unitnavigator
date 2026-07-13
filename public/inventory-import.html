@@ -3,14 +3,17 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Import Inventory - Unit Navigator</title>
+  <title>Bulk Import Inventory - Unit Navigator</title>
   <script>(function(){var t=localStorage.getItem('un_theme')||'dark';document.documentElement.dataset.theme=t;})()</script>
   <link rel="stylesheet" href="/css/main.css">
   <style>
-    .import-shell { width: min(100% - 44px, 1240px); margin: 0 auto; padding: 30px 0 80px; }
+    .import-shell { width: min(100% - 44px, 1480px); margin: 0 auto; padding: 30px 0 80px; }
     .import-hero { display:flex; justify-content:space-between; gap:18px; align-items:end; margin-bottom:22px; }
     .import-hero h1 { font-size: clamp(2.4rem, 5vw, 5rem); line-height:.92; letter-spacing:-.055em; margin: 8px 0 10px; }
-    .import-hero p { color: var(--text-2); max-width: 760px; line-height: 1.55; }
+    .import-hero p { color: var(--text-2); max-width: 820px; line-height: 1.55; }
+    .mode-tabs { display:inline-flex; gap:6px; padding:5px; border:1px solid var(--border); border-radius:999px; background:var(--s1); margin-bottom:18px; }
+    .mode-tab { border:0; border-radius:999px; padding:10px 16px; background:transparent; color:var(--text-2); font-weight:800; cursor:pointer; }
+    .mode-tab.active { background:var(--blue); color:#fff; }
     .import-grid { display:grid; grid-template-columns: .8fr 1.2fr; gap:18px; align-items:start; }
     .import-card { border:1px solid var(--border); border-radius: var(--r-lg); background: var(--s1); box-shadow: var(--sh); overflow:hidden; }
     .import-card-head { padding:18px 20px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; gap:12px; align-items:center; }
@@ -25,6 +28,26 @@
     .status-pill { display:inline-flex; border-radius:999px; padding:4px 8px; background:var(--blue-gl); color:var(--blue); font-weight:800; font-size:.72rem; }
     .import-actions { display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap; }
     .sample-code { border:1px solid var(--border); border-radius:var(--r); background:var(--bg); padding:14px; overflow:auto; color:var(--text-2); font-size:.82rem; }
+    .sheet-panel { border:1px solid var(--border); border-radius:var(--r-lg); background:var(--s1); box-shadow:var(--sh); overflow:hidden; }
+    .sheet-toolbar { display:flex; justify-content:space-between; gap:12px; align-items:center; padding:16px 18px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+    .sheet-wrap { overflow:auto; }
+    .sheet-table { width:100%; border-collapse:separate; border-spacing:0; min-width:1500px; }
+    .sheet-table th { position:sticky; top:0; z-index:2; background:var(--s1); color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-size:.72rem; padding:10px; border-bottom:1px solid var(--border); text-align:left; }
+    .sheet-table td { padding:8px; border-bottom:1px solid var(--border); vertical-align:top; }
+    .sheet-input, .sheet-select { width:100%; min-width:92px; border:1px solid var(--border-md); border-radius:10px; background:var(--s2); color:var(--text); padding:9px 10px; font:inherit; font-size:.86rem; }
+    .sheet-input.money { min-width:110px; }
+    .vin-cell { display:grid; grid-template-columns:minmax(170px, 1fr) auto auto; gap:6px; min-width:310px; }
+    .mini-btn { border:1px solid var(--border-md); border-radius:10px; background:var(--s2); color:var(--text-2); font-weight:800; padding:8px 10px; cursor:pointer; white-space:nowrap; }
+    .mini-btn:hover { color:var(--text); background:var(--s3); }
+    .photo-cell { min-width:210px; }
+    .photo-label { display:inline-flex; justify-content:center; align-items:center; min-height:38px; border:1px solid var(--border-md); border-radius:10px; padding:0 12px; background:var(--s2); cursor:pointer; font-weight:800; color:var(--text-2); }
+    .photo-label input { display:none; }
+    .photo-meta { margin-top:6px; color:var(--muted); font-size:.76rem; }
+    .row-status { min-width:145px; font-size:.78rem; color:var(--muted); }
+    .row-status.err { color:var(--red); font-weight:800; }
+    .row-status.ok { color:var(--green); font-weight:800; }
+    .required-note { color:var(--muted); font-size:.9rem; line-height:1.5; }
+    .hidden { display:none !important; }
     @media(max-width: 900px) {
       .import-hero, .import-grid { grid-template-columns:1fr; display:grid; }
       .import-actions .btn { flex:1; }
@@ -36,17 +59,59 @@
 <main class="import-shell">
   <section class="import-hero">
     <div>
-      <p class="home-kicker">Inventory Import</p>
-      <h1>Bring cars over from another system.</h1>
-      <p>Upload a CSV from DealerCenter or another inventory tool. Unit Navigator will map common column names, preview the cars, then create or update units by VIN inside this dealership only.</p>
+      <p class="home-kicker">Bulk Import Inventory</p>
+      <h1>Bring cars over fast.</h1>
+      <p>Upload a CSV from another system or use spreadsheet entry to add multiple units by VIN, decode vehicle details, require acquisition cost, and attach photos before creating inventory.</p>
     </div>
     <div class="import-actions">
       <a class="btn btn-ghost" href="/inventory">Back to Inventory</a>
-      <button class="btn btn-primary" id="importBtn" onclick="importRows()" disabled>Import Previewed Units</button>
+      <button class="btn btn-primary" id="primaryAction" onclick="primaryAction()">Import Previewed Units</button>
     </div>
   </section>
 
-  <section class="import-grid">
+  <div class="mode-tabs" aria-label="Import mode">
+    <button class="mode-tab active" id="sheetTab" type="button" onclick="setMode('sheet')">Spreadsheet Entry</button>
+    <button class="mode-tab" id="csvTab" type="button" onclick="setMode('csv')">CSV Upload</button>
+  </div>
+
+  <section id="sheetMode" class="sheet-panel">
+    <div class="sheet-toolbar">
+      <div>
+        <h2 style="font-size:1.1rem;">Spreadsheet Entry</h2>
+        <p class="required-note">Acquisition cost is required. VIN decode fills year, make, model, trim, and body style when available. Stage defaults to Ready.</p>
+      </div>
+      <div class="import-actions">
+        <button class="btn btn-ghost" onclick="addRows(5)">+ 5 Rows</button>
+        <button class="btn btn-ghost" onclick="decodeAllRows()">Decode VINs</button>
+        <button class="btn btn-primary" onclick="createSheetUnits()">Create Units</button>
+      </div>
+    </div>
+    <div class="sheet-wrap">
+      <table class="sheet-table">
+        <thead>
+          <tr>
+            <th>VIN</th>
+            <th>Stock #</th>
+            <th>Year</th>
+            <th>Make</th>
+            <th>Model</th>
+            <th>Trim</th>
+            <th>Mileage</th>
+            <th>Acq. Cost *</th>
+            <th>Sales Price</th>
+            <th>Color</th>
+            <th>Body</th>
+            <th>Stage</th>
+            <th>Photos</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="sheetBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="csvMode" class="import-grid hidden">
     <article class="import-card">
       <div class="import-card-head"><h2>Upload CSV</h2></div>
       <div class="import-card-body">
@@ -82,12 +147,17 @@ VIN,Stock #,Year,Make,Model,Trim,Mileage,Color,Price,Cost,Status,Photos
   </section>
 </main>
 
+<input id="vinPhotoInput" type="file" accept="image/*" capture="environment" hidden>
+
 <script src="/js/nav.js"></script>
 <script>
 UN.requireAuth();
 UN.renderNav();
 
+let mode = 'sheet';
 let mappedRows = [];
+let sheetRows = [];
+let activeScanRowId = null;
 
 const aliases = {
   vin: ['vin', 'vehicle vin', 'vehicle_vin'],
@@ -99,7 +169,7 @@ const aliases = {
   body_style: ['body', 'body style', 'body_style', 'vehicle type'],
   color: ['color', 'exterior color', 'exterior_color'],
   mileage: ['mileage', 'miles', 'odometer'],
-  asking_price: ['price', 'asking price', 'asking_price', 'retail price', 'retail_price', 'internet price'],
+  asking_price: ['price', 'asking price', 'asking_price', 'retail price', 'retail_price', 'internet price', 'sales price'],
   acquisition_cost: ['cost', 'acquisition cost', 'acquisition_cost', 'inventory cost', 'purchase price'],
   minimum_price: ['minimum price', 'minimum_price', 'min price', 'floor price'],
   stage: ['stage', 'status'],
@@ -108,6 +178,234 @@ const aliases = {
   notes: ['notes', 'description'],
   photos: ['photos', 'photo urls', 'images', 'image urls'],
 };
+
+const STAGES = [
+  ['ready', 'Ready'],
+  ['acquired', 'At Auction'],
+  ['transport', 'Being Transported'],
+  ['screening', 'Needs Screening'],
+  ['recon', 'Recon'],
+  ['pending', 'Pending'],
+];
+
+function setMode(next) {
+  mode = next;
+  document.getElementById('sheetMode').classList.toggle('hidden', mode !== 'sheet');
+  document.getElementById('csvMode').classList.toggle('hidden', mode !== 'csv');
+  document.getElementById('sheetTab').classList.toggle('active', mode === 'sheet');
+  document.getElementById('csvTab').classList.toggle('active', mode === 'csv');
+  document.getElementById('primaryAction').textContent = mode === 'sheet' ? 'Create Units' : 'Import Previewed Units';
+}
+
+function primaryAction() {
+  if (mode === 'sheet') return createSheetUnits();
+  return importRows();
+}
+
+function newSheetRow() {
+  return {
+    id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()),
+    vin: '', stock_number: '', year: '', make: '', model: '', trim: '', body_style: '',
+    mileage: '', acquisition_cost: '', asking_price: '', color: '', stage: 'ready', photos: [], status: '',
+  };
+}
+
+function addRows(count = 1) {
+  for (let i = 0; i < count; i += 1) sheetRows.push(newSheetRow());
+  renderSheet();
+}
+
+function renderSheet() {
+  document.getElementById('sheetBody').innerHTML = sheetRows.map((row, index) => `
+    <tr data-row-id="${row.id}">
+      <td>
+        <div class="vin-cell">
+          <input class="sheet-input" value="${escapeHtml(row.vin)}" data-field="vin" placeholder="17-character VIN" maxlength="17" oninput="updateRow('${row.id}', 'vin', this.value.toUpperCase())">
+          <button class="mini-btn" type="button" onclick="decodeRow('${row.id}')">Decode</button>
+          <button class="mini-btn" type="button" onclick="scanVin('${row.id}')">Scan VIN</button>
+        </div>
+      </td>
+      <td><input class="sheet-input" value="${escapeHtml(row.stock_number)}" data-field="stock_number" placeholder="A102" oninput="updateRow('${row.id}', 'stock_number', this.value)"></td>
+      <td><input class="sheet-input" value="${escapeHtml(row.year)}" data-field="year" type="number" placeholder="2022" oninput="updateRow('${row.id}', 'year', this.value)"></td>
+      <td><input class="sheet-input" value="${escapeHtml(row.make)}" data-field="make" placeholder="Ford" oninput="updateRow('${row.id}', 'make', this.value)"></td>
+      <td><input class="sheet-input" value="${escapeHtml(row.model)}" data-field="model" placeholder="F-150" oninput="updateRow('${row.id}', 'model', this.value)"></td>
+      <td><input class="sheet-input" value="${escapeHtml(row.trim)}" data-field="trim" placeholder="XLT" oninput="updateRow('${row.id}', 'trim', this.value)"></td>
+      <td><input class="sheet-input" value="${escapeHtml(row.mileage)}" data-field="mileage" type="number" placeholder="88420" oninput="updateRow('${row.id}', 'mileage', this.value)"></td>
+      <td><input class="sheet-input money" value="${escapeHtml(row.acquisition_cost)}" data-field="acquisition_cost" type="number" min="0" step="0.01" placeholder="Required" oninput="updateRow('${row.id}', 'acquisition_cost', this.value)"></td>
+      <td><input class="sheet-input money" value="${escapeHtml(row.asking_price)}" data-field="asking_price" type="number" min="0" step="0.01" placeholder="Retail" oninput="updateRow('${row.id}', 'asking_price', this.value)"></td>
+      <td><input class="sheet-input" value="${escapeHtml(row.color)}" data-field="color" placeholder="White" oninput="updateRow('${row.id}', 'color', this.value)"></td>
+      <td><input class="sheet-input" value="${escapeHtml(row.body_style)}" data-field="body_style" placeholder="SUV" oninput="updateRow('${row.id}', 'body_style', this.value)"></td>
+      <td>
+        <select class="sheet-select" data-field="stage" onchange="updateRow('${row.id}', 'stage', this.value)">
+          ${STAGES.map(([value, label]) => `<option value="${value}" ${row.stage === value ? 'selected' : ''}>${label}</option>`).join('')}
+        </select>
+      </td>
+      <td class="photo-cell">
+        <label class="photo-label">
+          Choose Images
+          <input type="file" accept="image/*" multiple onchange="setRowPhotos('${row.id}', this.files)">
+        </label>
+        <div class="photo-meta">${row.photos.length ? `${row.photos.length} image${row.photos.length === 1 ? '' : 's'} selected` : 'No images selected'}</div>
+      </td>
+      <td><div class="row-status ${row.status?.startsWith('Error') ? 'err' : row.status?.startsWith('Created') ? 'ok' : ''}">${escapeHtml(row.status || `Row ${index + 1}`)}</div></td>
+    </tr>
+  `).join('');
+}
+
+function updateRow(id, field, value) {
+  const row = sheetRows.find(item => item.id === id);
+  if (!row) return;
+  row[field] = value;
+  row.status = '';
+}
+
+function setRowPhotos(id, files) {
+  const row = sheetRows.find(item => item.id === id);
+  if (!row) return;
+  row.photos = Array.from(files || []);
+  renderSheet();
+}
+
+async function decodeRow(id) {
+  const row = sheetRows.find(item => item.id === id);
+  if (!row) return;
+  const vin = String(row.vin || '').trim().toUpperCase();
+  if (vin.length !== 17) {
+    row.status = 'Error: VIN must be 17 characters';
+    renderSheet();
+    return;
+  }
+  row.status = 'Decoding...';
+  renderSheet();
+  try {
+    const data = await UN.api('GET', `/api/inventory/decode-vin/${encodeURIComponent(vin)}`);
+    row.year = data.year || row.year;
+    row.make = data.make || row.make;
+    row.model = data.model || row.model;
+    row.trim = data.trim || row.trim;
+    row.body_style = data.body_style || row.body_style;
+    row.status = 'Decoded';
+  } catch (err) {
+    row.status = `Error: ${err.message}`;
+  }
+  renderSheet();
+}
+
+async function decodeAllRows() {
+  for (const row of sheetRows) {
+    if (row.vin && (!row.year || !row.make || !row.model)) await decodeRow(row.id);
+  }
+}
+
+function scanVin(id) {
+  activeScanRowId = id;
+  if (!('BarcodeDetector' in window)) {
+    const manual = prompt('Camera VIN scanning is not available in this browser. Type or paste the VIN:');
+    if (manual) {
+      updateRow(id, 'vin', manual.toUpperCase().trim());
+      renderSheet();
+      decodeRow(id);
+    }
+    return;
+  }
+  document.getElementById('vinPhotoInput').click();
+}
+
+document.getElementById('vinPhotoInput').addEventListener('change', async event => {
+  const file = event.target.files?.[0];
+  event.target.value = '';
+  if (!file || !activeScanRowId) return;
+  const row = sheetRows.find(item => item.id === activeScanRowId);
+  try {
+    row.status = 'Scanning image...';
+    renderSheet();
+    const detector = new BarcodeDetector({ formats: ['code_39', 'code_128', 'qr_code', 'data_matrix'] });
+    const bitmap = await createImageBitmap(file);
+    const codes = await detector.detect(bitmap);
+    const vin = codes.map(code => code.rawValue || '').map(findVin).find(Boolean);
+    if (!vin) throw new Error('No VIN barcode found. Type the VIN manually.');
+    row.vin = vin;
+    row.status = 'VIN scanned';
+    renderSheet();
+    await decodeRow(row.id);
+  } catch (err) {
+    row.status = `Error: ${err.message}`;
+    renderSheet();
+  }
+});
+
+function findVin(value) {
+  const cleaned = String(value || '').toUpperCase().replace(/[^A-HJ-NPR-Z0-9]/g, '');
+  const match = cleaned.match(/[A-HJ-NPR-Z0-9]{17}/);
+  return match ? match[0] : '';
+}
+
+function validSheetRows() {
+  return sheetRows.filter(row => {
+    return row.vin || row.year || row.make || row.model || row.acquisition_cost || row.asking_price || row.mileage;
+  });
+}
+
+async function createSheetUnits() {
+  const rows = validSheetRows();
+  if (!rows.length) return toast('Add at least one unit first', 'err');
+
+  for (const row of rows) {
+    if (!row.acquisition_cost || Number(row.acquisition_cost) < 0) {
+      row.status = 'Error: acquisition cost required';
+      renderSheet();
+      return toast('Every row needs acquisition cost', 'err');
+    }
+    if (!row.vin && (!row.year || !row.make || !row.model)) {
+      row.status = 'Error: VIN or year/make/model required';
+      renderSheet();
+      return toast('Every row needs VIN or year/make/model', 'err');
+    }
+  }
+
+  for (const row of rows) {
+    row.status = 'Creating...';
+    renderSheet();
+    try {
+      const body = {
+        vin: String(row.vin || '').trim().toUpperCase(),
+        stock_number: row.stock_number || null,
+        year: Number(row.year) || null,
+        make: row.make || null,
+        model: row.model || null,
+        trim: row.trim || null,
+        body_style: row.body_style || null,
+        color: row.color || null,
+        mileage: Number(row.mileage) || 0,
+        stage: row.stage || 'ready',
+        acquisition_cost: Number(row.acquisition_cost),
+        asking_price: Number(row.asking_price) || null,
+        minimum_price: null,
+        acquisition_source: 'Bulk spreadsheet entry',
+        notes: null,
+      };
+      const { unit } = await UN.api('POST', '/api/inventory', body);
+      if (row.photos.length) await uploadRowPhotos(unit.id, row.photos);
+      row.status = `Created #${unit.id}`;
+    } catch (err) {
+      row.status = `Error: ${err.message}`;
+    }
+    renderSheet();
+  }
+  toast('Bulk entry finished');
+}
+
+async function uploadRowPhotos(unitId, photos) {
+  const fd = new FormData();
+  photos.forEach(file => fd.append('photos', file));
+  const res = await fetch(`/api/inventory/${unitId}/photos`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${UN.getToken()}` },
+    body: fd,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Photo upload failed (${res.status})`);
+}
 
 function csvParse(text) {
   const rows = [];
@@ -177,12 +475,12 @@ function parseCsvText() {
 function previewRows(text) {
   try {
     mappedRows = parseRows(text);
-    document.getElementById('importBtn').disabled = !mappedRows.length;
+    document.getElementById('primaryAction').disabled = mode === 'csv' && !mappedRows.length;
     document.getElementById('previewCount').textContent = `${mappedRows.length} row${mappedRows.length === 1 ? '' : 's'} ready`;
     renderPreview();
   } catch (err) {
     mappedRows = [];
-    document.getElementById('importBtn').disabled = true;
+    document.getElementById('primaryAction').disabled = mode === 'csv';
     document.getElementById('previewCount').textContent = 'Needs review';
     document.getElementById('preview').innerHTML = `<p class="text-muted">${escapeHtml(err.message)}</p>`;
   }
@@ -213,21 +511,25 @@ function renderPreview() {
 }
 
 async function importRows() {
-  if (!mappedRows.length) return;
-  document.getElementById('importBtn').disabled = true;
+  if (!mappedRows.length) return toast('Preview CSV rows first', 'err');
+  document.getElementById('primaryAction').disabled = true;
   try {
     const result = await UN.api('POST', '/api/inventory/import', { source: 'CSV import', rows: mappedRows });
     toast(`Imported ${result.created} new, updated ${result.updated}, skipped ${result.skipped}`);
     setTimeout(() => { location.href = '/inventory'; }, 900);
   } catch (err) {
-    document.getElementById('importBtn').disabled = false;
     toast(err.message, 'err');
+  } finally {
+    document.getElementById('primaryAction').disabled = false;
   }
 }
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch]));
 }
+
+addRows(5);
+setMode('sheet');
 </script>
 </body>
 </html>
