@@ -310,7 +310,7 @@
     <div class="section-card">
       <div class="section-header"><span class="section-title">Actions</span></div>
       <div class="section-body" style="display:flex;flex-direction:column;gap:10px;">
-        <a href="/deals/new" class="btn btn-primary w-full" style="justify-content:center;">Start a Deal</a>
+        <a href="/paperwork/start" id="startDealBtn" class="btn btn-primary w-full" style="justify-content:center;">Start a Deal</a>
         <button class="btn btn-ghost w-full" onclick="archiveUnit()" style="justify-content:center;">Archive Unit</button>
         <button class="btn btn-danger w-full" onclick="deleteUnit()" style="justify-content:center;">Delete Unit</button>
       </div>
@@ -332,6 +332,7 @@ UN.requireAuth();
 UN.renderNav();
 
 const unitId = location.pathname.split('/').pop();
+document.getElementById('startDealBtn').href = `/paperwork/start?unit_id=${encodeURIComponent(unitId)}`;
 const STAGES = [
   { key:'acquired', label:'At Auction' },
   { key:'transport', label:'Being Transported' },

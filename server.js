@@ -45,6 +45,11 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', file));
 });
 
+app.get('/deals/new', (req, res) => {
+  const query = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+  res.redirect(302, `/paperwork/start${query}`);
+});
+
 const staticPages = {
   '/demo':          'demo.html',
   '/showroom':      'showroom.html',

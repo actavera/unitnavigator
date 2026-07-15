@@ -566,6 +566,7 @@ let officialPacketUrl = null;
 let packetRenderToken = 0;
 let dealershipSettings = {};
 const DEFAULT_EMISSIONS_FEE = 30;
+const START_PARAMS = new URLSearchParams(location.search);
 
 const SAMPLE_CUSTOMERS = [
   { id: 'sample-maya', name: 'Maya Collins', phone: '(801) 555-0142', email: 'maya@example.com', id_number: 'D123456789', address: '123 Main St, Provo, UT 84601' },
@@ -700,6 +701,7 @@ async function init() {
   loadSample();
   await Promise.allSettled([loadInventory(), loadCustomers(), loadOfficialTemplates()]);
   populateVehicleSelect();
+  applyStartParams();
   populateCustomerSelect();
   renderOfficialTemplates();
   setPacket('outside', false);
@@ -801,6 +803,14 @@ function populateVehicleSelect() {
     return `<option value="${unit.id}">${escapeHtml(label)}${unit.vin ? ' - ' + escapeHtml(String(unit.vin).slice(-6).toUpperCase()) : ''}</option>`;
   }).join('');
   $('vehicleSelect').innerHTML = manual + rows;
+}
+
+function applyStartParams() {
+  const unitId = START_PARAMS.get('unit_id') || START_PARAMS.get('vehicle_id');
+  if (unitId && inventoryUnits.some(unit => String(unit.id) === String(unitId))) {
+    $('vehicleSelect').value = unitId;
+    loadVehicleFromSelect();
+  }
 }
 
 function goToStep(step) {
