@@ -260,10 +260,14 @@ function updateRow(id, field, value) {
   row.status = '';
 }
 
-function setRowPhotos(id, files) {
+async function setRowPhotos(id, files) {
   const row = sheetRows.find(item => item.id === id);
   if (!row) return;
-  row.photos = Array.from(files || []);
+  const incoming = Array.from(files || []).filter(file => file.type.startsWith('image/'));
+  row.status = incoming.length ? 'Compressing photos...' : '';
+  renderSheet();
+  row.photos = await UNImage.compressImageFiles(incoming, { maxWidth: 800, maxHeight: 800 });
+  row.status = row.photos.length ? `${row.photos.length} photo${row.photos.length === 1 ? '' : 's'} ready` : '';
   renderSheet();
 }
 

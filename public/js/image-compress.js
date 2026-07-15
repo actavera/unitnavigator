@@ -36,6 +36,7 @@
   async function compressImageFile(file, options = {}) {
     if (!file || !String(file.type || '').startsWith('image/')) return file;
     if (file.type === 'image/svg+xml') return file;
+    if (file.__unitNavigatorCompressed) return file;
 
     const settings = { ...DEFAULTS, ...options };
 
@@ -58,10 +59,12 @@
       const blob = await canvasBlob(canvas, settings.mimeType, settings.quality);
       if (!blob) return file;
 
-      return new File([blob], imageFileName(file), {
+      const compressed = new File([blob], imageFileName(file), {
         type: settings.mimeType,
         lastModified: Date.now(),
       });
+      Object.defineProperty(compressed, '__unitNavigatorCompressed', { value: true });
+      return compressed;
     } catch (err) {
       console.warn('Photo compression failed, uploading original', err);
       return file;

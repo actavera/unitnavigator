@@ -403,7 +403,7 @@
         <label class="form-label">Is this vehicle ready to sell? *</label>
         <select class="form-select" id="fInitialStage" required>
           <option value="ready">Ready to Sell</option>
-          <option value="transport">Needs to be Transported</option>
+          <option value="transport">Just Purchased (Needs Transport)</option>
           <option value="screening">Needs to be Screened</option>
           <option value="recon">Needs Recon</option>
           <option value="pending">Purchased for Buyer (Pending Close)</option>
@@ -799,14 +799,19 @@ function updateGross() {
 }
 
 // ── Photos ──────────────────────────────────────────────────────────────────
-function handleFiles(files) {
-  Array.from(files).forEach(f => {
+async function handleFiles(files) {
+  const incoming = Array.from(files || []).filter(f => f.type.startsWith('image/'));
+  if (!incoming.length) return;
+  toast('Compressing photos for faster upload...');
+  for (const f of incoming) {
     if (!f.type.startsWith('image/')) return;
-    pendingPhotos.push(f);
+    const photo = await UNImage.compressImageFile(f, { maxWidth: 800, maxHeight: 800 });
+    pendingPhotos.push(photo);
     const reader = new FileReader();
     reader.onload = e => addThumb(e.target.result, pendingPhotos.length - 1);
-    reader.readAsDataURL(f);
-  });
+    reader.readAsDataURL(photo);
+  }
+  toast(`${incoming.length} photo${incoming.length === 1 ? '' : 's'} ready for fast upload`);
 }
 function handleDrop(e) {
   e.preventDefault();
