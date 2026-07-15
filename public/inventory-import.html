@@ -150,6 +150,7 @@ VIN,Stock #,Year,Make,Model,Trim,Mileage,Color,Price,Cost,Status,Photos
 <input id="vinPhotoInput" type="file" accept="image/*" capture="environment" hidden>
 
 <script src="/js/nav.js"></script>
+<script src="/js/image-compress.js"></script>
 <script>
 UN.requireAuth();
 UN.renderNav();
@@ -397,7 +398,8 @@ async function createSheetUnits() {
 
 async function uploadRowPhotos(unitId, photos) {
   const fd = new FormData();
-  photos.forEach(file => fd.append('photos', file));
+  const compressed = await UNImage.compressImageFiles(photos, { maxWidth: 800, maxHeight: 800 });
+  compressed.forEach(file => fd.append('photos', file));
   const res = await fetch(`/api/inventory/${unitId}/photos`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${UN.getToken()}` },

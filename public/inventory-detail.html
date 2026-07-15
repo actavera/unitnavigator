@@ -326,6 +326,7 @@
 </div>
 
 <script src="/js/nav.js"></script>
+<script src="/js/image-compress.js"></script>
 <script>
 UN.requireAuth();
 UN.renderNav();
@@ -458,7 +459,8 @@ function renderPhotos() {
 async function uploadPhotos(files) {
   if (!files.length) return;
   const fd = new FormData();
-  Array.from(files).forEach(f => fd.append('photos', f));
+  const photos = await UNImage.compressImageFiles(files, { maxWidth: 800, maxHeight: 800 });
+  photos.forEach(f => fd.append('photos', f));
   try {
     const r = await fetch(`/api/inventory/${unitId}/photos`, {
       method: 'POST',
