@@ -522,7 +522,7 @@
             <button class="btn btn-ghost" onclick="goToStep('terms')">← Edit Terms</button>
             <button class="btn btn-primary" onclick="downloadOfficialPacket()">Print / Save Official PDF</button>
             <button class="btn btn-primary" onclick="downloadOfficialPacket()">Download Official PDFs</button>
-            <button class="btn btn-ghost" onclick="downloadEsignPayload()">Export for E-Sign</button>
+            <button class="btn btn-ghost" onclick="sendForEsign()">Export for E-Sign</button>
           </div>
           <div class="terms-card" id="officialFormsPanel"></div>
         </div>
@@ -534,7 +534,7 @@
         <h2 id="previewTitle">Packet Preview</h2>
         <div class="paper-actions no-print" style="margin:0;">
           <button class="btn btn-primary btn-sm" id="printBtn" onclick="downloadOfficialPacket()" disabled>Print / Save Official PDF</button>
-          <button class="btn btn-ghost btn-sm" id="esignBtn" onclick="downloadEsignPayload()" disabled>Export for E-Sign</button>
+          <button class="btn btn-ghost btn-sm" id="esignBtn" onclick="sendForEsign()" disabled>Export for E-Sign</button>
         </div>
       </div>
       <div class="paper-panel-body">
@@ -2200,14 +2200,33 @@ function downloadJson(filename, data) {
   URL.revokeObjectURL(url);
 }
 
-function downloadEsignPayload() {
-  if (!built) buildPacket();
-  const data = packetData();
-  downloadJson(`unit-navigator-${data.packetType}-esign-payload.json`, {
-    provider_note: 'Use this payload to seed Dropbox Sign, DocuSign, SignWell, or eSignatures.com templates.',
-    recommended_low_cost_provider: 'eSignatures.com API-first export, or SignWell for simple low-volume manual sending.',
-    packet: data,
-  });
+async function sendForEsign() {
+  if (!built) await buildPacket();
+  const btn = $('esignBtn');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Sending...';
+  }
+  try {
+    const response = await fetch('/api/paperwork/esign', {
+      method: 'POST',
+      headers: UN.headers(),
+      body: JSON.stringify(packetData()),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || 'E-sign packet could not be created.');
+    toast(data.message || 'E-sign packet sent.');
+    if (data.signing_url && confirm('Open the DocuSeal signing link now?')) {
+      window.open(data.signing_url, '_blank', 'noopener');
+    }
+  } catch (err) {
+    toast(err.message, 'err');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Export for E-Sign';
+    }
+  }
 }
 
 async function downloadOfficialPacket() {

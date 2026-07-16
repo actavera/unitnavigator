@@ -44,6 +44,73 @@ function vehicleLabel(data) {
   return [data.vehicle?.year, data.vehicle?.make, data.vehicle?.model].filter(Boolean).join(' ');
 }
 
+function packetFilename(data) {
+  return `${vehicleLabel(data).replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '') || 'unit'}-official-packet.pdf`;
+}
+
+async function buildOfficialPacket(data, req) {
+  data.dealer = { ...(data.dealer || {}), ...dealerFromDb(req) };
+  const merged = await PDFDocument.create();
+  await appendPdf(merged, await createCustomPages(data));
+  await appendPdf(merged, await fillTemplate('ftc-buyers-guide-english.pdf', data, fillBuyersGuide));
+  await appendPdf(merged, await fillTemplate('tc-466.pdf', data, fillTc466));
+  await appendPdf(merged, await fillTemplate('tc-656.pdf', data, fillTc656));
+  await appendPdf(merged, await fillTemplate('tc-891.pdf', data, fillTc891));
+  if (data.rules?.emissions === 'exempt' || data.rules?.emissions === 'none') {
+    await appendPdf(merged, await fillTemplate('tc-820.pdf', data, fillTc820));
+  }
+  if (data.rules?.isSalvage) {
+    await appendPdf(merged, await fillTemplate('tc-814.pdf', data, fillTc814));
+  }
+  return Buffer.from(await merged.save());
+}
+
+function docusealConfig() {
+  const token = process.env.DOCUSEAL_API_KEY || process.env.DOCUSEAL_TOKEN || '';
+  const endpoint = process.env.DOCUSEAL_API_URL ||
+    `${String(process.env.DOCUSEAL_BASE_URL || 'https://api.docuseal.com').replace(/\/$/, '')}/submissions/pdf`;
+  return { token, endpoint };
+}
+
+function signerName(value, fallback) {
+  return String(value || '').trim() || fallback;
+}
+
+function signerEmail(value) {
+  return String(value || '').trim();
+}
+
+function esignFields(data) {
+  const buyer = signerName(data.customer?.name, 'Buyer');
+  const dealer = signerName(data.dealer?.representativeName || data.dealer?.displayName || data.dealer?.name, 'Dealer');
+  return [
+    { name: `${buyer} Signature`, type: 'signature', role: 'Buyer', areas: [{ page: 1, x: 80, y: 690, w: 180, h: 32 }] },
+    { name: `${buyer} Date`, type: 'date', role: 'Buyer', areas: [{ page: 1, x: 300, y: 690, w: 90, h: 24 }] },
+    { name: `${dealer} Signature`, type: 'signature', role: 'Dealer', areas: [{ page: 1, x: 80, y: 730, w: 180, h: 32 }] },
+    { name: `${dealer} Date`, type: 'date', role: 'Dealer', areas: [{ page: 1, x: 300, y: 730, w: 90, h: 24 }] },
+  ];
+}
+
+function firstUrl(value) {
+  if (!value || typeof value !== 'object') return '';
+  const preferred = ['url', 'slug', 'embed_src', 'submission_url', 'signing_url', 'submitter_url'];
+  for (const key of preferred) {
+    if (typeof value[key] === 'string' && /^https?:\/\//.test(value[key])) return value[key];
+  }
+  for (const child of Object.values(value)) {
+    if (Array.isArray(child)) {
+      for (const item of child) {
+        const found = firstUrl(item);
+        if (found) return found;
+      }
+    } else if (child && typeof child === 'object') {
+      const found = firstUrl(child);
+      if (found) return found;
+    }
+  }
+  return '';
+}
+
 function splitAddress(address) {
   const parts = String(address || '').split(',').map(part => part.trim());
   return {
@@ -617,27 +684,72 @@ function fillBuyersGuide(form, data) {
 router.post('/official-packet', requireAuth, async (req, res) => {
   try {
     const data = req.body || {};
-    data.dealer = { ...(data.dealer || {}), ...dealerFromDb(req) };
-    const merged = await PDFDocument.create();
-    await appendPdf(merged, await createCustomPages(data));
-    await appendPdf(merged, await fillTemplate('ftc-buyers-guide-english.pdf', data, fillBuyersGuide));
-    await appendPdf(merged, await fillTemplate('tc-466.pdf', data, fillTc466));
-    await appendPdf(merged, await fillTemplate('tc-656.pdf', data, fillTc656));
-    await appendPdf(merged, await fillTemplate('tc-891.pdf', data, fillTc891));
-    if (data.rules?.emissions === 'exempt' || data.rules?.emissions === 'none') {
-      await appendPdf(merged, await fillTemplate('tc-820.pdf', data, fillTc820));
-    }
-    if (data.rules?.isSalvage) {
-      await appendPdf(merged, await fillTemplate('tc-814.pdf', data, fillTc814));
-    }
-    const bytes = await merged.save();
-    const filename = `${vehicleLabel(data).replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '') || 'unit'}-official-packet.pdf`;
+    const bytes = await buildOfficialPacket(data, req);
+    const filename = packetFilename(data);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.send(Buffer.from(bytes));
+    res.send(bytes);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Official PDF packet could not be generated yet.' });
+  }
+});
+
+router.post('/esign', requireAuth, async (req, res) => {
+  try {
+    const { token, endpoint } = docusealConfig();
+    if (!token) {
+      return res.status(501).json({
+        error: 'DocuSeal is not configured yet. Set DOCUSEAL_API_KEY on the server, then restart Unit Navigator.',
+      });
+    }
+
+    const data = req.body || {};
+    const buyerEmail = signerEmail(data.customer?.email);
+    const dealerEmail = signerEmail(data.dealer?.email || dealerFromDb(req).email);
+    if (!buyerEmail) return res.status(400).json({ error: 'Buyer email is required before sending for e-signature.' });
+    if (!dealerEmail) return res.status(400).json({ error: 'Dealer email is required before sending for e-signature.' });
+
+    const pdf = await buildOfficialPacket(data, req);
+    const filename = packetFilename(data);
+    const submitters = [
+      { role: 'Buyer', name: signerName(data.customer?.name, 'Buyer'), email: buyerEmail },
+      { role: 'Dealer', name: signerName(data.dealer?.representativeName || data.dealer?.displayName || data.dealer?.name, 'Dealer'), email: dealerEmail },
+    ];
+    const payload = {
+      name: `${vehicleLabel(data) || 'Vehicle'} Deal Packet`,
+      send_email: true,
+      documents: [{
+        name: filename,
+        file: pdf.toString('base64'),
+        fields: esignFields(data),
+      }],
+      submitters,
+    };
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Auth-Token': token,
+      },
+      body: JSON.stringify(payload),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      console.error('DocuSeal error', response.status, body);
+      return res.status(502).json({ error: body.error || body.message || `DocuSeal returned HTTP ${response.status}` });
+    }
+
+    res.status(201).json({
+      message: 'E-sign packet sent through DocuSeal.',
+      provider: 'docuseal',
+      signing_url: firstUrl(body),
+      response: body,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'E-sign packet could not be created.' });
   }
 });
 
