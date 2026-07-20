@@ -120,7 +120,7 @@
     .vehicle-photo::after {
       content: ""; position: absolute; inset: 0;
       background:
-        linear-gradient(180deg, rgba(2,6,23,.04), rgba(2,6,23,.22) 45%, rgba(2,6,23,.9)),
+        linear-gradient(180deg, rgba(2,6,23,.08), rgba(2,6,23,.34) 42%, rgba(2,6,23,.94)),
         radial-gradient(circle at 50% 32%, transparent, rgba(2,6,23,.28) 72%);
     }
     .vehicle-content {
@@ -128,8 +128,18 @@
       display: grid; gap: 14px;
     }
     .vehicle-title { display: flex; justify-content: space-between; gap: 16px; align-items: start; }
-    .vehicle-title h2 { font-size: 1.28rem; line-height: 1; letter-spacing: -.045em; }
-    .vehicle-title p { color: rgba(226,232,240,.76); margin-top: 7px; }
+    .vehicle-title h2 {
+      color: #fff;
+      font-size: 1.28rem;
+      line-height: 1;
+      letter-spacing: -.045em;
+      text-shadow: 0 2px 18px rgba(0,0,0,.68);
+    }
+    .vehicle-title p {
+      color: rgba(255,255,255,.86);
+      margin-top: 7px;
+      text-shadow: 0 2px 14px rgba(0,0,0,.58);
+    }
     .price-pill {
       flex: 0 0 auto; padding: 10px 12px; border-radius: 18px;
       background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.14);
@@ -733,6 +743,10 @@ function movePhoto(event, id, dir) {
   const photos = unit.photos?.length ? unit.photos : [fallbackPhoto];
   const current = photoIndex.get(id) || 0;
   photoIndex.set(id, (current + dir + photos.length) % photos.length);
+  if (selectedUnitId === id) {
+    renderSelectedUnit();
+    return;
+  }
   renderInventory();
 }
 
