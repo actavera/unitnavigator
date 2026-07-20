@@ -108,7 +108,7 @@ router.get('/inventory', (req, res) => {
   if (!dealer) return res.json({ units: [] });
 
   let rows = db.prepare(`
-    SELECT id, vin, stock_number, year, make, model, trim, body_style, color, mileage, asking_price, minimum_price, photos, stage
+    SELECT id, vin, stock_number, year, make, model, trim, body_style, color, mileage, asking_price, minimum_price, notes, photos, stage
     FROM units
     WHERE dealership_id = ? AND stage = 'ready' AND archived_at IS NULL
     ORDER BY created_at DESC
@@ -116,7 +116,7 @@ router.get('/inventory', (req, res) => {
 
   if (!rows.length) {
     rows = db.prepare(`
-      SELECT id, vin, stock_number, year, make, model, trim, body_style, color, mileage, asking_price, minimum_price, photos, stage
+      SELECT id, vin, stock_number, year, make, model, trim, body_style, color, mileage, asking_price, minimum_price, notes, photos, stage
       FROM units
       WHERE dealership_id = ? AND stage NOT IN ('sold','archived') AND archived_at IS NULL
       ORDER BY created_at DESC
@@ -139,7 +139,7 @@ router.get('/inventory/:id', (req, res) => {
   if (!dealer) return res.status(404).json({ error: 'Vehicle not found' });
 
   const row = db.prepare(`
-    SELECT id, vin, stock_number, year, make, model, trim, body_style, color, mileage, asking_price, minimum_price, photos, stage
+    SELECT id, vin, stock_number, year, make, model, trim, body_style, color, mileage, asking_price, minimum_price, notes, photos, stage
     FROM units
     WHERE id = ? AND dealership_id = ? AND stage NOT IN ('sold','archived') AND archived_at IS NULL
   `).get(req.params.id, dealer.id);

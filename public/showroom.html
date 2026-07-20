@@ -79,19 +79,25 @@
     .toggle-btn.active { background: #2563eb; color: #fff; box-shadow: 0 12px 28px rgba(37,99,235,.28); }
     .showroom-browser {
       display: grid;
-      grid-template-columns: minmax(340px, .85fr) minmax(560px, 1.35fr);
+      grid-template-columns: 1fr;
       gap: 22px;
       align-items: start;
+    }
+    .showroom-browser.detail-open {
+      grid-template-columns: minmax(340px, .85fr) minmax(560px, 1.35fr);
     }
     .inventory-rail {
       display: grid;
       gap: 14px;
-      max-height: calc(100vh - 158px);
-      overflow: auto;
       padding: 2px 2px 14px;
       scrollbar-width: thin;
     }
-    .vehicle-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 14px; }
+    .showroom-browser.detail-open .inventory-rail {
+      max-height: calc(100vh - 158px);
+      overflow: auto;
+    }
+    .vehicle-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 14px; }
+    .showroom-browser.detail-open .vehicle-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
     .vehicle-card {
       position: relative; overflow: hidden; min-height: 330px; border-radius: 18px;
       border: 1px solid rgba(255,255,255,.1);
@@ -158,6 +164,7 @@
     }
     .vehicle-grid.list-view .photo-count,
     .vehicle-grid.list-view .photo-arrow { display: none; }
+    .vehicle-card .photo-arrow { display: none; }
     .mobile-quickbar { display: none; }
     .photo-arrow {
       position: absolute; z-index: 3; top: 45%; transform: translateY(-50%);
@@ -174,6 +181,7 @@
       font-size: .78rem; font-weight: 800; backdrop-filter: blur(10px);
     }
     .selected-panel {
+      display: none;
       position: sticky;
       top: 98px;
       border: 1px solid var(--show-line);
@@ -183,6 +191,7 @@
       overflow: hidden;
       min-height: 620px;
     }
+    .showroom-browser.detail-open .selected-panel { display: block; }
     :root[data-public-theme="light"] .selected-panel {
       background: rgba(255,255,255,.86);
     }
@@ -275,6 +284,35 @@
       background: var(--show-field);
     }
     .selected-actions .show-btn.primary { color: #fff; background: #2563eb; border-color: #3b82f6; }
+    .selected-description {
+      border: 1px solid var(--show-line);
+      border-radius: 18px;
+      padding: 16px;
+      background: var(--show-field);
+      color: var(--show-muted);
+      line-height: 1.55;
+      white-space: pre-wrap;
+    }
+    .selected-description strong {
+      display: block;
+      color: var(--show-text);
+      margin-bottom: 6px;
+    }
+    .selected-close {
+      position: absolute;
+      z-index: 4;
+      top: 16px;
+      left: 16px;
+      width: 42px;
+      height: 42px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,.18);
+      background: rgba(2,6,23,.56);
+      color: #fff;
+      font-size: 1.35rem;
+      cursor: pointer;
+      backdrop-filter: blur(10px);
+    }
     .selected-empty {
       min-height: 620px;
       display: grid;
@@ -290,6 +328,7 @@
     }
     @media(max-width: 1180px) {
       .showroom-browser { grid-template-columns: 1fr; }
+      .showroom-browser.detail-open { grid-template-columns: 1fr; }
       .selected-panel { position: relative; top: auto; order: -1; min-height: auto; }
       .inventory-rail { max-height: none; overflow: visible; }
       .vehicle-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
@@ -527,7 +566,7 @@ async function loadInventory() {
   const data = await res.json();
   units = data.units || [];
   units.forEach(unit => photoIndex.set(unit.id, 0));
-  selectedUnitId = units[0]?.id || null;
+  selectedUnitId = null;
   renderInventory();
 }
 
@@ -551,9 +590,11 @@ function filteredUnits() {
 function renderInventory() {
   const grid = document.getElementById('vehicleGrid');
   const panel = document.getElementById('selectedPanel');
+  const browser = document.getElementById('showroomBrowser');
   const list = filteredUnits();
   grid.classList.toggle('list-view', viewMode === 'list');
   if (!list.length) {
+    if (browser) browser.classList.remove('detail-open');
     grid.innerHTML = `
       <div class="empty-showroom">
         <h2>No public inventory yet.</h2>
@@ -570,7 +611,8 @@ function renderInventory() {
     }
     return;
   }
-  if (!list.some(unit => unit.id === selectedUnitId)) selectedUnitId = list[0].id;
+  if (selectedUnitId && !list.some(unit => unit.id === selectedUnitId)) selectedUnitId = null;
+  if (browser) browser.classList.toggle('detail-open', Boolean(selectedUnitId));
   grid.innerHTML = list.map((unit, i) => vehicleCard(unit, i)).join('');
   renderSelectedUnit();
 }
@@ -586,10 +628,6 @@ function vehicleCard(unit, i) {
     <article class="vehicle-card${active}" onclick="selectVehicle(${unit.id})" style="animation-delay:${Math.min(i * 70, 420)}ms">
       <div class="vehicle-photo" style="background-image:url('${escapeHtml(photo)}')"></div>
       <div class="photo-count">${index + 1} / ${photos.length}</div>
-      ${photos.length > 1 ? `
-        <button class="photo-arrow prev" onclick="movePhoto(event, ${unit.id}, -1)" aria-label="Previous photo">‹</button>
-        <button class="photo-arrow next" onclick="movePhoto(event, ${unit.id}, 1)" aria-label="Next photo">›</button>
-      ` : ''}
       <div class="vehicle-content">
         <div class="vehicle-title">
           <div>
@@ -608,9 +646,15 @@ function vehicleCard(unit, i) {
 }
 
 function selectVehicle(id) {
-  selectedUnitId = id;
+  selectedUnitId = selectedUnitId === id ? null : id;
   renderInventory();
-  document.getElementById('selectedPanel')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  if (selectedUnitId) document.getElementById('selectedPanel')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function closeSelectedVehicle(event) {
+  event?.stopPropagation();
+  selectedUnitId = null;
+  renderInventory();
 }
 
 function renderSelectedUnit() {
@@ -632,8 +676,10 @@ function renderSelectedUnit() {
   const photo = photos[index] || photos[0];
   const pay = monthly(unit.price);
   const title = [unit.year, unit.make, unit.model].filter(Boolean).join(' ') || 'Available Unit';
+  const description = String(unit.notes || '').trim();
   panel.innerHTML = `
     <div class="selected-photo">
+      <button class="selected-close" type="button" onclick="closeSelectedVehicle(event)" aria-label="Close vehicle details">×</button>
       <img src="${escapeHtml(photo)}" alt="${escapeHtml(title)}">
       <div class="photo-count">${index + 1} / ${photos.length}</div>
       ${photos.length > 1 ? `
@@ -659,6 +705,10 @@ function renderSelectedUnit() {
         ${selectedSpec('Body', unit.body_style || '-')}
         ${selectedSpec('VIN', unit.vin || '-')}
         ${selectedSpec('Stock', unit.stock_number || unit.stock || '-')}
+      </div>
+      <div class="selected-description">
+        <strong>Description</strong>
+        ${description ? escapeHtml(description) : 'No additional description has been added yet.'}
       </div>
       <div class="selected-actions">
         <a class="show-btn primary" href="${publicUrl('/credit/new')}">Apply</a>
