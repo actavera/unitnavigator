@@ -77,22 +77,40 @@
       color: var(--show-muted); background: transparent; font-weight: 900; cursor: pointer;
     }
     .toggle-btn.active { background: #2563eb; color: #fff; box-shadow: 0 12px 28px rgba(37,99,235,.28); }
-    .vehicle-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 22px; }
+    .showroom-browser {
+      display: grid;
+      grid-template-columns: minmax(340px, .85fr) minmax(560px, 1.35fr);
+      gap: 22px;
+      align-items: start;
+    }
+    .inventory-rail {
+      display: grid;
+      gap: 14px;
+      max-height: calc(100vh - 158px);
+      overflow: auto;
+      padding: 2px 2px 14px;
+      scrollbar-width: thin;
+    }
+    .vehicle-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 14px; }
     .vehicle-card {
-      position: relative; overflow: hidden; min-height: 540px; border-radius: 34px;
+      position: relative; overflow: hidden; min-height: 330px; border-radius: 18px;
       border: 1px solid rgba(255,255,255,.1);
       background: var(--show-panel);
-      box-shadow: 0 30px 80px var(--show-shadow);
+      box-shadow: 0 18px 46px rgba(0,0,0,.18);
       transform: translateY(14px); opacity: 0;
       animation: cardIn .55s ease-out forwards;
       cursor: pointer;
     }
+    .vehicle-card.active {
+      border-color: rgba(37,99,235,.88);
+      box-shadow: 0 0 0 3px rgba(37,99,235,.22), 0 24px 70px rgba(37,99,235,.2);
+    }
     @keyframes cardIn { to { opacity: 1; transform: translateY(0); } }
     .vehicle-photo {
-      position: absolute; inset: 0; background: #101827 center / cover no-repeat;
+      position: absolute; inset: 0; background: #101827 center / contain no-repeat;
       transition: transform .5s ease, filter .5s ease;
     }
-    .vehicle-card:hover .vehicle-photo { transform: scale(1.045); filter: saturate(1.08); }
+    .vehicle-card:hover .vehicle-photo { transform: scale(1.025); filter: saturate(1.08); }
     .vehicle-photo::after {
       content: ""; position: absolute; inset: 0;
       background:
@@ -104,7 +122,7 @@
       display: grid; gap: 14px;
     }
     .vehicle-title { display: flex; justify-content: space-between; gap: 16px; align-items: start; }
-    .vehicle-title h2 { font-size: 1.8rem; line-height: 1; letter-spacing: -.055em; }
+    .vehicle-title h2 { font-size: 1.28rem; line-height: 1; letter-spacing: -.045em; }
     .vehicle-title p { color: rgba(226,232,240,.76); margin-top: 7px; }
     .price-pill {
       flex: 0 0 auto; padding: 10px 12px; border-radius: 18px;
@@ -122,10 +140,10 @@
     .show-btn.primary { background: #2563eb; border-color: #3b82f6; }
     .vehicle-grid.list-view { grid-template-columns: 1fr; }
     .vehicle-grid.list-view .vehicle-card {
-      min-height: 210px; display: grid; grid-template-columns: 280px minmax(0,1fr);
-      border-radius: 28px; cursor: pointer;
+      min-height: 150px; display: grid; grid-template-columns: 170px minmax(0,1fr);
+      border-radius: 18px; cursor: pointer;
     }
-    .vehicle-grid.list-view .vehicle-photo { position: relative; min-height: 210px; }
+    .vehicle-grid.list-view .vehicle-photo { position: relative; min-height: 150px; }
     .vehicle-grid.list-view .vehicle-photo::after { background: linear-gradient(90deg, transparent, rgba(2,6,23,.16)); }
     .vehicle-grid.list-view .vehicle-content { position: relative; inset: auto; padding: 24px; align-content: center; }
     :root[data-public-theme="light"] .vehicle-grid.list-view .vehicle-card { border-color: rgba(15,23,42,.1); background: rgba(255,255,255,.82); }
@@ -155,12 +173,125 @@
       background: rgba(2,6,23,.46); border: 1px solid rgba(255,255,255,.14); color: rgba(255,255,255,.88);
       font-size: .78rem; font-weight: 800; backdrop-filter: blur(10px);
     }
+    .selected-panel {
+      position: sticky;
+      top: 98px;
+      border: 1px solid var(--show-line);
+      border-radius: 28px;
+      background: rgba(255,255,255,.065);
+      box-shadow: 0 34px 90px var(--show-shadow);
+      overflow: hidden;
+      min-height: 620px;
+    }
+    :root[data-public-theme="light"] .selected-panel {
+      background: rgba(255,255,255,.86);
+    }
+    .selected-photo {
+      position: relative;
+      height: clamp(360px, 45vw, 520px);
+      background: #050812;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+    }
+    .selected-photo img {
+      width: 100%;
+      height: 100%;
+      max-height: 520px;
+      object-fit: contain;
+      display: block;
+    }
+    .selected-details {
+      padding: 26px;
+      display: grid;
+      gap: 18px;
+    }
+    .selected-heading {
+      display: flex;
+      justify-content: space-between;
+      gap: 22px;
+      align-items: start;
+    }
+    .selected-heading h1 {
+      font-size: clamp(2rem, 4vw, 4rem);
+      line-height: .94;
+      letter-spacing: -.06em;
+      color: var(--show-text);
+    }
+    .selected-heading p { margin-top: 8px; color: var(--show-muted); font-weight: 800; }
+    .selected-price {
+      flex: 0 0 auto;
+      text-align: right;
+      padding: 12px 14px;
+      border-radius: 18px;
+      color: var(--show-text);
+      border: 1px solid var(--show-line);
+      background: var(--show-field);
+      font-weight: 950;
+      font-size: 1.25rem;
+    }
+    .selected-price small {
+      display: block;
+      margin-top: 4px;
+      color: var(--show-muted);
+      font-size: .82rem;
+      font-weight: 850;
+    }
+    .selected-specs {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .selected-spec {
+      border: 1px solid var(--show-line);
+      border-radius: 16px;
+      padding: 12px;
+      background: var(--show-field);
+      min-width: 0;
+    }
+    .selected-spec span {
+      display: block;
+      color: var(--show-muted);
+      font-size: .72rem;
+      font-weight: 950;
+      letter-spacing: .11em;
+      text-transform: uppercase;
+      margin-bottom: 5px;
+    }
+    .selected-spec strong {
+      color: var(--show-text);
+      font-size: 1.02rem;
+      overflow-wrap: anywhere;
+    }
+    .selected-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .selected-actions .show-btn {
+      min-height: 52px;
+      color: var(--show-text);
+      border-color: var(--show-line);
+      background: var(--show-field);
+    }
+    .selected-actions .show-btn.primary { color: #fff; background: #2563eb; border-color: #3b82f6; }
+    .selected-empty {
+      min-height: 620px;
+      display: grid;
+      place-items: center;
+      padding: 34px;
+      text-align: center;
+      color: var(--show-muted);
+    }
     .empty-showroom {
       grid-column: 1 / -1; text-align: center; border: 1px dashed rgba(255,255,255,.16);
       border-radius: 28px; padding: 70px 24px; color: rgba(226,232,240,.68);
       background: rgba(255,255,255,.04);
     }
     @media(max-width: 1180px) {
+      .showroom-browser { grid-template-columns: 1fr; }
+      .selected-panel { position: relative; top: auto; order: -1; min-height: auto; }
+      .inventory-rail { max-height: none; overflow: visible; }
       .vehicle-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
       .showroom-nav { grid-template-columns: 1fr auto; align-items: start; }
       .dealer-contact { grid-column: 1 / -1; justify-content: flex-start; order: 3; }
@@ -187,7 +318,7 @@
       }
       .showroom-input, .showroom-select { border-radius: 14px; padding: 12px 13px; font-size: .95rem; }
       .vehicle-grid { gap: 16px; }
-      .vehicle-card { min-height: 610px; border-radius: 26px; }
+      .vehicle-card { min-height: 430px; border-radius: 22px; }
       .vehicle-content { padding: 16px; gap: 12px; }
       .vehicle-title { display: grid; gap: 10px; }
       .vehicle-title h2 { font-size: 1.55rem; }
@@ -217,6 +348,11 @@
       .mobile-quickbar a:first-child { background: #2563eb; border-color: #3b82f6; }
       .vehicle-grid.list-view .vehicle-card { grid-template-columns: 1fr; min-height: 430px; }
       .vehicle-grid.list-view .vehicle-photo { min-height: 240px; }
+      .selected-photo { height: 300px; }
+      .selected-details { padding: 18px; }
+      .selected-heading { display: grid; gap: 12px; }
+      .selected-price { justify-self: start; text-align: left; }
+      .selected-specs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
     @media(max-width: 390px) {
       .vehicle-card { min-height: 520px; }
@@ -265,7 +401,12 @@
     </div>
   </section>
 
-  <section class="vehicle-grid" id="vehicleGrid"></section>
+  <section class="showroom-browser" id="showroomBrowser">
+    <div class="inventory-rail">
+      <section class="vehicle-grid" id="vehicleGrid"></section>
+    </div>
+    <aside class="selected-panel" id="selectedPanel" aria-live="polite"></aside>
+  </section>
 </main>
 
 <div class="mobile-quickbar">
@@ -281,6 +422,8 @@ let viewMode = localStorage.getItem('un_public_view') || 'cards';
 const dealerParam = new URLSearchParams(location.search).get('dealer') || '';
 let dealerLogoUrl = '';
 let aprOptions = [9.99, 7.99, 12.99, 18.99];
+let selectedUnitId = null;
+let dealerPhoneValue = '';
 
 function publicUrl(path) {
   if (!dealerParam) return path;
@@ -363,6 +506,7 @@ async function loadDealer() {
     const dealer = data.dealer || {};
     document.getElementById('dealerName').textContent = dealer.display_name || dealer.name || 'Dealer Inventory';
     document.getElementById('dealerAddress').textContent = dealer.address || '';
+    dealerPhoneValue = dealer.phone || '';
     contactLink('dealerPhone', dealer.phone, 'tel:');
     contactLink('dealerEmail', dealer.email, 'mailto:');
     renderAprOptions(dealer.apr_options);
@@ -383,6 +527,7 @@ async function loadInventory() {
   const data = await res.json();
   units = data.units || [];
   units.forEach(unit => photoIndex.set(unit.id, 0));
+  selectedUnitId = units[0]?.id || null;
   renderInventory();
 }
 
@@ -405,6 +550,7 @@ function filteredUnits() {
 
 function renderInventory() {
   const grid = document.getElementById('vehicleGrid');
+  const panel = document.getElementById('selectedPanel');
   const list = filteredUnits();
   grid.classList.toggle('list-view', viewMode === 'list');
   if (!list.length) {
@@ -413,9 +559,20 @@ function renderInventory() {
         <h2>No public inventory yet.</h2>
         <p>Move units to Ready in Unit Navigator and they will appear here.</p>
       </div>`;
+    if (panel) {
+      panel.innerHTML = `
+        <div class="selected-empty">
+          <div>
+            <h2>No unit selected.</h2>
+            <p>Inventory will appear here as soon as it is ready for the public showroom.</p>
+          </div>
+        </div>`;
+    }
     return;
   }
+  if (!list.some(unit => unit.id === selectedUnitId)) selectedUnitId = list[0].id;
   grid.innerHTML = list.map((unit, i) => vehicleCard(unit, i)).join('');
+  renderSelectedUnit();
 }
 
 function vehicleCard(unit, i) {
@@ -424,8 +581,9 @@ function vehicleCard(unit, i) {
   const photo = photos[index] || photos[0];
   const pay = monthly(unit.price);
   const title = [unit.year, unit.make, unit.model].filter(Boolean).join(' ');
+  const active = unit.id === selectedUnitId ? ' active' : '';
   return `
-    <article class="vehicle-card" onclick="openVehicle(${unit.id})" style="animation-delay:${Math.min(i * 70, 420)}ms">
+    <article class="vehicle-card${active}" onclick="selectVehicle(${unit.id})" style="animation-delay:${Math.min(i * 70, 420)}ms">
       <div class="vehicle-photo" style="background-image:url('${escapeHtml(photo)}')"></div>
       <div class="photo-count">${index + 1} / ${photos.length}</div>
       ${photos.length > 1 ? `
@@ -441,16 +599,81 @@ function vehicleCard(unit, i) {
           <div class="price-pill">${money(unit.price)}<small>${pay ? money(pay) + '/mo est.' : 'Payment estimate available'}</small></div>
         </div>
         <div class="card-actions">
-          <a class="show-btn primary" href="/credit/new" onclick="event.stopPropagation()">Apply</a>
-          <a class="show-btn" href="${publicUrl(`/showroom/${unit.id}`)}" onclick="event.stopPropagation()">Details</a>
+          <a class="show-btn primary" href="${publicUrl('/credit/new')}" onclick="event.stopPropagation()">Apply</a>
+          <button class="show-btn" type="button" onclick="event.stopPropagation(); selectVehicle(${unit.id})">View</button>
         </div>
       </div>
     </article>
   `;
 }
 
-function openVehicle(id) {
-  window.location.href = publicUrl(`/showroom/${id}`);
+function selectVehicle(id) {
+  selectedUnitId = id;
+  renderInventory();
+  document.getElementById('selectedPanel')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function renderSelectedUnit() {
+  const panel = document.getElementById('selectedPanel');
+  if (!panel) return;
+  const unit = units.find(u => u.id === selectedUnitId);
+  if (!unit) {
+    panel.innerHTML = `
+      <div class="selected-empty">
+        <div>
+          <h2>Select a vehicle.</h2>
+          <p>Pick anything from the inventory list to see photos, pricing, and details.</p>
+        </div>
+      </div>`;
+    return;
+  }
+  const photos = unit.photos?.length ? unit.photos : [fallbackPhoto];
+  const index = photoIndex.get(unit.id) || 0;
+  const photo = photos[index] || photos[0];
+  const pay = monthly(unit.price);
+  const title = [unit.year, unit.make, unit.model].filter(Boolean).join(' ') || 'Available Unit';
+  panel.innerHTML = `
+    <div class="selected-photo">
+      <img src="${escapeHtml(photo)}" alt="${escapeHtml(title)}">
+      <div class="photo-count">${index + 1} / ${photos.length}</div>
+      ${photos.length > 1 ? `
+        <button class="photo-arrow prev" onclick="movePhoto(event, ${unit.id}, -1)" aria-label="Previous photo">‹</button>
+        <button class="photo-arrow next" onclick="movePhoto(event, ${unit.id}, 1)" aria-label="Next photo">›</button>
+      ` : ''}
+    </div>
+    <div class="selected-details">
+      <div class="selected-heading">
+        <div>
+          <h1>${escapeHtml(title)}</h1>
+          <p>${escapeHtml(vehicleSubtitle(unit))}</p>
+        </div>
+        <div class="selected-price">
+          ${money(unit.price)}
+          <small>${pay ? money(pay) + '/mo est.' : 'Payment estimate available'}</small>
+        </div>
+      </div>
+      <div class="selected-specs">
+        ${selectedSpec('Trim', unit.trim || '-')}
+        ${selectedSpec('Miles', unit.mileage != null && unit.mileage !== '' ? miles(unit.mileage) : '-')}
+        ${selectedSpec('Color', unit.color || '-')}
+        ${selectedSpec('Body', unit.body_style || '-')}
+        ${selectedSpec('VIN', unit.vin || '-')}
+        ${selectedSpec('Stock', unit.stock_number || unit.stock || '-')}
+      </div>
+      <div class="selected-actions">
+        <a class="show-btn primary" href="${publicUrl('/credit/new')}">Apply</a>
+        <a class="show-btn" href="tel:${escapeHtml(dealerPhoneValue)}">Call Dealer</a>
+      </div>
+    </div>
+  `;
+}
+
+function selectedSpec(label, value) {
+  return `
+    <div class="selected-spec">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+    </div>`;
 }
 
 function movePhoto(event, id, dir) {
@@ -471,6 +694,13 @@ loadInventory().catch(() => {
     <div class="empty-showroom">
       <h2>Inventory is unavailable right now.</h2>
       <p>Please check back soon.</p>
+    </div>`;
+  document.getElementById('selectedPanel').innerHTML = `
+    <div class="selected-empty">
+      <div>
+        <h2>Inventory is unavailable.</h2>
+        <p>Please check back soon.</p>
+      </div>
     </div>`;
 });
 </script>
