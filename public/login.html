@@ -56,7 +56,15 @@
 <script src="/js/nav.js"></script>
 <script>
 UN.syncThemeToggle();
-if (UN.getToken()) location.href = '/home';
+const params = new URLSearchParams(location.search);
+if (params.get('expired')) {
+  UN.clearToken();
+  showErr('Your session expired. Please log in again.');
+} else if (UN.getToken() && !UN.isTokenExpired()) {
+  location.href = '/home';
+} else if (UN.isTokenExpired()) {
+  UN.clearToken();
+}
 
 document.addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
 
@@ -74,7 +82,8 @@ async function login() {
     const data = await UN.api('POST', '/api/auth/login', { email, password });
     UN.setToken(data.token);
     UN.setUser(data.user);
-    location.href = '/home';
+    const next = params.get('next');
+    location.href = next && next.startsWith('/') ? next : '/home';
   } catch(e) {
     showErr(e.message);
     btn.disabled = false; btn.textContent = 'Log In';

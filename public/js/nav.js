@@ -2,6 +2,25 @@ const UN = {
   getToken() { return localStorage.getItem('un_session'); },
   setToken(t) { localStorage.setItem('un_session', t); },
   clearToken() { localStorage.removeItem('un_session'); localStorage.removeItem('un_user'); },
+  tokenPayload() {
+    const token = UN.getToken();
+    if (!token || !token.includes('.')) return null;
+    try {
+      const payload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      return JSON.parse(atob(payload.padEnd(Math.ceil(payload.length / 4) * 4, '=')));
+    } catch {
+      return null;
+    }
+  },
+  isTokenExpired() {
+    const payload = UN.tokenPayload();
+    return Boolean(payload?.exp && Date.now() >= payload.exp * 1000);
+  },
+  sessionExpiredRedirect() {
+    UN.clearToken();
+    const next = encodeURIComponent(location.pathname + location.search);
+    location.href = `/login?expired=1&next=${next}`;
+  },
   getTheme() { return localStorage.getItem('un_theme') || 'dark'; },
   setTheme(theme) {
     localStorage.setItem('un_theme', theme);
@@ -30,20 +49,32 @@ const UN = {
   setUser(u) { localStorage.setItem('un_user', JSON.stringify(u)); },
 
   headers() {
-    return { 'Content-Type': 'application/json', Authorization: `Bearer ${UN.getToken()}` };
+    const headers = { 'Content-Type': 'application/json' };
+    const token = UN.getToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+    return headers;
   },
 
   async api(method, path, body) {
+    if (path !== '/api/auth/login' && UN.isTokenExpired()) {
+      UN.sessionExpiredRedirect();
+      throw new Error('Session expired. Please log in again.');
+    }
     const opts = { method, headers: UN.headers() };
     if (body) opts.body = JSON.stringify(body);
     const r = await fetch(path, opts);
     const data = await r.json().catch(() => ({}));
+    if (r.status === 401 && path !== '/api/auth/login') {
+      UN.sessionExpiredRedirect();
+      throw new Error('Session expired. Please log in again.');
+    }
     if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
     return data;
   },
 
   requireAuth() {
     if (!UN.getToken()) { location.href = '/login'; return false; }
+    if (UN.isTokenExpired()) { UN.sessionExpiredRedirect(); return false; }
     return true;
   },
 
