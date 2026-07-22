@@ -34,7 +34,7 @@
       border-radius: var(--r-lg); padding: 13px 15px; margin-bottom: 18px; line-height: 1.45;
     }
     .demo-home-actions {
-      display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 12px; margin-bottom: 18px;
+      display: grid; grid-template-columns: repeat(6, minmax(0,1fr)); gap: 12px; margin-bottom: 18px;
     }
     .demo-work-card {
       border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--s1);
@@ -85,6 +85,22 @@
     .demo-list table { width: 100%; border-collapse: collapse; }
     .demo-list th, .demo-list td { text-align: left; border-bottom: 1px solid var(--border); padding: 11px 8px; font-size: .9rem; }
     .demo-list th { color: var(--muted); text-transform: uppercase; letter-spacing: .04em; font-size: .72rem; }
+    .demo-photo-strip { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+    .demo-photo-strip img {
+      width: 74px; height: 54px; object-fit: cover; border-radius: 10px;
+      border: 1px solid var(--border); background: var(--s2);
+    }
+    .demo-unit-photo {
+      width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: var(--r-sm);
+      border: 1px solid var(--border); background: var(--s2); margin-bottom: 10px;
+    }
+    .demo-notice-card {
+      border: 1px solid var(--blue-border); border-radius: var(--r); background: var(--blue-gl);
+      padding: 16px; color: var(--text-2); line-height: 1.48;
+    }
+    .demo-settings-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+    .demo-settings-option { border: 1px solid var(--border); border-radius: var(--r); padding: 13px; background: var(--s2); }
+    .demo-settings-option strong { display: block; margin-bottom: 4px; }
     .detail-grid { display: grid; gap: 10px; }
     .detail-row { display: flex; justify-content: space-between; gap: 14px; padding-bottom: 9px; border-bottom: 1px solid var(--border); }
     .detail-row span { color: var(--muted); }
@@ -98,6 +114,7 @@
       .demo-home-actions { grid-template-columns: repeat(3,minmax(0,1fr)); }
       .demo-layout { grid-template-columns: 1fr; }
       .demo-board, .demo-summary { grid-template-columns: repeat(2,minmax(0,1fr)); }
+      .demo-settings-grid { grid-template-columns: 1fr; }
     }
     @media(max-width: 720px) {
       .demo-nav { align-items: flex-start; flex-direction: column; }
@@ -116,8 +133,8 @@
         <button type="button" data-theme-option="light" onclick="UN.setTheme('light')" aria-pressed="false">Light</button>
         <button type="button" data-theme-option="dark" onclick="UN.setTheme('dark')" aria-pressed="true">Dark</button>
       </div>
-      <a class="btn btn-ghost" href="/">Landing Page</a>
-      <a class="btn btn-primary" href="/login">Dealer Log In</a>
+      <a class="btn btn-ghost" href="/" onclick="clearDemoStorage()">Exit Demo</a>
+      <a class="btn btn-primary" href="/login" onclick="clearDemoStorage()">Dealer Log In</a>
     </div>
   </nav>
 
@@ -126,19 +143,20 @@
       <div>
         <p class="home-kicker">Generic Sandbox Demo</p>
         <h1>Try the dealer backend without saving anything.</h1>
-        <p>Add one vehicle, edit and move it through inventory, create one deal, and preview the workflows a dealer would use day to day.</p>
+        <p>Add demo vehicles with photos, move units through stages, start sample deals, preview paperwork logic, and inspect the settings a dealer would configure.</p>
       </div>
-      <button class="btn btn-danger" onclick="resetDemo()">Clear Demo Now</button>
+      <button class="btn btn-danger" onclick="resetDemo()">Clear Demo Data</button>
     </header>
 
-    <div class="demo-note">Demo data is temporary and never touches the real database. Refreshing, closing, or leaving this page clears the unit and deal.</div>
+    <div class="demo-note">Demo data is temporary and never touches the real database. It stays only in this browser tab while you play, then clears when you exit the demo, close the tab, log in, or click <strong>Clear Demo Data</strong>.</div>
 
     <section class="demo-home-actions" aria-label="Demo workflows">
-      <article class="demo-work-card green" onclick="alert('Credit pull demo: in the real app this starts a customer credit workflow. For this sandbox, use Start Deal to create a fake deal.')"><div class="orb">C</div><h2>Credit Pull</h2><p>Preview where credit and customer intake starts.</p></article>
-      <article class="demo-work-card blue" onclick="showInventoryForm()"><div class="orb">+</div><h2>Add Inventory</h2><p>Add one fake vehicle with costs and pricing.</p></article>
+      <article class="demo-work-card green" onclick="showCreditNotice()"><div class="orb">C</div><h2>Credit Pull</h2><p>Shows where credit intake starts without running real credit.</p></article>
+      <article class="demo-work-card blue" onclick="showInventoryForm(true)"><div class="orb">+</div><h2>Add Inventory</h2><p>Add demo vehicles with photos, cost, stage, and price.</p></article>
       <article class="demo-work-card purple" onclick="setView('list')"><div class="orb">V</div><h2>Edit / View Inventory</h2><p>Open the list and manage the demo unit.</p></article>
-      <article class="demo-work-card orange" onclick="showDealForm()"><div class="orb">D</div><h2>Current Deals</h2><p>Add or manage one fake active deal.</p></article>
-      <article class="demo-work-card cyan" onclick="showPaperwork()"><div class="orb">P</div><h2>Paperwork</h2><p>See where packet status would live.</p></article>
+      <article class="demo-work-card orange" onclick="showDealForm()"><div class="orb">D</div><h2>Deals</h2><p>Start a deal with sample clients and a demo vehicle.</p></article>
+      <article class="demo-work-card cyan" onclick="showPaperwork()"><div class="orb">P</div><h2>Paperwork</h2><p>Preview how packet logic changes by state and unit type.</p></article>
+      <article class="demo-work-card purple" onclick="showSettings()"><div class="orb">S</div><h2>Settings</h2><p>View dealer setup options in readonly demo mode.</p></article>
     </section>
 
     <section class="demo-summary" id="demoSummary"></section>
@@ -150,7 +168,7 @@
           <div class="demo-form-actions">
             <button class="btn btn-ghost btn-sm" onclick="setView('board')">Board</button>
             <button class="btn btn-ghost btn-sm" onclick="setView('list')">List</button>
-            <button class="btn btn-primary btn-sm" onclick="showInventoryForm()">+ Add Unit</button>
+            <button class="btn btn-primary btn-sm" onclick="showInventoryForm(true)">+ Add Unit</button>
           </div>
         </div>
         <div class="demo-panel-body">
@@ -188,6 +206,12 @@
         <div class="form-group"><label class="form-label">Transport</label><input class="form-input" id="uTransport" type="number" value="350"></div>
         <div class="form-group"><label class="form-label">Asking Price</label><input class="form-input" id="uAsk" type="number" value="18995"></div>
       </div>
+      <div class="form-group">
+        <label class="form-label">Demo Photos</label>
+        <input class="form-input" id="uPhotos" type="file" multiple accept="image/*" onchange="previewDemoPhotos(this.files)">
+        <p class="demo-muted">Photos stay in this tab only. They do not upload to Unit Navigator.</p>
+        <div class="demo-photo-strip" id="unitPhotoPreview"></div>
+      </div>
       <div class="recon-lines">
         <label class="form-label">Recon Repairs</label>
         <div class="recon-line"><input class="form-input" id="rOne" value="Battery"><input class="form-input" id="rOneCost" type="number" value="150"></div>
@@ -203,6 +227,7 @@
   <dialog id="dealDialog" style="border:0;border-radius:18px;padding:0;background:transparent;width:min(620px,calc(100vw - 28px));">
     <form class="demo-panel demo-form" method="dialog" style="padding:22px;">
       <div class="demo-panel-header" style="padding:0 0 14px;"><h2>Demo Deal</h2><button class="btn btn-ghost btn-sm" value="cancel">Close</button></div>
+      <div class="form-group"><label class="form-label">Sample Client</label><select class="form-select" id="dClient" onchange="fillSampleClient()"></select></div>
       <div class="form-group"><label class="form-label">Customer Name</label><input class="form-input" id="dName" value="Maya Collins"></div>
       <div class="form-row form-row-2">
         <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="dEmail" value="maya@example.com"></div>
@@ -221,10 +246,24 @@
     </form>
   </dialog>
 
+  <dialog id="noticeDialog" style="border:0;border-radius:18px;padding:0;background:transparent;width:min(760px,calc(100vw - 28px));">
+    <form class="demo-panel demo-form" method="dialog" style="padding:22px;">
+      <div class="demo-panel-header" style="padding:0 0 14px;"><h2 id="noticeTitle">Demo Notice</h2><button class="btn btn-ghost btn-sm" value="cancel">Close</button></div>
+      <div id="noticeBody"></div>
+      <div class="demo-form-actions"><button class="btn btn-primary" value="cancel">Got It</button></div>
+    </form>
+  </dialog>
+
   <script src="/js/nav.js"></script>
   <script>
     UN.syncThemeToggle();
 
+    const DEMO_KEY = 'un_demo_state_v2';
+    const sampleClients = [
+      { name: 'Maya Collins', email: 'maya@example.com', phone: '(555) 010-2244', type: 'They Finance' },
+      { name: 'Robert Hayes', email: 'robert@example.com', phone: '(555) 010-3188', type: 'BHPH' },
+      { name: 'Lena Torres', email: 'lena@example.com', phone: '(555) 010-7720', type: 'Cash' },
+    ];
     const stages = [
       ['acquired', 'At Auction'],
       ['transport', 'Being Transported'],
@@ -234,10 +273,12 @@
       ['pending', 'Pending'],
       ['sold', 'Sold'],
     ];
+    let units = [];
     let unit = null;
     let deal = null;
     let selectedStage = 'all';
     let currentView = 'board';
+    let pendingPhotos = [];
 
     function money(value) {
       return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(Number(value) || 0);
@@ -246,9 +287,30 @@
       return `${new Intl.NumberFormat('en-US').format(Number(value) || 0)} mi`;
     }
     function unitName() { return unit ? `${unit.year} ${unit.make} ${unit.model}` : 'No unit'; }
-    function repairsTotal() { return unit ? unit.repairs.reduce((sum, r) => sum + (Number(r.cost) || 0), 0) : 0; }
-    function unitTotal() { return unit ? (Number(unit.cost) || 0) + (Number(unit.transport) || 0) + repairsTotal() : 0; }
-    function gross() { return unit ? (Number(unit.ask) || 0) - unitTotal() : 0; }
+    function repairsTotal(target = unit) { return target ? target.repairs.reduce((sum, r) => sum + (Number(r.cost) || 0), 0) : 0; }
+    function unitTotal(target = unit) { return target ? (Number(target.cost) || 0) + (Number(target.transport) || 0) + repairsTotal(target) : 0; }
+    function gross(target = unit) { return target ? (Number(target.ask) || 0) - unitTotal(target) : 0; }
+    function saveDemoState() {
+      sessionStorage.setItem(DEMO_KEY, JSON.stringify({ units, selectedUnitId: unit?.id || null, deal, selectedStage, currentView }));
+    }
+    function loadDemoState() {
+      try {
+        const saved = JSON.parse(sessionStorage.getItem(DEMO_KEY) || '{}');
+        units = Array.isArray(saved.units) ? saved.units : [];
+        unit = units.find(u => u.id === saved.selectedUnitId) || units[0] || null;
+        deal = saved.deal || null;
+        selectedStage = saved.selectedStage || 'all';
+        currentView = saved.currentView || 'board';
+      } catch {}
+    }
+    function clearDemoStorage() {
+      sessionStorage.removeItem(DEMO_KEY);
+    }
+    function selectUnit(id) {
+      unit = units.find(u => u.id === id) || null;
+      saveDemoState();
+      render();
+    }
 
     function render() {
       renderSummary();
@@ -260,10 +322,10 @@
 
     function renderSummary() {
       document.getElementById('demoSummary').innerHTML = `
-        <div class="summary-tile"><span>Units in Stock</span><strong>${unit ? 1 : 0} / 1</strong></div>
+        <div class="summary-tile"><span>Units in Stock</span><strong>${units.length}</strong></div>
         <div class="summary-tile"><span>Active Deals</span><strong>${deal ? 1 : 0} / 1</strong></div>
-        <div class="summary-tile"><span>Total In Cost</span><strong>${money(unitTotal())}</strong></div>
-        <div class="summary-tile"><span>Est. Gross</span><strong>${money(gross())}</strong></div>
+        <div class="summary-tile"><span>Total In Cost</span><strong>${money(units.reduce((sum, u) => sum + unitTotal(u), 0))}</strong></div>
+        <div class="summary-tile"><span>Est. Gross</span><strong>${money(units.reduce((sum, u) => sum + gross(u), 0))}</strong></div>
       `;
     }
 
@@ -289,13 +351,13 @@
       if (currentView === 'list') return renderList();
       const visible = selectedStage === 'all' ? stages : stages.filter(([key]) => key === selectedStage);
       document.getElementById('inventorySurface').innerHTML = `<div class="demo-board">${visible.map(([key, label]) => {
-        const hasUnit = unit && unit.stage === key;
-        return `<div class="demo-stage"><h3><span>${label}</span><span>${hasUnit ? 1 : 0}</span></h3>${hasUnit ? unitCard() : '<div class="empty-demo">No demo unit here.</div>'}</div>`;
+        const stageUnits = units.filter(u => u.stage === key);
+        return `<div class="demo-stage"><h3><span>${label}</span><span>${stageUnits.length}</span></h3>${stageUnits.length ? stageUnits.map(unitCard).join('') : '<div class="empty-demo">No demo unit here.</div>'}</div>`;
       }).join('')}</div>`;
     }
 
     function renderList() {
-      if (!unit) {
+      if (!units.length) {
         document.getElementById('inventorySurface').innerHTML = '<div class="empty-demo">No inventory yet. Click Add Unit to create one fake unit.</div>';
         return;
       }
@@ -304,31 +366,34 @@
           <table>
             <thead><tr><th>Unit</th><th>Stage</th><th>Mileage</th><th>In Cost</th><th>Asking</th><th>Gross</th><th></th></tr></thead>
             <tbody>
-              <tr>
-                <td><strong>${unitName()}</strong><div class="demo-muted">Demo VIN · ${unit.color}</div></td>
-                <td><span class="badge badge-${unit.stage}">${stageLabel(unit.stage)}</span></td>
-                <td>${miles(unit.mileage)}</td>
-                <td>${money(unitTotal())}</td>
-                <td>${money(unit.ask)}</td>
-                <td>${money(gross())}</td>
-                <td><button class="btn btn-primary btn-sm" onclick="showInventoryForm()">Edit</button></td>
-              </tr>
+              ${units.map(u => `
+                <tr>
+                  <td><strong>${u.year} ${u.make} ${u.model}</strong><div class="demo-muted">Demo VIN · ${u.color}</div></td>
+                  <td><span class="badge badge-${u.stage}">${stageLabel(u.stage)}</span></td>
+                  <td>${miles(u.mileage)}</td>
+                  <td>${money(unitTotal(u))}</td>
+                  <td>${money(u.ask)}</td>
+                  <td>${money(gross(u))}</td>
+                  <td><button class="btn btn-primary btn-sm" onclick="selectUnit('${u.id}');showInventoryForm()">Edit</button></td>
+                </tr>`).join('')}
             </tbody>
           </table>
         </div>`;
     }
 
-    function unitCard() {
+    function unitCard(cardUnit) {
+      const photo = cardUnit.photos?.[0] || '';
       return `
-        <div class="demo-unit-card" onclick="renderSidePanel('unit')">
-          <span class="badge badge-${unit.stage}">${stageLabel(unit.stage)}</span>
-          <div class="demo-title">${unitName()}</div>
-          <div class="demo-muted">Demo VIN · ${miles(unit.mileage)} · ${unit.color}</div>
-          <div class="demo-money"><span>Total In</span><strong>${money(unitTotal())}</strong></div>
-          <div class="demo-money"><span>Asking</span><strong>${money(unit.ask)}</strong></div>
+        <div class="demo-unit-card" onclick="selectUnit('${cardUnit.id}')">
+          ${photo ? `<img class="demo-unit-photo" src="${photo}" alt="${cardUnit.year} ${cardUnit.make} ${cardUnit.model}">` : ''}
+          <span class="badge badge-${cardUnit.stage}">${stageLabel(cardUnit.stage)}</span>
+          <div class="demo-title">${cardUnit.year} ${cardUnit.make} ${cardUnit.model}</div>
+          <div class="demo-muted">Demo VIN · ${miles(cardUnit.mileage)} · ${cardUnit.color}</div>
+          <div class="demo-money"><span>Total In</span><strong>${money(unitTotal(cardUnit))}</strong></div>
+          <div class="demo-money"><span>Asking</span><strong>${money(cardUnit.ask)}</strong></div>
           <div class="demo-form-actions">
-            <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();showInventoryForm()">Edit</button>
-            <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();nextStage()">Move Stage</button>
+            <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();selectUnit('${cardUnit.id}');showInventoryForm()">Edit</button>
+            <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();selectUnit('${cardUnit.id}');nextStage()">Move Stage</button>
           </div>
         </div>`;
     }
@@ -344,6 +409,7 @@
       panel.innerHTML = `
         <div class="detail-grid">
           <span class="badge badge-${unit.stage}" style="width:max-content;">${stageLabel(unit.stage)}</span>
+          ${unit.photos?.length ? `<img class="demo-unit-photo" src="${unit.photos[0]}" alt="${unitName()}">` : ''}
           <h2>${unitName()}</h2>
           <p class="demo-muted">This mirrors the unit detail page: edit details, inspect costs, manage recon repairs, and start a deal.</p>
           <div class="detail-row"><span>Mileage</span><strong>${miles(unit.mileage)}</strong></div>
@@ -391,8 +457,11 @@
       return (stages.find(([stage]) => stage === key) || [key, key])[1];
     }
 
-    function showInventoryForm() {
+    function showInventoryForm(newUnit = false) {
+      if (newUnit) unit = null;
       document.getElementById('uStage').innerHTML = stages.map(([key, label]) => `<option value="${key}">${label}</option>`).join('');
+      pendingPhotos = unit?.photos ? [...unit.photos] : [];
+      renderPhotoPreview();
       if (unit) {
         document.getElementById('uYear').value = unit.year;
         document.getElementById('uMake').value = unit.make;
@@ -407,8 +476,41 @@
         document.getElementById('rOneCost').value = unit.repairs[0]?.cost || 0;
         document.getElementById('rTwo').value = unit.repairs[1]?.name || '';
         document.getElementById('rTwoCost').value = unit.repairs[1]?.cost || 0;
+      } else {
+        document.getElementById('uYear').value = '2021';
+        document.getElementById('uMake').value = 'Toyota';
+        document.getElementById('uModel').value = 'Camry';
+        document.getElementById('uMileage').value = '48000';
+        document.getElementById('uColor').value = 'White';
+        document.getElementById('uStage').value = 'acquired';
+        document.getElementById('uCost').value = '14500';
+        document.getElementById('uTransport').value = '350';
+        document.getElementById('uAsk').value = '18995';
+        document.getElementById('rOne').value = 'Battery';
+        document.getElementById('rOneCost').value = '150';
+        document.getElementById('rTwo').value = 'Detail and inspection';
+        document.getElementById('rTwoCost').value = '600';
+        document.getElementById('uPhotos').value = '';
       }
       document.getElementById('unitDialog').showModal();
+    }
+
+    function previewDemoPhotos(files) {
+      const readers = [...files].slice(0, 8).map(file => new Promise(resolve => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.readAsDataURL(file);
+      }));
+      Promise.all(readers).then(images => {
+        pendingPhotos = images;
+        renderPhotoPreview();
+      });
+    }
+
+    function renderPhotoPreview() {
+      document.getElementById('unitPhotoPreview').innerHTML = pendingPhotos.length
+        ? pendingPhotos.map(src => `<img src="${src}" alt="Demo vehicle photo">`).join('')
+        : '<span class="demo-muted">No demo photos selected.</span>';
     }
 
     function saveUnit() {
@@ -416,7 +518,9 @@
         { name: document.getElementById('rOne').value.trim(), cost: Number(document.getElementById('rOneCost').value) || 0 },
         { name: document.getElementById('rTwo').value.trim(), cost: Number(document.getElementById('rTwoCost').value) || 0 },
       ].filter(r => r.name || r.cost);
-      unit = {
+      const existingId = unit?.id || `demo-${Date.now()}`;
+      const saved = {
+        id: existingId,
         year: document.getElementById('uYear').value || '2021',
         make: document.getElementById('uMake').value || 'Toyota',
         model: document.getElementById('uModel').value || 'Camry',
@@ -426,17 +530,25 @@
         cost: document.getElementById('uCost').value || 0,
         transport: document.getElementById('uTransport').value || 0,
         ask: document.getElementById('uAsk').value || 0,
+        photos: pendingPhotos,
         repairs,
       };
+      const existingIndex = units.findIndex(u => u.id === existingId);
+      if (existingIndex >= 0) units[existingIndex] = saved;
+      else units.push(saved);
+      unit = saved;
       selectedStage = 'all';
       document.getElementById('unitDialog').close();
+      saveDemoState();
       render();
     }
 
     function deleteUnit() {
-      unit = null;
-      deal = null;
+      if (unit) units = units.filter(u => u.id !== unit.id);
+      if (deal?.unitId === unit?.id) deal = null;
+      unit = units[0] || null;
       document.getElementById('unitDialog').close();
+      saveDemoState();
       render();
     }
 
@@ -445,6 +557,7 @@
       const idx = stages.findIndex(([key]) => key === unit.stage);
       unit.stage = stages[(idx + 1) % stages.length][0];
       selectedStage = 'all';
+      saveDemoState();
       render();
     }
 
@@ -454,6 +567,7 @@
     }
 
     function showDealForm() {
+      document.getElementById('dClient').innerHTML = sampleClients.map((client, i) => `<option value="${i}">${client.name} · ${client.type}</option>`).join('');
       const soon = new Date();
       soon.setDate(soon.getDate() + 3);
       document.getElementById('dFollow').value = soon.toISOString().slice(0, 10);
@@ -469,6 +583,14 @@
       document.getElementById('dealDialog').showModal();
     }
 
+    function fillSampleClient() {
+      const client = sampleClients[Number(document.getElementById('dClient').value)] || sampleClients[0];
+      document.getElementById('dName').value = client.name;
+      document.getElementById('dEmail').value = client.email;
+      document.getElementById('dPhone').value = client.phone;
+      document.getElementById('dType').value = client.type;
+    }
+
     function saveDeal() {
       deal = {
         name: document.getElementById('dName').value || 'Maya Collins',
@@ -478,10 +600,12 @@
         status: document.getElementById('dStatus').value || 'Pending',
         docs: document.getElementById('dDocs').value || 0,
         follow: document.getElementById('dFollow').value || '',
+        unitId: unit?.id || null,
       };
       if (unit) unit.stage = 'pending';
       document.getElementById('dealDialog').close();
       selectedStage = 'all';
+      saveDemoState();
       render();
       renderDealPanel();
     }
@@ -489,14 +613,59 @@
     function deleteDeal() {
       deal = null;
       document.getElementById('dealDialog').close();
+      saveDemoState();
       render();
     }
 
     function showPaperwork() {
-      alert('Paperwork demo: this is where deal packets, missing docs, uploads, and generated forms will live. In the full app this connects to the paperwork workflow.');
+      showNotice('Paperwork Demo', `
+        <div class="demo-notice-card">
+          <strong>Default packet shown here is Utah-oriented.</strong><br>
+          In a live dealer account, packet questions and forms will be configured around the dealer's state, business rules, and unit type. Cars, motorcycles, boats, powersports, trailers, and mixed stores can each have different required paperwork and fee logic.
+        </div>
+        <div class="demo-settings-grid" style="margin-top:12px;">
+          <div class="demo-settings-option"><strong>Current demo packet</strong><span class="demo-muted">Utah retail / BHPH style workflow preview</span></div>
+          <div class="demo-settings-option"><strong>E-sign</strong><span class="demo-muted">Live accounts can connect DocuSeal-style e-sign export.</span></div>
+          <div class="demo-settings-option"><strong>State rules</strong><span class="demo-muted">Fees, emissions, title forms, and disclosures are dealer/state configurable.</span></div>
+          <div class="demo-settings-option"><strong>Unit type</strong><span class="demo-muted">Cars, motorcycles, boats, RVs, trailers, and powersports can branch forms.</span></div>
+        </div>
+      `);
+    }
+
+    function showCreditNotice() {
+      showNotice('Credit Pull Demo', `
+        <div class="demo-notice-card">
+          <strong>No real credit is pulled in demo mode.</strong><br>
+          In the live app this is where a dealer would start a credit workflow, attach customer info, review results, and decide whether to start a deal. This sandbox only shows where that workflow lives.
+        </div>
+      `);
+    }
+
+    function showSettings() {
+      showNotice('Readonly Demo Settings', `
+        <div class="demo-notice-card">
+          Settings are visible in demo mode so a dealer can understand what will be configurable, but nothing saves to the platform.
+        </div>
+        <div class="demo-settings-grid" style="margin-top:12px;">
+          <div class="demo-settings-option"><strong>Dealer Identity</strong><span class="demo-muted">Display name, legal seller name, dealer number, logo, address, phone, email.</span></div>
+          <div class="demo-settings-option"><strong>Public Website</strong><span class="demo-muted">Custom domain, showroom slug, public inventory, share image, APR options.</span></div>
+          <div class="demo-settings-option"><strong>Custom Fees</strong><span class="demo-muted">Doc fee, filing fee, lender processing fee, default tax/registration settings.</span></div>
+          <div class="demo-settings-option"><strong>Paperwork Rules</strong><span class="demo-muted">State packet, BHPH/cash/outside financing logic, unit type form rules.</span></div>
+          <div class="demo-settings-option"><strong>Users</strong><span class="demo-muted">Dealer staff logins, roles, revoke access, dealership separation.</span></div>
+          <div class="demo-settings-option"><strong>Imports</strong><span class="demo-muted">CSV import, spreadsheet-style bulk add, photo upload, DealerCenter migration path.</span></div>
+        </div>
+      `);
+    }
+
+    function showNotice(title, html) {
+      document.getElementById('noticeTitle').textContent = title;
+      document.getElementById('noticeBody').innerHTML = html;
+      document.getElementById('noticeDialog').showModal();
     }
 
     function resetDemo() {
+      clearDemoStorage();
+      units = [];
       unit = null;
       deal = null;
       selectedStage = 'all';
@@ -504,6 +673,10 @@
       render();
     }
 
+    window.addEventListener('pagehide', () => {
+      if (document.visibilityState === 'hidden') saveDemoState();
+    });
+    loadDemoState();
     render();
   </script>
 </body>
