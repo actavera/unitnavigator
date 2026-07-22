@@ -47,6 +47,7 @@ const UN = {
     try { return JSON.parse(localStorage.getItem('un_user') || 'null'); } catch { return null; }
   },
   setUser(u) { localStorage.setItem('un_user', JSON.stringify(u)); },
+  isDemo() { return Boolean(UN.getUser()?.demo || UN.tokenPayload()?.demo); },
 
   headers() {
     const headers = { 'Content-Type': 'application/json' };
@@ -78,7 +79,21 @@ const UN = {
     return true;
   },
 
-  logout() {
+  async clearDemoData() {
+    if (!UN.getToken()) return;
+    try {
+      await fetch('/api/auth/demo-clear', { method: 'POST', headers: UN.headers() });
+    } catch {}
+  },
+
+  async restartDemo() {
+    if (UN.isDemo()) await UN.clearDemoData();
+    UN.clearToken();
+    location.href = '/demo';
+  },
+
+  async logout() {
+    if (UN.isDemo()) await UN.clearDemoData();
     UN.clearToken();
     location.href = '/login';
   },
@@ -93,6 +108,9 @@ const UN = {
     const adminLink = canSeeAdmin ? '<a class="nav-menu-item" href="/admin">Admin</a>' : '';
     const settingsLink = canSeeSettings ? '<a class="nav-menu-item" href="/settings">Dealership Settings</a>' : '';
     const bulkImportLink = canSeeSettings ? '<a class="nav-menu-item" href="/inventory/import">Bulk Import Inventory</a>' : '';
+    const demoBadge = user?.demo ? '<span class="demo-badge">Demo Mode</span>' : '';
+    const clearDemoLink = user?.demo ? '<button class="nav-menu-item" type="button" onclick="UN.restartDemo()">Clear Demo Data</button>' : '';
+    const logoutLabel = user?.demo ? 'Exit Demo' : 'Log out';
     el.innerHTML = `
       <nav class="nav">
         <a href="/home" class="nav-logo" aria-label="Unit Navigator home">
@@ -105,6 +123,7 @@ const UN = {
           </div>
           <div class="nav-account">
             <button class="nav-account-trigger" type="button" aria-haspopup="menu" aria-expanded="false" onclick="UN.toggleAccountMenu(event)">
+              ${demoBadge}
               <span class="nav-user">${user?.name || ''}</span>
               <span class="nav-avatar">${initials}</span>
             </button>
@@ -112,7 +131,8 @@ const UN = {
               ${adminLink}
               ${settingsLink}
               ${bulkImportLink}
-              <button class="nav-menu-item danger" type="button" onclick="UN.logout()">Log out</button>
+              ${clearDemoLink}
+              <button class="nav-menu-item danger" type="button" onclick="UN.logout()">${logoutLabel}</button>
             </div>
           </div>
         </div>
