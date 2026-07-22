@@ -7,57 +7,28 @@
   <script>(function(){var t=localStorage.getItem('un_theme')||'dark';document.documentElement.dataset.theme=t;})()</script>
   <link rel="stylesheet" href="/css/main.css">
   <style>
-    body {
-      background:
-        linear-gradient(180deg, rgba(37,99,235,.07), transparent 360px),
-        radial-gradient(circle at 82% 10%, rgba(37,99,235,.2), transparent 32%),
-        var(--bg);
+    body { background: var(--bg); }
+    .demo-nav-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: flex-end; }
+    .demo-home-shell { min-height: auto; padding-bottom: 34px; }
+    .demo-home-hero { padding-top: 66px; }
+    .demo-home-actions { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 18px; margin-top: 54px; }
+    .demo-action-card {
+      appearance: none;
+      border-color: color-mix(in srgb, var(--accent), transparent 34%);
+      cursor: pointer;
+      font: inherit;
     }
-    .demo-nav {
-      position: sticky; top: 0; z-index: 30;
-      display: flex; align-items: center; justify-content: space-between; gap: 14px;
-      padding: 14px clamp(18px,4vw,38px); border-bottom: 1px solid var(--border);
-      background: rgba(10,10,16,.88); backdrop-filter: blur(18px);
+    .demo-action-card .action-link { pointer-events: none; }
+    .demo-action-card:focus-visible {
+      outline: 3px solid color-mix(in srgb, var(--accent), transparent 44%);
+      outline-offset: 4px;
     }
-    :root[data-theme="light"] .demo-nav { background: rgba(255,255,255,.9); }
-    .demo-nav img { width: 214px; max-width: 50vw; display: block; }
-    .demo-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: flex-end; }
-    .demo-shell { width: min(100% - 36px, 1380px); margin: 0 auto; padding: 26px 0 54px; }
-    .demo-hero {
-      display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 18px; align-items: end;
-      margin-bottom: 18px;
-    }
-    .demo-hero h1 { font-size: clamp(2.1rem, 4.8vw, 4.8rem); line-height: .95; letter-spacing: -.055em; margin: 8px 0 10px; }
-    .demo-hero p { color: var(--text-2); max-width: 760px; line-height: 1.55; }
+    .demo-workspace { width: min(1440px, calc(100% - 96px)); margin: 0 auto 64px; }
     .demo-note {
       border: 1px solid var(--yellow-border); background: var(--yellow-gl); color: var(--text-2);
-      border-radius: var(--r-lg); padding: 13px 15px; margin-bottom: 18px; line-height: 1.45;
+      border-radius: var(--r-lg); padding: 13px 15px; margin-top: 18px; line-height: 1.45;
     }
-    .demo-home-actions {
-      display: grid; grid-template-columns: repeat(6, minmax(0,1fr)); gap: 12px; margin-bottom: 18px;
-    }
-    .demo-work-card {
-      border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--s1);
-      padding: 18px; min-height: 142px; cursor: pointer;
-      transition: transform .18s, border-color .18s, box-shadow .18s;
-    }
-    .demo-work-card:hover { transform: translateY(-3px); border-color: var(--blue-border); box-shadow: 0 20px 60px rgba(37,99,235,.13); }
-    .demo-work-card .orb {
-      width: 42px; height: 42px; border-radius: 14px; display: grid; place-items: center;
-      color: var(--accent); background: color-mix(in srgb, var(--accent) 13%, transparent);
-      border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent); font-weight: 900; margin-bottom: 14px;
-    }
-    .demo-work-card h2 { font-size: 1rem; margin-bottom: 6px; }
-    .demo-work-card p { color: var(--text-2); font-size: .88rem; line-height: 1.42; }
-    .demo-work-card.green { --accent: var(--green); }
-    .demo-work-card.blue { --accent: var(--blue); }
-    .demo-work-card.purple { --accent: var(--purple); }
-    .demo-work-card.orange { --accent: var(--orange); }
-    .demo-work-card.cyan { --accent: #22d3ee; }
-    .demo-summary { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 10px; margin-bottom: 18px; }
-    .summary-tile { border: 1px solid var(--border); border-radius: var(--r); background: var(--s1); padding: 14px; }
-    .summary-tile span { display: block; color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; }
-    .summary-tile strong { display: block; font-size: 1.45rem; margin-top: 3px; }
+    .demo-summary .metric { text-decoration: none; cursor: pointer; }
     .demo-layout { display: grid; grid-template-columns: minmax(0,1.2fr) minmax(360px,.78fr); gap: 18px; align-items: start; }
     .demo-panel { border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--s1); overflow: hidden; box-shadow: 0 18px 60px rgba(0,0,0,.13); }
     .demo-panel-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 17px 20px; border-bottom: 1px solid var(--border); }
@@ -113,22 +84,20 @@
     @media(max-width: 1180px) {
       .demo-home-actions { grid-template-columns: repeat(3,minmax(0,1fr)); }
       .demo-layout { grid-template-columns: 1fr; }
-      .demo-board, .demo-summary { grid-template-columns: repeat(2,minmax(0,1fr)); }
+      .demo-board { grid-template-columns: repeat(2,minmax(0,1fr)); }
       .demo-settings-grid { grid-template-columns: 1fr; }
     }
     @media(max-width: 720px) {
-      .demo-nav { align-items: flex-start; flex-direction: column; }
-      .demo-actions { justify-content: flex-start; }
-      .demo-home-actions, .demo-board, .demo-summary { grid-template-columns: 1fr; }
-      .demo-shell { width: min(100% - 28px, 560px); }
-      .demo-hero { grid-template-columns: 1fr; }
+      .demo-nav-actions { justify-content: flex-start; }
+      .demo-home-actions, .demo-board { grid-template-columns: 1fr; }
+      .demo-home-hero, .demo-workspace { width: min(100% - 28px, 560px); }
     }
   </style>
 </head>
 <body>
-  <nav class="demo-nav">
-    <a href="/"><img data-theme-logo src="/assets/unit-navigator-logo-on-dark.png" alt="Unit Navigator"></a>
-    <div class="demo-actions">
+  <nav class="nav">
+    <a class="nav-logo" href="/"><img data-theme-logo src="/assets/unit-navigator-logo-on-dark.png" alt="Unit Navigator"></a>
+    <div class="nav-right demo-nav-actions">
       <div class="theme-toggle" aria-label="Theme">
         <button type="button" data-theme-option="light" onclick="UN.setTheme('light')" aria-pressed="false">Light</button>
         <button type="button" data-theme-option="dark" onclick="UN.setTheme('dark')" aria-pressed="true">Dark</button>
@@ -138,29 +107,77 @@
     </div>
   </nav>
 
-  <main class="demo-shell">
-    <header class="demo-hero">
-      <div>
+  <main class="home-shell demo-home-shell">
+    <section class="home-hero demo-home-hero">
+      <div class="home-hero-copy">
         <p class="home-kicker">Generic Sandbox Demo</p>
-        <h1>Try the dealer backend without saving anything.</h1>
-        <p>Add demo vehicles with photos, move units through stages, start sample deals, preview paperwork logic, and inspect the settings a dealer would configure.</p>
+        <h1>Welcome back, <span>Demo Dealer.</span></h1>
+        <p>What do you want to test today?</p>
       </div>
-      <button class="btn btn-danger" onclick="resetDemo()">Clear Demo Data</button>
-    </header>
 
-    <div class="demo-note">Demo data is temporary and never touches the real database. It stays only in this browser tab while you play, then clears when you exit the demo, close the tab, log in, or click <strong>Clear Demo Data</strong>.</div>
+      <section class="home-actions demo-home-actions" aria-label="Demo workflows">
+        <button class="home-action-card demo-action-card green" type="button" onclick="showCreditNotice()">
+          <span class="action-orb">
+            <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M9 29a15 15 0 1 1 30 0"/><path d="M24 29l8-10"/><path d="M16 29h-3m22 0h-3M16.9 17.9l-2.1-2.1M31.1 17.9l2.1-2.1M24 14v-3"/><circle cx="24" cy="29" r="2"/></svg>
+          </span>
+          <h2>Credit Pull</h2>
+          <p>See where credit intake starts without running real credit.</p>
+          <span class="action-link">Preview Credit <span>→</span></span>
+        </button>
 
-    <section class="demo-home-actions" aria-label="Demo workflows">
-      <article class="demo-work-card green" onclick="showCreditNotice()"><div class="orb">C</div><h2>Credit Pull</h2><p>Shows where credit intake starts without running real credit.</p></article>
-      <article class="demo-work-card blue" onclick="showInventoryForm(true)"><div class="orb">+</div><h2>Add Inventory</h2><p>Add demo vehicles with photos, cost, stage, and price.</p></article>
-      <article class="demo-work-card purple" onclick="setView('list')"><div class="orb">V</div><h2>Edit / View Inventory</h2><p>Open the list and manage the demo unit.</p></article>
-      <article class="demo-work-card orange" onclick="showDealForm()"><div class="orb">D</div><h2>Deals</h2><p>Start a deal with sample clients and a demo vehicle.</p></article>
-      <article class="demo-work-card cyan" onclick="showPaperwork()"><div class="orb">P</div><h2>Paperwork</h2><p>Preview how packet logic changes by state and unit type.</p></article>
-      <article class="demo-work-card purple" onclick="showSettings()"><div class="orb">S</div><h2>Settings</h2><p>View dealer setup options in readonly demo mode.</p></article>
+        <button class="home-action-card demo-action-card blue" type="button" onclick="showInventoryForm(true)">
+          <span class="action-orb">
+            <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M11 29h26l-3-10a5 5 0 0 0-5-4H19a5 5 0 0 0-5 4l-3 10Z"/><path d="M14 29v6m20-6v6M18 35h12"/><circle cx="17" cy="29" r="2"/><circle cx="31" cy="29" r="2"/><path d="M35 17h6m-3-3v6"/></svg>
+          </span>
+          <h2>Add Inventory</h2>
+          <p>Add demo vehicles with photos, cost, stage, and price.</p>
+          <span class="action-link">Add Vehicle <span>→</span></span>
+        </button>
+
+        <button class="home-action-card demo-action-card purple" type="button" onclick="setView('list');document.getElementById('demoWorkspace').scrollIntoView({behavior:'smooth'});">
+          <span class="action-orb">
+            <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M11 29h26l-3-10a5 5 0 0 0-5-4H19a5 5 0 0 0-5 4l-3 10Z"/><path d="M14 29v6m20-6v6M18 35h12"/><circle cx="17" cy="29" r="2"/><circle cx="31" cy="29" r="2"/></svg>
+          </span>
+          <h2>Edit / View Inventory</h2>
+          <p>Open the list, edit a unit, or move it across stages.</p>
+          <span class="action-link">View Inventory <span>→</span></span>
+        </button>
+
+        <button class="home-action-card demo-action-card orange" type="button" onclick="showDealForm()">
+          <span class="action-orb">
+            <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M17 26l5 5a4 4 0 0 0 6 0l7-7"/><path d="M18 18l-5 5 12 12 12-12-5-5"/><path d="M21 21l5-5 6 6"/></svg>
+          </span>
+          <h2>Deals</h2>
+          <p>Start one sample deal with demo clients and vehicles.</p>
+          <span class="action-link">Open Deals <span>→</span></span>
+        </button>
+
+        <button class="home-action-card demo-action-card cyan" type="button" onclick="showPaperwork()">
+          <span class="action-orb">
+            <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M15 8h14l6 6v26H15Z"/><path d="M29 8v7h6"/><path d="M20 23h10M20 29h10M20 35h6"/></svg>
+          </span>
+          <h2>Start Paperwork</h2>
+          <p>Preview packet logic for Utah, state rules, and unit type.</p>
+          <span class="action-link">Start Packet <span>→</span></span>
+        </button>
+
+        <button class="home-action-card demo-action-card purple" type="button" onclick="showSettings()">
+          <span class="action-orb">
+            <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 15a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z"/><path d="M24 8v4m0 24v4M8 24h4m24 0h4M12.7 12.7l2.8 2.8m17 17 2.8 2.8m0-23.6-2.8 2.8m-17 17-2.8 2.8"/></svg>
+          </span>
+          <h2>Settings</h2>
+          <p>View dealer setup options in readonly demo mode.</p>
+          <span class="action-link">View Settings <span>→</span></span>
+        </button>
+      </section>
+
+      <section class="home-metrics demo-summary" id="demoSummary"></section>
+
+      <div class="demo-note">Demo data is temporary and never touches the real database. It stays only in this browser tab while you play, then clears when you exit the demo, close the tab, log in, or click <strong>Clear Demo Data</strong>. <button class="btn btn-danger btn-sm" type="button" onclick="resetDemo()" style="margin-left:10px;">Clear Demo Data</button></div>
     </section>
+  </main>
 
-    <section class="demo-summary" id="demoSummary"></section>
-
+  <main class="demo-workspace" id="demoWorkspace">
     <section class="demo-layout">
       <div class="demo-panel">
         <div class="demo-panel-header">
@@ -322,10 +339,10 @@
 
     function renderSummary() {
       document.getElementById('demoSummary').innerHTML = `
-        <div class="summary-tile"><span>Units in Stock</span><strong>${units.length}</strong></div>
-        <div class="summary-tile"><span>Active Deals</span><strong>${deal ? 1 : 0} / 1</strong></div>
-        <div class="summary-tile"><span>Total In Cost</span><strong>${money(units.reduce((sum, u) => sum + unitTotal(u), 0))}</strong></div>
-        <div class="summary-tile"><span>Est. Gross</span><strong>${money(units.reduce((sum, u) => sum + gross(u), 0))}</strong></div>
+        <a href="#demoWorkspace" class="metric blue" onclick="setView('board')"><span>▣</span><div><p>Units In Stock</p><strong>${units.length}</strong><small>Demo inventory only</small></div></a>
+        <a href="#demoWorkspace" class="metric green" onclick="renderDealPanel()"><span>$</span><div><p>Active Deals</p><strong>${deal ? 1 : 0} / 1</strong><small>One sample deal allowed</small></div></a>
+        <a href="#demoWorkspace" class="metric purple"><span>✓</span><div><p>Total In Cost</p><strong>${money(units.reduce((sum, u) => sum + unitTotal(u), 0))}</strong><small>Cost stack preview</small></div></a>
+        <a href="#demoWorkspace" class="metric orange"><span>!</span><div><p>Est. Gross</p><strong>${money(units.reduce((sum, u) => sum + gross(u), 0))}</strong><small>Based on asking price</small></div></a>
       `;
     }
 
