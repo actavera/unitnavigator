@@ -136,6 +136,221 @@ const STAGE_LABELS = {
   archived: 'Archived',
 };
 
+const DEFAULT_FETCH_HEADERS = {
+  'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
+  accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+  'accept-language': 'en-US,en;q=0.9',
+};
+
+function absoluteUrl(value, baseUrl) {
+  const text = cleanText(value);
+  if (!text || text.startsWith('data:') || text.startsWith('blob:')) return '';
+  try {
+    return new URL(text, baseUrl).href;
+  } catch {
+    return '';
+  }
+}
+
+function isUnsafeFetchHost(hostname) {
+  const host = cleanText(hostname).toLowerCase();
+  if (!host || host === 'localhost' || host.endsWith('.localhost')) return true;
+  if (host === '0.0.0.0' || host === '127.0.0.1' || host === '::1') return true;
+  const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!ipv4) return false;
+  const [, a, b] = ipv4.map(Number);
+  return a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254);
+}
+
+function normalizeMatchValue(value) {
+  return cleanText(value).toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function decodeHtmlEntities(value) {
+  return cleanText(value)
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+}
+
+function likelyVehicleImage(url) {
+  const text = cleanText(url).toLowerCase();
+  if (!/^https?:\/\//.test(text)) return false;
+  if (!/\.(jpe?g|png|webp)(\?|#|$)/.test(text) && !/(image|photo|inventory|vehicle|cdn|cloudfront|dealercenter)/.test(text)) return false;
+  return !/(logo|favicon|sprite|icon|placeholder|noimage|transparent|blank|avatar|ads?|banner)/.test(text);
+}
+
+function extractImageUrls(html, pageUrl) {
+  const urls = new Set();
+  const attrPattern = /\b(?:src|data-src|data-original|data-lazy|data-full|data-image|data-url|content)=["']([^"']+)["']/gi;
+  let match;
+  while ((match = attrPattern.exec(html))) {
+    const url = absoluteUrl(decodeHtmlEntities(match[1]), pageUrl);
+    if (likelyVehicleImage(url)) urls.add(url);
+  }
+
+  const srcsetPattern = /\b(?:srcset|data-srcset)=["']([^"']+)["']/gi;
+  while ((match = srcsetPattern.exec(html))) {
+    decodeHtmlEntities(match[1]).split(',').forEach(part => {
+      const url = absoluteUrl(part.trim().split(/\s+/)[0], pageUrl);
+      if (likelyVehicleImage(url)) urls.add(url);
+    });
+  }
+
+  return [...urls];
+}
+
+function extractPageLinks(html, pageUrl, origin) {
+  const links = new Set();
+  const pattern = /<a\b[^>]*href=["']([^"']+)["'][^>]*>/gi;
+  let match;
+  while ((match = pattern.exec(html))) {
+    const url = absoluteUrl(decodeHtmlEntities(match[1]), pageUrl);
+    if (!url) continue;
+    const parsed = new URL(url);
+    if (parsed.origin !== origin) continue;
+    const text = parsed.href.toLowerCase();
+    if (/(inventory|vehicle|details|autos?|cars?|stock|vin)/.test(text)) links.add(parsed.href);
+  }
+  return [...links];
+}
+
+function extractVehicleCandidate(html, pageUrl) {
+  const plain = html.replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ');
+  const decoded = decodeHtmlEntities(plain).replace(/\s+/g, ' ');
+  const vin = (decoded.match(/\b[A-HJ-NPR-Z0-9]{17}\b/i) || [])[0] || '';
+  const stock = (
+    decoded.match(/\b(?:stock|stk|stock\s*#)\s*[:#]?\s*([A-Z0-9-]{3,24})\b/i) || []
+  )[1] || '';
+  const title = (
+    html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || []
+  )[1] || '';
+  const images = extractImageUrls(html, pageUrl);
+  return {
+    page_url: pageUrl,
+    vin: normalizeVin(vin),
+    stock_number: cleanText(stock),
+    title: decodeHtmlEntities(title),
+    images,
+  };
+}
+
+async function fetchText(url) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 14000);
+  try {
+    const response = await fetch(url, {
+      headers: DEFAULT_FETCH_HEADERS,
+      redirect: 'follow',
+      signal: controller.signal,
+    });
+    const text = await response.text().catch(() => '');
+    return { ok: response.ok, status: response.status, url: response.url || url, text };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function safeImageExtension(contentType, sourceUrl) {
+  const type = cleanText(contentType).toLowerCase();
+  if (type.includes('png')) return '.png';
+  if (type.includes('webp')) return '.webp';
+  if (type.includes('jpeg') || type.includes('jpg')) return '.jpg';
+  const pathname = (() => {
+    try { return new URL(sourceUrl).pathname.toLowerCase(); } catch { return ''; }
+  })();
+  const ext = path.extname(pathname);
+  return ['.jpg', '.jpeg', '.png', '.webp'].includes(ext) ? ext : '.jpg';
+}
+
+async function saveRemotePhoto(photoUrl, index) {
+  const parsed = new URL(photoUrl);
+  if (!['http:', 'https:'].includes(parsed.protocol)) return '';
+  if (isUnsafeFetchHost(parsed.hostname)) return '';
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 18000);
+  try {
+    const response = await fetch(parsed.href, {
+      headers: DEFAULT_FETCH_HEADERS,
+      redirect: 'follow',
+      signal: controller.signal,
+    });
+    if (!response.ok) return '';
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType && !contentType.toLowerCase().startsWith('image/')) return '';
+    const arrayBuffer = await response.arrayBuffer();
+    if (!arrayBuffer.byteLength || arrayBuffer.byteLength > 12 * 1024 * 1024) return '';
+    const filename = `${Date.now()}-${index}-${Math.random().toString(16).slice(2)}${safeImageExtension(contentType, parsed.href)}`;
+    fs.writeFileSync(path.join(uploadDir, filename), Buffer.from(arrayBuffer));
+    return `/uploads/units/${filename}`;
+  } catch {
+    return '';
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function localizePhotoUrls(photoUrls) {
+  const urls = normalizePhotos(photoUrls).slice(0, 30);
+  const saved = [];
+  for (let i = 0; i < urls.length; i += 1) {
+    const url = urls[i];
+    if (url.startsWith('/uploads/units/')) {
+      saved.push(url);
+      continue;
+    }
+    try {
+      const localUrl = await saveRemotePhoto(url, i);
+      saved.push(localUrl || url);
+    } catch {
+      saved.push(url);
+    }
+  }
+  return saved;
+}
+
+function scoreCandidateForRow(candidate, row) {
+  const vin = normalizeVin(row.vin || row.VIN || row[' Vin']);
+  if (vin && candidate.vin === vin) return 100;
+
+  const stock = normalizeMatchValue(row.stock_number || row.stock || row.StockNumber || row[' StockNumber']);
+  if (stock && normalizeMatchValue(candidate.stock_number) === stock) return 90;
+
+  const rowText = normalizeMatchValue([
+    row.year || row.Year,
+    row.make || row.Make,
+    row.model || row.Model,
+    row.trim || row.Trim,
+    row.VehicleInfo || row.vehicle_info,
+  ].filter(Boolean).join(' '));
+  const candidateText = normalizeMatchValue(candidate.title + ' ' + candidate.page_url);
+  if (rowText && candidateText.includes(rowText.slice(0, Math.min(rowText.length, 26)))) return 45;
+
+  return 0;
+}
+
+function attachWebsitePhotos(rows, candidates) {
+  return rows.map(row => {
+    const best = candidates
+      .map(candidate => ({ candidate, score: scoreCandidateForRow(candidate, row) }))
+      .filter(item => item.score > 0 && item.candidate.images.length)
+      .sort((a, b) => b.score - a.score)[0];
+    if (!best) return { ...row, website_photo_count: 0, website_match_url: '' };
+    return {
+      ...row,
+      photos: best.candidate.images,
+      photo_urls: best.candidate.images.join('\n'),
+      website_photo_count: best.candidate.images.length,
+      website_match_url: best.candidate.page_url,
+    };
+  });
+}
+
 // ── VIN decode (NHTSA, no key required) ────────────────────────────────────
 router.get('/decode-vin/:vin', requireAuth, async (req, res) => {
   const { vin } = req.params;
@@ -181,16 +396,23 @@ router.get('/', requireAuth, (req, res) => {
 });
 
 // ── Bulk import units from CSV/other systems ───────────────────────────────
-router.post('/import', requireAuth, (req, res) => {
+router.post('/import', requireAuth, async (req, res) => {
   const rows = Array.isArray(req.body.rows) ? req.body.rows : [];
   if (!rows.length) return res.status(400).json({ error: 'No import rows received' });
   if (rows.length > 500) return res.status(400).json({ error: 'Import is limited to 500 units at a time' });
 
   const results = { created: 0, updated: 0, skipped: 0, errors: [] };
   const source = cleanText(req.body.source || 'Inventory import');
+  const rowsWithLocalPhotos = [];
+  for (const row of rows) {
+    rowsWithLocalPhotos.push({
+      ...row,
+      photos: await localizePhotoUrls(row.photos || row.photo_urls || row.images || row.image_urls),
+    });
+  }
 
   const tx = db.transaction(() => {
-    rows.forEach((row, index) => {
+    rowsWithLocalPhotos.forEach((row, index) => {
       const vin = normalizeVin(row.vin || row.VIN || row.vehicle_vin);
       const year = parseInteger(row.year || row.Year || row.model_year);
       const make = cleanText(row.make || row.Make);
@@ -262,6 +484,70 @@ router.post('/import', requireAuth, (req, res) => {
 
   tx();
   res.status(201).json(results);
+});
+
+// ── Match public website photos to CSV/import rows ─────────────────────────
+router.post('/import/website-photos', requireAuth, async (req, res) => {
+  const websiteUrl = cleanText(req.body.website_url || req.body.websiteUrl);
+  const rows = Array.isArray(req.body.rows) ? req.body.rows : [];
+  if (!websiteUrl) return res.status(400).json({ error: 'Dealer website URL is required' });
+  if (!rows.length) return res.status(400).json({ error: 'Import rows are required before matching photos' });
+  if (rows.length > 500) return res.status(400).json({ error: 'Photo matching is limited to 500 rows at a time' });
+
+  let startUrl;
+  try {
+    startUrl = new URL(websiteUrl);
+  } catch {
+    return res.status(400).json({ error: 'Enter a valid inventory website URL' });
+  }
+  if (!['http:', 'https:'].includes(startUrl.protocol) || isUnsafeFetchHost(startUrl.hostname)) {
+    return res.status(400).json({ error: 'Enter a public dealer website URL' });
+  }
+
+  const visited = new Set();
+  const queue = [startUrl.href];
+  const candidates = [];
+  const errors = [];
+  const origin = startUrl.origin;
+  const maxPages = Math.min(80, Math.max(20, rows.length * 3));
+
+  while (queue.length && visited.size < maxPages) {
+    const url = queue.shift();
+    if (!url || visited.has(url)) continue;
+    visited.add(url);
+    try {
+      const page = await fetchText(url);
+      if (!page.ok) {
+        errors.push({ url, status: page.status, error: `Website returned ${page.status}` });
+        continue;
+      }
+      const candidate = extractVehicleCandidate(page.text, page.url);
+      if (candidate.images.length || candidate.vin || candidate.stock_number) candidates.push(candidate);
+      extractPageLinks(page.text, page.url, origin).forEach(link => {
+        if (!visited.has(link) && queue.length < maxPages * 2) queue.push(link);
+      });
+    } catch (err) {
+      errors.push({ url, error: err.name === 'AbortError' ? 'Website request timed out' : err.message });
+    }
+  }
+
+  const enriched = attachWebsitePhotos(rows, candidates);
+  const matched = enriched.filter(row => parseInteger(row.website_photo_count) > 0).length;
+  const blocked = errors.some(err => err.status === 403 || err.status === 429);
+
+  res.json({
+    rows: enriched,
+    summary: {
+      scanned_pages: visited.size,
+      vehicle_candidates: candidates.length,
+      matched_rows: matched,
+      blocked,
+      message: blocked
+        ? 'The website blocked automated access. CSV rows are still ready, but photos may need a vendor feed, exported image ZIP, or manual upload.'
+        : `Matched photos for ${matched} of ${rows.length} row(s).`,
+    },
+    errors: errors.slice(0, 12),
+  });
 });
 
 // ── Get single unit ─────────────────────────────────────────────────────────

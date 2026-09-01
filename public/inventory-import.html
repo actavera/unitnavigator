@@ -28,6 +28,13 @@
     .status-pill { display:inline-flex; border-radius:999px; padding:4px 8px; background:var(--blue-gl); color:var(--blue); font-weight:800; font-size:.72rem; }
     .import-actions { display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap; }
     .sample-code { border:1px solid var(--border); border-radius:var(--r); background:var(--bg); padding:14px; overflow:auto; color:var(--text-2); font-size:.82rem; }
+    .migration-panel { border:1px solid var(--border); border-radius:var(--r); background:linear-gradient(135deg, var(--s2), var(--s1)); padding:16px; display:grid; gap:10px; }
+    .migration-panel h3 { font-size:1rem; margin:0; }
+    .migration-panel p { color:var(--text-2); line-height:1.45; font-size:.9rem; }
+    .migration-row { display:grid; grid-template-columns:1fr auto; gap:10px; align-items:end; }
+    .match-summary { border:1px solid var(--border); border-radius:var(--r); padding:12px 14px; color:var(--text-2); background:var(--s2); line-height:1.45; }
+    .match-summary strong { color:var(--text); }
+    .match-summary.err { border-color:rgba(239,68,68,.35); color:var(--red); }
     .sheet-panel { border:1px solid var(--border); border-radius:var(--r-lg); background:var(--s1); box-shadow:var(--sh); overflow:hidden; }
     .sheet-toolbar { display:flex; justify-content:space-between; gap:12px; align-items:center; padding:16px 18px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
     .sheet-wrap { overflow:auto; }
@@ -117,7 +124,7 @@
       <div class="import-card-body">
         <label class="drop-zone">
           <strong>Choose CSV file</strong>
-          <p class="text-muted mt-8">VIN, year, make, model, mileage, price, cost, photos, status, and stock number are recognized automatically.</p>
+          <p class="text-muted mt-8">DealerCenter exports are recognized automatically. If photos are missing, use the website matcher below to pull them from the dealer's public inventory page.</p>
           <input id="csvFile" type="file" accept=".csv,text/csv" onchange="handleFile(this.files[0])">
           <button class="btn btn-ghost mt-16" type="button" onclick="document.getElementById('csvFile').click()">Select File</button>
         </label>
@@ -126,6 +133,20 @@
           <textarea class="form-input" id="csvText" rows="10" placeholder="VIN,Year,Make,Model,Mileage,Price..."></textarea>
         </div>
         <button class="btn btn-ghost" onclick="parseCsvText()">Preview Pasted CSV</button>
+        <div class="migration-panel">
+          <div>
+            <h3>Match Photos From Dealer Website</h3>
+            <p>Paste the public inventory URL, like <strong>https://www.ready2gocars.com/inventory/</strong>. Unit Navigator will scan vehicle pages, match photos by VIN or stock number, and attach them to the CSV rows before import.</p>
+          </div>
+          <div class="migration-row">
+            <div class="form-group">
+              <label class="form-label">Public Inventory URL</label>
+              <input class="form-input" id="websitePhotoUrl" type="url" placeholder="https://dealer-site.com/inventory/">
+            </div>
+            <button class="btn btn-primary" type="button" id="matchPhotosBtn" onclick="matchWebsitePhotos()">Find Photos</button>
+          </div>
+          <div class="match-summary hidden" id="matchSummary"></div>
+        </div>
         <div class="sample-code">
 VIN,Stock #,Year,Make,Model,Trim,Mileage,Color,Price,Cost,Status,Photos
 1FTEX1CP0KFA00000,A102,2019,Ford,F-150,XLT,88420,White,24995,18500,Ready,https://...
@@ -161,8 +182,9 @@ let sheetRows = [];
 let activeScanRowId = null;
 
 const aliases = {
+  vehicle_info: ['vehicle info', 'vehicleinfo', 'unit', 'vehicle'],
   vin: ['vin', 'vehicle vin', 'vehicle_vin'],
-  stock_number: ['stock #', 'stock', 'stock no', 'stock number', 'stock_number', 'unit number'],
+  stock_number: ['stock #', 'stock', 'stock no', 'stock number', 'stock_number', 'unit number', 'stocknumber'],
   year: ['year', 'model year', 'model_year'],
   make: ['make'],
   model: ['model'],
@@ -170,14 +192,14 @@ const aliases = {
   body_style: ['body', 'body style', 'body_style', 'vehicle type'],
   color: ['color', 'exterior color', 'exterior_color'],
   mileage: ['mileage', 'miles', 'odometer'],
-  asking_price: ['price', 'asking price', 'asking_price', 'retail price', 'retail_price', 'internet price', 'sales price'],
+  asking_price: ['price', 'asking price', 'asking_price', 'retail price', 'retail_price', 'internet price', 'sales price', 'vehicle price', 'vehicleprice', 'askingprice'],
   acquisition_cost: ['cost', 'acquisition cost', 'acquisition_cost', 'inventory cost', 'purchase price'],
   minimum_price: ['minimum price', 'minimum_price', 'min price', 'floor price'],
   stage: ['stage', 'status'],
   acquisition_source: ['source', 'acquisition source'],
   acquisition_date: ['acquisition date', 'date acquired', 'purchase date'],
   notes: ['notes', 'description'],
-  photos: ['photos', 'photo urls', 'images', 'image urls'],
+  photos: ['photos', 'photo urls', 'photo_urls', 'images', 'image urls', 'image_urls'],
 };
 
 const STAGES = [
@@ -463,6 +485,18 @@ function parseRows(text) {
     mapped.acquisition_cost = parseMoney(mapped.acquisition_cost);
     mapped.asking_price = parseMoney(mapped.asking_price);
     mapped.minimum_price = parseMoney(mapped.minimum_price);
+    if (mapped.vehicle_info && (!mapped.year || !mapped.make || !mapped.model)) {
+      const parts = mapped.vehicle_info.match(/^(\d{4})\s+([A-Z0-9-]+)\s+(.+)$/i);
+      if (parts) {
+        mapped.year = mapped.year || parts[1];
+        mapped.make = mapped.make || parts[2];
+        if (!mapped.model) {
+          const modelParts = parts[3].split(/\s+/);
+          mapped.model = modelParts.slice(0, 2).join(' ');
+          mapped.trim = mapped.trim || modelParts.slice(2).join(' ');
+        }
+      }
+    }
     return mapped;
   }).filter(row => row.vin || (row.year && row.make && row.model));
 }
@@ -499,7 +533,7 @@ function renderPreview() {
   }
   document.getElementById('preview').innerHTML = `
     <table class="import-table">
-      <thead><tr><th>VIN</th><th>Stock</th><th>Unit</th><th>Miles</th><th>Price</th><th>Cost</th><th>Status</th></tr></thead>
+      <thead><tr><th>VIN</th><th>Stock</th><th>Unit</th><th>Miles</th><th>Price</th><th>Cost</th><th>Photos</th><th>Status</th></tr></thead>
       <tbody>
         ${mappedRows.slice(0, 80).map(row => `
           <tr>
@@ -509,11 +543,53 @@ function renderPreview() {
             <td>${escapeHtml(row.mileage || '-')}</td>
             <td>${row.asking_price ? UN.fmt.money(row.asking_price) : '-'}</td>
             <td>${row.acquisition_cost ? UN.fmt.money(row.acquisition_cost) : '-'}</td>
+            <td>${photoCount(row) || '-'}</td>
             <td>${escapeHtml(row.stage || 'Ready')}</td>
           </tr>
         `).join('')}
       </tbody>
     </table>`;
+}
+
+function photoCount(row) {
+  if (Array.isArray(row.photos)) return row.photos.length;
+  return String(row.photos || row.photo_urls || '').split(/[\n;,|]+/).map(item => item.trim()).filter(Boolean).length;
+}
+
+async function matchWebsitePhotos() {
+  if (!mappedRows.length) return toast('Preview CSV rows first', 'err');
+  const websiteUrl = document.getElementById('websitePhotoUrl').value.trim();
+  if (!websiteUrl) return toast('Add the public inventory URL first', 'err');
+  const btn = document.getElementById('matchPhotosBtn');
+  const summary = document.getElementById('matchSummary');
+  btn.disabled = true;
+  btn.textContent = 'Scanning...';
+  summary.classList.remove('hidden', 'err');
+  summary.innerHTML = 'Scanning the public inventory pages and matching photos by VIN or stock number...';
+  try {
+    const result = await UN.api('POST', '/api/inventory/import/website-photos', {
+      website_url: websiteUrl,
+      rows: mappedRows,
+    });
+    mappedRows = result.rows || mappedRows;
+    renderPreview();
+    const details = result.summary || {};
+    summary.classList.toggle('err', Boolean(details.blocked));
+    summary.innerHTML = `
+      <strong>${escapeHtml(details.message || 'Photo match finished.')}</strong><br>
+      Scanned ${details.scanned_pages || 0} page${details.scanned_pages === 1 ? '' : 's'}.
+      Found ${details.vehicle_candidates || 0} possible vehicle page${details.vehicle_candidates === 1 ? '' : 's'}.
+      ${result.errors?.length ? `<br>Notes: ${escapeHtml(result.errors.map(err => `${err.status || ''} ${err.error || ''}`.trim()).slice(0, 3).join('; '))}` : ''}
+    `;
+    toast(`Matched photos for ${details.matched_rows || 0} units`);
+  } catch (err) {
+    summary.classList.add('err');
+    summary.textContent = err.message;
+    toast(err.message, 'err');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Find Photos';
+  }
 }
 
 async function importRows() {
