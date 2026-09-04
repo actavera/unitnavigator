@@ -99,7 +99,8 @@ async function generateVehicleDescription(unit) {
   }, {
     model,
     input: promptFor(unit),
-    max_output_tokens: 220,
+    reasoning: { effort: 'minimal' },
+    max_output_tokens: 1200,
   });
 
   const description = responseText(response)
