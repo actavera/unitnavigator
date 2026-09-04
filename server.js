@@ -76,4 +76,10 @@ app.get('/showroom/:id', (_req, res) =>
   res.sendFile(path.join(__dirname, 'public', 'showroom-detail.html'))
 );
 
+app.get('/:dealerSlug', (req, res, next) => {
+  const slug = String(req.params.dealerSlug || '').trim().toLowerCase();
+  if (!slug || slug.includes('.') || ['api', 'assets', 'css', 'js', 'uploads', 'marketing'].includes(slug)) return next();
+  res.redirect(302, `/showroom?dealer=${encodeURIComponent(slug)}`);
+});
+
 app.listen(PORT, () => console.log(`Unit Navigator → http://localhost:${PORT}`));

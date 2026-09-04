@@ -565,6 +565,16 @@ function persistImportRows(rows, req, dealershipId, source, options = {}) {
   return options.includeRows ? { ...results, rows } : results;
 }
 
+function csvCell(value) {
+  const text = Array.isArray(value) ? value.join('\n') : String(value ?? '');
+  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function exportFilename(dealershipId) {
+  const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  return `unitnavigator-inventory-${dealershipId}-${stamp}.csv`;
+}
+
 // ── VIN decode (NHTSA, no key required) ────────────────────────────────────
 router.get('/decode-vin/:vin', requireAuth, async (req, res) => {
   const { vin } = req.params;
@@ -607,6 +617,49 @@ router.get('/', requireAuth, (req, res) => {
 
   const units = db.prepare(sql).all(...params).map(enrichUnit);
   res.json({ units });
+});
+
+router.get('/export', requireAuth, (req, res) => {
+  const { stage, search, ids } = req.query;
+  let sql = 'SELECT * FROM units WHERE dealership_id = ?';
+  const params = [req.user.dealership_id];
+
+  if (stage && stage !== 'all') {
+    sql += ' AND stage = ?';
+    params.push(stage);
+  }
+  if (search) {
+    sql += ' AND (make LIKE ? OR model LIKE ? OR vin LIKE ? OR stock_number LIKE ? OR CAST(year AS TEXT) LIKE ?)';
+    const s = `%${search}%`;
+    params.push(s, s, s, s, s);
+  }
+  const selectedIds = String(ids || '')
+    .split(',')
+    .map(value => Number(value))
+    .filter(Number.isFinite);
+  if (selectedIds.length) {
+    sql += ` AND id IN (${selectedIds.map(() => '?').join(',')})`;
+    params.push(...selectedIds);
+  }
+  sql += ' ORDER BY created_at DESC';
+
+  const headers = [
+    'vin', 'stock_number', 'year', 'make', 'model', 'trim', 'body_style', 'color', 'mileage', 'stage',
+    'acquisition_cost', 'transport_cost', 'repair_cost', 'detail_cost', 'other_cost', 'asking_price',
+    'minimum_price', 'sold_price', 'acquisition_source', 'acquisition_date', 'notes', 'photos',
+  ];
+  const rows = db.prepare(sql).all(...params).map(row => ({
+    ...row,
+    photos: parseRepairItems(row.photos).join('\n'),
+  }));
+  const csv = [
+    headers.join(','),
+    ...rows.map(row => headers.map(header => csvCell(row[header])).join(',')),
+  ].join('\n');
+
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${exportFilename(req.user.dealership_id)}"`);
+  res.send(`\uFEFF${csv}`);
 });
 
 // ── Bulk import units from CSV/other systems ───────────────────────────────
