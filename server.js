@@ -138,6 +138,7 @@ const staticPages = {
   '/deals':         'deals.html',
   '/customers':     'customers.html',
   '/admin':         'admin.html',
+  '/admin/sold-vehicle-data': 'admin-sold-data.html',
   '/settings':      'settings.html',
   '/paperwork/start':'paperwork-start.html',
   '/inventory':     'inventory.html',

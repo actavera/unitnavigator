@@ -128,6 +128,25 @@ db.exec(`
     user_id INTEGER,
     created_at TEXT DEFAULT (datetime('now'))
   );
+
+  CREATE TABLE IF NOT EXISTS platform_sold_units (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    dealership_id INTEGER,
+    unit_id INTEGER NOT NULL UNIQUE,
+    year INTEGER,
+    make TEXT,
+    model TEXT,
+    trim TEXT,
+    mileage INTEGER DEFAULT 0,
+    recon_cost REAL DEFAULT 0,
+    final_listing_price REAL,
+    sold_price REAL,
+    market_zip TEXT,
+    sold_at TEXT,
+    days_in_inventory INTEGER,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
 `);
 
 const unitSchema = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'units'").get()?.sql || '';
@@ -345,6 +364,27 @@ db.prepare(`
   UPDATE users
   SET role = 'super_admin', status = 'active'
   WHERE lower(email) = 'admin@unitnavigator.com'
+`).run();
+
+db.prepare(`
+  INSERT INTO platform_sold_units (
+    dealership_id, unit_id, year, make, model, trim, mileage, recon_cost,
+    final_listing_price, sold_price, market_zip, sold_at, days_in_inventory
+  )
+  SELECT
+    u.dealership_id, u.id, u.year, u.make, u.model, u.trim, u.mileage,
+    COALESCE(u.repair_cost, 0), u.asking_price, u.sold_price, d.zip, u.sold_at,
+    CASE
+      WHEN u.created_at IS NOT NULL AND u.sold_at IS NOT NULL
+      THEN CAST(julianday(u.sold_at) - julianday(u.created_at) AS INTEGER)
+      ELSE NULL
+    END
+  FROM units u
+  LEFT JOIN dealerships d ON d.id = u.dealership_id
+  WHERE u.stage = 'sold'
+    AND u.sold_price IS NOT NULL
+    AND u.sold_price > 0
+    AND NOT EXISTS (SELECT 1 FROM platform_sold_units p WHERE p.unit_id = u.id)
 `).run();
 
 module.exports = db;

@@ -5,6 +5,7 @@ const fs = require('fs');
 const multer = require('multer');
 const db = require('../database');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const { suggestedRetailPrice } = require('../services/pricing');
 
 const uploadDir = path.join(__dirname, '../public/uploads/units');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -123,6 +124,39 @@ function enrichUnit(u) {
 function logActivity(dealership_id, entity_id, action, note, user_id) {
   db.prepare(`INSERT INTO activity_logs (dealership_id, entity_type, entity_id, action, note, user_id)
     VALUES (?, 'unit', ?, ?, ?, ?)`).run(dealership_id, entity_id, action, note, user_id);
+}
+
+function capturePlatformSoldUnit(unit) {
+  if (!unit || unit.stage !== 'sold' || !parseMoney(unit.sold_price)) return;
+  const dealer = db.prepare('SELECT zip FROM dealerships WHERE id = ?').get(unit.dealership_id) || {};
+  const daysInInventory = unit.created_at && unit.sold_at
+    ? Math.max(0, Math.round((new Date(unit.sold_at).getTime() - new Date(unit.created_at).getTime()) / 86400000))
+    : null;
+  db.prepare(`
+    INSERT INTO platform_sold_units (
+      dealership_id, unit_id, year, make, model, trim, mileage, recon_cost,
+      final_listing_price, sold_price, market_zip, sold_at, days_in_inventory, updated_at
+    )
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
+    ON CONFLICT(unit_id) DO UPDATE SET
+      dealership_id = excluded.dealership_id,
+      year = excluded.year,
+      make = excluded.make,
+      model = excluded.model,
+      trim = excluded.trim,
+      mileage = excluded.mileage,
+      recon_cost = excluded.recon_cost,
+      final_listing_price = excluded.final_listing_price,
+      sold_price = excluded.sold_price,
+      market_zip = excluded.market_zip,
+      sold_at = excluded.sold_at,
+      days_in_inventory = excluded.days_in_inventory,
+      updated_at = datetime('now')
+  `).run(
+    unit.dealership_id, unit.id, unit.year, unit.make, unit.model, unit.trim, unit.mileage || 0,
+    unit.repair_cost || 0, unit.asking_price || null, unit.sold_price || null, dealer.zip || null,
+    unit.sold_at || new Date().toISOString(), daysInInventory,
+  );
 }
 
 const VALID_STAGES = ['acquired','transport','screening','recon','ready','pending','sold','archived'];
@@ -792,6 +826,22 @@ router.post('/import/website-photos', requireAuth, async (req, res) => {
   });
 });
 
+router.get('/price-suggestion', requireAuth, (req, res) => {
+  const suggestion = suggestedRetailPrice(db, {
+    year: req.query.year,
+    make: req.query.make,
+    model: req.query.model,
+    trim: req.query.trim,
+    mileage: req.query.mileage,
+    body_style: req.query.body_style,
+    zip: req.query.zip,
+  });
+  res.json({
+    suggestion,
+    disclaimer: 'Suggested prices are estimates based on available comparable sales, vehicle details, mileage, location, and data recency. Verify pricing against your own market research and actual purchase and sales results.',
+  });
+});
+
 // ── Get single unit ─────────────────────────────────────────────────────────
 router.get('/:id', requireAuth, (req, res) => {
   const unit = db.prepare('SELECT * FROM units WHERE id = ? AND dealership_id = ?')
@@ -888,6 +938,7 @@ router.put('/:id', requireAuth, (req, res) => {
 
   logActivity(req.user.dealership_id, req.params.id, 'Unit updated', 'Details updated', req.user.id);
   const updated = db.prepare('SELECT * FROM units WHERE id = ?').get(req.params.id);
+  capturePlatformSoldUnit(updated);
   res.json({ unit: enrichUnit(updated) });
 });
 
@@ -911,6 +962,7 @@ router.patch('/:id/stage', requireAuth, (req, res) => {
 
   logActivity(req.user.dealership_id, req.params.id, 'Stage changed', `${STAGE_LABELS[unit.stage] || unit.stage} → ${STAGE_LABELS[stage] || stage}`, req.user.id);
   const updated = db.prepare('SELECT * FROM units WHERE id = ?').get(req.params.id);
+  capturePlatformSoldUnit(updated);
   res.json({ unit: enrichUnit(updated) });
 });
 

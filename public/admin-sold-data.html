@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sold Vehicle Data — Unit Navigator</title>
+  <script>(function(){var t=localStorage.getItem('un_theme')||'dark';document.documentElement.dataset.theme=t;})()</script>
+  <link rel="stylesheet" href="/css/main.css">
+  <style>
+    .page-shell { width: min(100% - 44px, 1320px); margin: 0 auto; padding: 30px 0 70px; }
+    .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+    .page-head h1 { font-size: clamp(2.2rem, 4.5vw, 4.8rem); line-height: .92; letter-spacing: -.055em; margin: 6px 0 10px; }
+    .page-head p { color: var(--text-2); max-width: 760px; line-height: 1.5; }
+    .summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; margin-bottom: 16px; }
+    .summary-card { border: 1px solid var(--border); border-radius: var(--r); background: var(--s1); padding: 16px; }
+    .summary-card span { display: block; color: var(--muted); font-size: .75rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+    .summary-card strong { display: block; font-size: 1.8rem; margin-top: 4px; }
+    .toolbar { display: flex; gap: 10px; margin-bottom: 14px; }
+    .table-wrap { overflow: auto; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--s1); box-shadow: var(--sh); }
+    table { width: 100%; border-collapse: collapse; min-width: 980px; }
+    th, td { padding: 12px 14px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
+    th { color: var(--muted); font-size: .72rem; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; background: var(--s2); }
+    td { font-size: .88rem; }
+    .muted { color: var(--muted); }
+    @media(max-width: 760px) {
+      .page-head { display: grid; }
+      .summary-grid { grid-template-columns: 1fr; }
+      .toolbar { display: grid; }
+    }
+  </style>
+</head>
+<body>
+<div id="nav-container"></div>
+<main class="page-shell">
+  <section class="page-head">
+    <div>
+      <p class="home-kicker">Platform Admin</p>
+      <h1>Sold vehicle data.</h1>
+      <p>This is the lightweight pricing database Unit Navigator uses for future suggested list prices. Dealers only see anonymized pricing suggestions, not another dealer's individual records.</p>
+    </div>
+    <a class="btn btn-ghost" href="/admin">Back to Admin</a>
+  </section>
+
+  <section class="summary-grid">
+    <div class="summary-card"><span>Sold Records</span><strong id="soldCount">0</strong></div>
+    <div class="summary-card"><span>Avg. Sold Price</span><strong id="avgSold">$0</strong></div>
+    <div class="summary-card"><span>Avg. Mileage</span><strong id="avgMiles">0</strong></div>
+  </section>
+
+  <section class="toolbar">
+    <input class="form-input" id="searchInput" placeholder="Search year, make, model, trim, or dealer..." oninput="debouncedLoad()">
+    <button class="btn btn-ghost" onclick="loadSoldData()">Refresh</button>
+  </section>
+
+  <section class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Sold Date</th>
+          <th>Vehicle</th>
+          <th>Mileage</th>
+          <th>Recon</th>
+          <th>Listed</th>
+          <th>Sold</th>
+          <th>ZIP</th>
+          <th>Days</th>
+          <th>Dealer</th>
+        </tr>
+      </thead>
+      <tbody id="soldRows">
+        <tr><td colspan="9" class="muted">Loading...</td></tr>
+      </tbody>
+    </table>
+  </section>
+</main>
+
+<script src="/js/nav.js"></script>
+<script>
+if (UN.requireAuth()) {
+  UN.renderNav();
+  loadSoldData();
+}
+
+let loadTimer = null;
+function debouncedLoad() {
+  clearTimeout(loadTimer);
+  loadTimer = setTimeout(loadSoldData, 220);
+}
+
+async function loadSoldData() {
+  try {
+    const search = encodeURIComponent(document.getElementById('searchInput').value.trim());
+    const data = await UN.api('GET', `/api/admin/platform-sold-units${search ? `?search=${search}` : ''}`);
+    const summary = data.summary || {};
+    document.getElementById('soldCount').textContent = summary.sold_count || 0;
+    document.getElementById('avgSold').textContent = UN.fmt.money(Math.round(summary.avg_sold_price || 0));
+    document.getElementById('avgMiles').textContent = UN.fmt.miles(Math.round(summary.avg_mileage || 0));
+    renderRows(data.rows || []);
+  } catch (e) {
+    if (/403|permission|access|insufficient/i.test(e.message)) {
+      document.querySelector('.page-shell').innerHTML = '<section class="summary-card"><h1>Platform admin only</h1><p class="muted">Your login does not have access to this area.</p></section>';
+      return;
+    }
+    toast(e.message, 'err');
+  }
+}
+
+function renderRows(rows) {
+  const el = document.getElementById('soldRows');
+  if (!rows.length) {
+    el.innerHTML = '<tr><td colspan="9" class="muted">No sold vehicle records yet.</td></tr>';
+    return;
+  }
+  el.innerHTML = rows.map(row => `
+    <tr>
+      <td>${dateOnly(row.sold_at)}</td>
+      <td><strong>${esc([row.year, row.make, row.model].filter(Boolean).join(' '))}</strong>${row.trim ? `<br><span class="muted">${esc(row.trim)}</span>` : ''}</td>
+      <td>${UN.fmt.miles(row.mileage || 0)}</td>
+      <td>${UN.fmt.money(row.recon_cost || 0)}</td>
+      <td>${UN.fmt.money(row.final_listing_price || 0)}</td>
+      <td><strong>${UN.fmt.money(row.sold_price || 0)}</strong></td>
+      <td>${esc(row.market_zip || '')}</td>
+      <td>${row.days_in_inventory ?? ''}</td>
+      <td>${esc(row.dealership_name || '')}</td>
+    </tr>
+  `).join('');
+}
+
+function dateOnly(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value).slice(0, 10);
+  return date.toLocaleDateString();
+}
+
+function esc(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch]));
+}
+</script>
+</body>
+</html>

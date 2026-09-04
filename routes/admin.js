@@ -202,6 +202,32 @@ router.get('/overview', (_req, res) => {
   res.json({ dealerships, users });
 });
 
+router.get('/platform-sold-units', (req, res) => {
+  const search = String(req.query.search || '').trim();
+  const like = `%${search.toLowerCase()}%`;
+  const where = search
+    ? `WHERE lower(COALESCE(p.make, '') || ' ' || COALESCE(p.model, '') || ' ' || COALESCE(p.trim, '') || ' ' || COALESCE(p.year, '') || ' ' || COALESCE(d.name, '')) LIKE ?`
+    : '';
+  const params = search ? [like] : [];
+  const rows = db.prepare(`
+    SELECT p.*, d.name AS dealership_name
+    FROM platform_sold_units p
+    LEFT JOIN dealerships d ON d.id = p.dealership_id
+    ${where}
+    ORDER BY COALESCE(p.sold_at, p.updated_at, p.created_at) DESC
+    LIMIT 250
+  `).all(...params);
+  const summary = db.prepare(`
+    SELECT
+      COUNT(*) AS sold_count,
+      AVG(sold_price) AS avg_sold_price,
+      AVG(mileage) AS avg_mileage
+    FROM platform_sold_units
+    WHERE sold_price IS NOT NULL AND sold_price > 0
+  `).get();
+  res.json({ rows, summary });
+});
+
 router.post('/dealerships', (req, res) => {
   const name = String(req.body.name || '').trim();
   if (!name) return res.status(400).json({ error: 'Dealership name required' });

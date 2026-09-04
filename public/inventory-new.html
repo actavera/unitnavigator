@@ -211,11 +211,70 @@
       border-radius: var(--r);
       background: var(--s1);
     }
+    .price-suggest {
+      display: none;
+      margin-bottom: 20px;
+      border: 1px solid var(--blue-border);
+      border-radius: var(--r);
+      background: var(--blue-gl);
+      padding: 16px;
+    }
+    .price-suggest.visible { display: block; }
+    .price-suggest-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      align-items: flex-start;
+      margin-bottom: 12px;
+    }
+    .price-suggest-label {
+      color: var(--primary);
+      font-size: 0.76rem;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .price-suggest-title { font-size: 1.05rem; font-weight: 800; margin-top: 3px; }
+    .price-suggest-range {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin: 12px 0;
+    }
+    .price-suggest-stat {
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      background: var(--s1);
+      padding: 12px;
+    }
+    .price-suggest-stat span {
+      display: block;
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      margin-bottom: 5px;
+    }
+    .price-suggest-stat strong { font-size: 1.1rem; }
+    .price-suggest-copy {
+      color: var(--text-2);
+      font-size: 0.84rem;
+      line-height: 1.45;
+      margin: 8px 0 0;
+    }
+    .price-suggest-disclaimer {
+      color: var(--muted);
+      font-size: 0.76rem;
+      line-height: 1.4;
+      margin-top: 10px;
+    }
 
     @media(max-width:640px) {
       .steps { gap: 0; }
       .step-label { display: none; }
       .review-grid { grid-template-columns: 1fr; }
+      .price-suggest-range { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -341,7 +400,19 @@
   <!-- Step 2: Pricing -->
   <div class="step-panel" id="panel-2">
     <p class="panel-title">Pricing</p>
-    <p class="panel-sub">Set your asking price and floor. The gross calculates live.</p>
+    <p class="panel-sub">Review the suggested list price, then set your asking price and floor.</p>
+    <div class="price-suggest" id="priceSuggestionCard">
+      <div class="price-suggest-top">
+        <div>
+          <div class="price-suggest-label" id="priceSuggestionBadge">Suggested Unit Price Range</div>
+          <div class="price-suggest-title" id="priceSuggestionTitle">Checking pricing...</div>
+        </div>
+        <button class="btn btn-primary btn-sm" id="useSuggestedPriceBtn" type="button" onclick="useSuggestedPrice()" style="display:none;">Use Suggested Target</button>
+      </div>
+      <div class="price-suggest-range" id="priceSuggestionStats"></div>
+      <p class="price-suggest-copy" id="priceSuggestionExplanation"></p>
+      <p class="price-suggest-disclaimer" id="priceSuggestionDisclaimer"></p>
+    </div>
     <div class="form-row form-row-2" style="margin-bottom:20px;">
       <div class="form-group">
         <label class="form-label">Asking Price</label>
@@ -464,6 +535,7 @@ UN.renderNav();
 let currentStep = 0;
 let pendingPhotos = []; // File objects for upload after unit creation
 let decoded = null;
+let priceSuggestion = null;
 
 function parseMoneyInput(value) {
   const parsed = Number(String(value ?? '').replace(/[^0-9.-]/g, ''));
@@ -496,6 +568,7 @@ function goStep(n) {
   });
   currentStep = n;
   document.getElementById(`panel-${n}`).classList.add('active');
+  if (n === 2) loadPriceSuggestion();
   if (n === 4) buildReview();
   window.scrollTo(0, 0);
 }
@@ -796,6 +869,86 @@ function updateGross() {
   document.getElementById('grossVal').innerHTML = UN.fmt.gross(gross);
   document.getElementById('previewAsk').textContent = UN.fmt.money(ask);
   document.getElementById('previewCost').textContent = UN.fmt.money(cost);
+}
+
+// ── Suggested list price ────────────────────────────────────────────────────
+function priceSuggestionQuery() {
+  const params = new URLSearchParams({
+    year: document.getElementById('fYear').value || '',
+    make: document.getElementById('fMake').value.trim(),
+    model: document.getElementById('fModel').value.trim(),
+    trim: document.getElementById('fTrim').value.trim(),
+    body_style: document.getElementById('fBodyStyle').value.trim(),
+    mileage: document.getElementById('fMileage').value || '',
+  });
+  return params.toString();
+}
+
+function setPriceSuggestionLoading() {
+  const card = document.getElementById('priceSuggestionCard');
+  card.classList.add('visible');
+  document.getElementById('priceSuggestionBadge').textContent = 'Suggested Unit Price Range';
+  document.getElementById('priceSuggestionTitle').textContent = 'Checking pricing...';
+  document.getElementById('priceSuggestionStats').innerHTML = '';
+  document.getElementById('priceSuggestionExplanation').textContent = '';
+  document.getElementById('priceSuggestionDisclaimer').textContent = '';
+  document.getElementById('useSuggestedPriceBtn').style.display = 'none';
+}
+
+function renderPriceSuggestion(data) {
+  priceSuggestion = data.suggestion || null;
+  const card = document.getElementById('priceSuggestionCard');
+  const title = document.getElementById('priceSuggestionTitle');
+  const badge = document.getElementById('priceSuggestionBadge');
+  const stats = document.getElementById('priceSuggestionStats');
+  const explanation = document.getElementById('priceSuggestionExplanation');
+  const disclaimer = document.getElementById('priceSuggestionDisclaimer');
+  const useBtn = document.getElementById('useSuggestedPriceBtn');
+
+  card.classList.add('visible');
+  if (!priceSuggestion || !priceSuggestion.target) {
+    badge.textContent = 'Suggested Unit Price Range';
+    title.textContent = priceSuggestion?.explanation || 'Enter year, make, model, and mileage to see a suggested list price.';
+    stats.innerHTML = '';
+    explanation.textContent = '';
+    disclaimer.textContent = data.disclaimer || '';
+    useBtn.style.display = 'none';
+    return;
+  }
+
+  const sourceLabel = priceSuggestion.source === 'internal_sold'
+    ? `${priceSuggestion.confidence} confidence · ${priceSuggestion.comparable_count} sold comp${priceSuggestion.comparable_count === 1 ? '' : 's'}`
+    : 'Low confidence · free-data estimate';
+  badge.textContent = sourceLabel;
+  title.textContent = 'Suggested list price';
+  stats.innerHTML = `
+    <div class="price-suggest-stat"><span>Low</span><strong>${UN.fmt.money(priceSuggestion.low)}</strong></div>
+    <div class="price-suggest-stat"><span>Target</span><strong>${UN.fmt.money(priceSuggestion.target)}</strong></div>
+    <div class="price-suggest-stat"><span>High</span><strong>${UN.fmt.money(priceSuggestion.high)}</strong></div>
+  `;
+  explanation.textContent = priceSuggestion.explanation || '';
+  disclaimer.textContent = data.disclaimer || '';
+  useBtn.style.display = '';
+}
+
+async function loadPriceSuggestion() {
+  setPriceSuggestionLoading();
+  try {
+    renderPriceSuggestion(await UN.api('GET', `/api/inventory/price-suggestion?${priceSuggestionQuery()}`));
+  } catch (e) {
+    priceSuggestion = null;
+    document.getElementById('priceSuggestionTitle').textContent = 'Could not load pricing right now.';
+    document.getElementById('priceSuggestionStats').innerHTML = '';
+    document.getElementById('priceSuggestionExplanation').textContent = e.message || '';
+    document.getElementById('priceSuggestionDisclaimer').textContent = '';
+    document.getElementById('useSuggestedPriceBtn').style.display = 'none';
+  }
+}
+
+function useSuggestedPrice() {
+  if (!priceSuggestion?.target) return;
+  document.getElementById('pAsk').value = priceSuggestion.target;
+  updateGross();
 }
 
 // ── Photos ──────────────────────────────────────────────────────────────────
