@@ -5,7 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const db = require('../database');
-const { requireAuth, requireRole } = require('../middleware/auth');
+const { requireAuth, requireRole, hasPermission, parsePermissions, ALL_PERMISSIONS } = require('../middleware/auth');
 
 const dealerUploadDir = path.join(__dirname, '../public/uploads/dealers');
 if (!fs.existsSync(dealerUploadDir)) fs.mkdirSync(dealerUploadDir, { recursive: true });
@@ -85,7 +85,7 @@ function slugify(value) {
 
 function canManageDealerSettings(req, dealershipId) {
   if (req.user.role === 'super_admin') return true;
-  if (!['admin', 'manager'].includes(req.user.role)) return false;
+  if (!hasPermission(req.user, 'settings_manage')) return false;
   return Number(req.user.dealership_id) === Number(dealershipId);
 }
 
@@ -96,6 +96,46 @@ function canViewDealerSettings(req, dealershipId) {
 
 function settingsRow(id) {
   return db.prepare(`SELECT ${DEALER_SETTING_FIELDS.join(', ')}, id, status, created_at FROM dealerships WHERE id = ?`).get(id);
+}
+
+function normalizeEmail(email) {
+  return String(email || '').trim().toLowerCase();
+}
+
+function cleanPermissions(value, role) {
+  if (role === 'super_admin') return [...ALL_PERMISSIONS];
+  if (!Array.isArray(value)) return parsePermissions(null, role);
+  const list = value;
+  return list.filter(permission => ALL_PERMISSIONS.includes(permission));
+}
+
+function userRow(row) {
+  return {
+    id: row.id,
+    dealership_id: row.dealership_id,
+    dealership_name: row.dealership_name,
+    name: row.name,
+    email: row.email,
+    role: row.role,
+    permissions: parsePermissions(row.permissions, row.role),
+    status: row.status || 'active',
+    created_at: row.created_at,
+  };
+}
+
+function canManageUsers(req, dealershipId) {
+  if (req.user.role === 'super_admin') return true;
+  if (Number(req.user.dealership_id) !== Number(dealershipId)) return false;
+  return hasPermission(req.user, 'users_manage');
+}
+
+function dealerUserWithName(id, dealershipId) {
+  return db.prepare(`
+    SELECT u.*, d.name AS dealership_name
+    FROM users u
+    LEFT JOIN dealerships d ON d.id = u.dealership_id
+    WHERE u.id = ? AND u.dealership_id = ?
+  `).get(id, dealershipId);
 }
 
 router.get('/dealership-settings', requireAuth, (req, res) => {
@@ -164,24 +204,92 @@ router.post('/dealership-settings/share-image', requireAuth, imageUpload.single(
   res.status(201).json({ image_url: imageUrl, dealership: settingsRow(dealershipId) });
 });
 
+router.get('/dealership-users', requireAuth, (req, res) => {
+  const dealershipId = Number(req.query.dealership_id || req.user.dealership_id);
+  if (!canManageUsers(req, dealershipId)) return res.status(403).json({ error: 'You do not have access to manage users' });
+  const users = db.prepare(`
+    SELECT u.*, d.name AS dealership_name
+    FROM users u
+    LEFT JOIN dealerships d ON d.id = u.dealership_id
+    WHERE u.dealership_id = ?
+    ORDER BY u.created_at DESC
+  `).all(dealershipId).map(userRow);
+  res.json({ users, permissions: ALL_PERMISSIONS });
+});
+
+router.post('/dealership-users', requireAuth, (req, res) => {
+  const dealershipId = Number(req.body.dealership_id || req.user.dealership_id);
+  if (!canManageUsers(req, dealershipId)) return res.status(403).json({ error: 'You do not have access to manage users' });
+
+  const name = String(req.body.name || '').trim();
+  const email = normalizeEmail(req.body.email);
+  const password = String(req.body.password || '');
+  const role = ['admin','manager','staff'].includes(req.body.role) ? req.body.role : 'staff';
+  const permissions = cleanPermissions(req.body.permissions, role);
+
+  if (!name || !email || !password) return res.status(400).json({ error: 'Name, email, and password required' });
+  if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+
+  try {
+    const info = db.prepare(`
+      INSERT INTO users (dealership_id, name, email, password_hash, role, permissions, status)
+      VALUES (?, ?, ?, ?, ?, ?, 'active')
+    `).run(dealershipId, name, email, bcrypt.hashSync(password, 12), role, JSON.stringify(permissions));
+    res.status(201).json({ user: userRow(dealerUserWithName(info.lastInsertRowid, dealershipId)) });
+  } catch (err) {
+    if (String(err.message).includes('UNIQUE')) return res.status(409).json({ error: 'Email already exists' });
+    throw err;
+  }
+});
+
+router.patch('/dealership-users/:id', requireAuth, (req, res) => {
+  const existing = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+  if (!existing) return res.status(404).json({ error: 'User not found' });
+  const dealershipId = Number(req.body.dealership_id || existing.dealership_id);
+  if (!canManageUsers(req, existing.dealership_id)) return res.status(403).json({ error: 'You do not have access to manage users' });
+  if (Number(dealershipId) !== Number(existing.dealership_id) && req.user.role !== 'super_admin') {
+    return res.status(403).json({ error: 'You cannot move users to another dealership' });
+  }
+  if (existing.id === req.user.id && req.body.status === 'revoked') {
+    return res.status(400).json({ error: 'You cannot revoke your own login while signed in' });
+  }
+
+  const name = String(req.body.name ?? existing.name).trim();
+  const email = normalizeEmail(req.body.email ?? existing.email);
+  const role = ['admin','manager','staff'].includes(req.body.role) ? req.body.role : existing.role;
+  const status = req.body.status === 'revoked' ? 'revoked' : 'active';
+  const permissions = cleanPermissions(req.body.permissions ?? parsePermissions(existing.permissions, existing.role), role);
+
+  try {
+    db.prepare(`
+      UPDATE users
+      SET dealership_id = ?, name = ?, email = ?, role = ?, permissions = ?, status = ?
+      WHERE id = ?
+    `).run(dealershipId, name, email, role, JSON.stringify(permissions), status, existing.id);
+  } catch (err) {
+    if (String(err.message).includes('UNIQUE')) return res.status(409).json({ error: 'Email already exists' });
+    throw err;
+  }
+
+  if (req.body.password) {
+    const password = String(req.body.password);
+    if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(bcrypt.hashSync(password, 12), existing.id);
+  }
+
+  res.json({ user: userRow(dealerUserWithName(existing.id, dealershipId)) });
+});
+
+router.delete('/dealership-users/:id', requireAuth, (req, res) => {
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  if (!canManageUsers(req, user.dealership_id)) return res.status(403).json({ error: 'You do not have access to manage users' });
+  if (user.id === req.user.id) return res.status(400).json({ error: 'You cannot delete your own login while signed in' });
+  db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
+  res.json({ ok: true });
+});
+
 router.use(...requireRole('super_admin'));
-
-function normalizeEmail(email) {
-  return String(email || '').trim().toLowerCase();
-}
-
-function userRow(row) {
-  return {
-    id: row.id,
-    dealership_id: row.dealership_id,
-    dealership_name: row.dealership_name,
-    name: row.name,
-    email: row.email,
-    role: row.role,
-    status: row.status || 'active',
-    created_at: row.created_at,
-  };
-}
 
 router.get('/overview', (_req, res) => {
   const dealerships = db.prepare(`
@@ -280,7 +388,8 @@ router.post('/users', (req, res) => {
   const name = String(req.body.name || '').trim();
   const email = normalizeEmail(req.body.email);
   const password = String(req.body.password || '');
-  const role = ['super_admin','admin','manager','staff'].includes(req.body.role) ? req.body.role : 'staff';
+  const role = ['super_admin','admin','manager','staff'].includes(req.body.role) ? req.body.role : 'manager';
+  const permissions = cleanPermissions(req.body.permissions, role);
 
   if (!dealershipId || !db.prepare('SELECT id FROM dealerships WHERE id = ?').get(dealershipId)) {
     return res.status(400).json({ error: 'Valid dealership required' });
@@ -291,9 +400,9 @@ router.post('/users', (req, res) => {
   const hash = bcrypt.hashSync(password, 12);
   try {
     const info = db.prepare(`
-      INSERT INTO users (dealership_id, name, email, password_hash, role, status)
-      VALUES (?, ?, ?, ?, ?, 'active')
-    `).run(dealershipId, name, email, hash, role);
+      INSERT INTO users (dealership_id, name, email, password_hash, role, permissions, status)
+      VALUES (?, ?, ?, ?, ?, ?, 'active')
+    `).run(dealershipId, name, email, hash, role, JSON.stringify(permissions));
     const row = db.prepare(`
       SELECT u.*, d.name AS dealership_name
       FROM users u LEFT JOIN dealerships d ON d.id = u.dealership_id
@@ -318,12 +427,13 @@ router.patch('/users/:id', (req, res) => {
   const email = normalizeEmail(req.body.email ?? user.email);
   const role = ['super_admin','admin','manager','staff'].includes(req.body.role) ? req.body.role : user.role;
   const status = req.body.status === 'revoked' ? 'revoked' : 'active';
+  const permissions = cleanPermissions(req.body.permissions ?? parsePermissions(user.permissions, user.role), role);
   try {
     db.prepare(`
       UPDATE users
-      SET dealership_id = ?, name = ?, email = ?, role = ?, status = ?
+      SET dealership_id = ?, name = ?, email = ?, role = ?, permissions = ?, status = ?
       WHERE id = ?
-    `).run(dealershipId, name, email, role, status, user.id);
+    `).run(dealershipId, name, email, role, JSON.stringify(permissions), status, user.id);
   } catch (err) {
     if (String(err.message).includes('UNIQUE')) return res.status(409).json({ error: 'Email already exists' });
     throw err;

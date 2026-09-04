@@ -260,8 +260,8 @@
       <option value="ytd">Sold: YTD</option>
     </select>
     <a href="/inventory/list" class="btn btn-ghost btn-sm">Inventory List</a>
-    <a href="/inventory/import" class="btn btn-ghost btn-sm">Import</a>
-    <button class="btn btn-ghost btn-sm" type="button" onclick="exportInventory()">Export</button>
+    <a href="/inventory/import" class="btn btn-ghost btn-sm" data-requires="inventory_import">Import</a>
+    <button class="btn btn-ghost btn-sm" type="button" onclick="exportInventory()" data-requires="inventory_export">Export</button>
     <div class="view-toggle">
       <button class="view-btn active" id="vBoard" onclick="setView('board')" title="Board">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="3" width="7" height="10" rx="1"/><rect x="14" y="17" width="7" height="4" rx="1"/></svg>
@@ -273,7 +273,7 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
       </button>
     </div>
-    <a href="/inventory/new" class="btn btn-primary btn-sm">+ Add Unit</a>
+    <a href="/inventory/new" class="btn btn-primary btn-sm" data-requires="inventory_add">+ Add Unit</a>
   </div>
 </div>
 
@@ -286,6 +286,7 @@
 <script>
 UN.requireAuth();
 UN.renderNav();
+applyPermissions();
 
 const STAGES = ['acquired','transport','screening','recon','ready','pending','sold'];
 const STAGE_LABELS = { acquired:'At Auction', transport:'Being Transported', screening:'Needs Screening', recon:'Recon', ready:'Ready', pending:'Pending', sold:'Sold', archived:'Archived' };
@@ -294,6 +295,12 @@ let allUnits = [];
 let currentStage = 'all';
 let currentView = location.pathname.endsWith('/list') ? 'list' : 'board';
 let listSort = { key: 'created_at', dir: 'desc' };
+
+function applyPermissions() {
+  document.querySelectorAll('[data-requires]').forEach(el => {
+    el.style.display = UN.can(el.dataset.requires) ? '' : 'none';
+  });
+}
 
 function parseMoneyInput(value) {
   const parsed = Number(String(value ?? '').replace(/[^0-9.-]/g, ''));
@@ -490,7 +497,7 @@ function renderList(units, el) {
               <td class="money">${UN.fmt.money(u.asking_price)}</td>
               <td class="money">${UN.fmt.gross(u.estimated_gross)}</td>
               <td style="color:var(--muted);font-size:0.8125rem">${UN.fmt.date(u.created_at)}</td>
-              <td><button class="unit-action" onclick="deleteUnit(event, ${u.id})">Delete</button></td>
+              <td>${UN.can('inventory_delete') ? `<button class="unit-action" onclick="deleteUnit(event, ${u.id})">Delete</button>` : ''}</td>
             </tr>`).join('')}
         </tbody>
       </table>
@@ -513,11 +520,13 @@ function sortList(key) {
 function makeCard(u) {
   const div = document.createElement('div');
   div.className = 'unit-card';
-  div.draggable = true;
+  div.draggable = UN.can('inventory_edit');
   div.dataset.unitId = u.id;
   div.dataset.stage = u.stage;
-  div.addEventListener('dragstart', onDragStart);
-  div.addEventListener('dragend', onDragEnd);
+  if (UN.can('inventory_edit')) {
+    div.addEventListener('dragstart', onDragStart);
+    div.addEventListener('dragend', onDragEnd);
+  }
   div.onclick = () => location.href = `/inventory/${u.id}`;
   const photo = u.photos?.[0];
   div.innerHTML = `
@@ -534,8 +543,8 @@ function makeCard(u) {
       <div class="unit-gross">${UN.fmt.gross(u.estimated_gross)}</div>
       <div class="unit-actions" onclick="event.stopPropagation()">
         <button class="unit-action" onclick="location.href='/inventory/${u.id}'">Open</button>
-        <button class="unit-action" onclick="quickStage(event, ${u.id}, '${u.stage}')">Move Stage</button>
-        <button class="unit-action" onclick="deleteUnit(event, ${u.id})">Delete</button>
+        ${UN.can('inventory_edit') ? `<button class="unit-action" onclick="quickStage(event, ${u.id}, '${u.stage}')">Move Stage</button>` : ''}
+        ${UN.can('inventory_delete') ? `<button class="unit-action" onclick="deleteUnit(event, ${u.id})">Delete</button>` : ''}
       </div>
     </div>`;
   return div;
@@ -564,6 +573,7 @@ function onDragLeave(e) {
 
 async function onDrop(e, stage) {
   e.preventDefault();
+  if (!UN.can('inventory_edit')) return;
   e.currentTarget.classList.remove('drag-over');
   const id = Number(e.dataTransfer.getData('text/plain'));
   const unit = allUnits.find(u => u.id === id);
@@ -573,10 +583,9 @@ async function onDrop(e, stage) {
 
 function emptyState() {
   return `<div class="empty-state">
-    <div class="empty-icon">🚗</div>
     <h3>No units found</h3>
     <p>Add your first unit to get started.</p>
-    <a href="/inventory/new" class="btn btn-primary" style="margin-top:16px">+ Add Unit</a>
+    ${UN.can('inventory_add') ? '<a href="/inventory/new" class="btn btn-primary" style="margin-top:16px">+ Add Unit</a>' : ''}
   </div>`;
 }
 
@@ -597,6 +606,7 @@ function setView(view) {
 
 async function quickStage(e, id, current) {
   e.stopPropagation();
+  if (!UN.can('inventory_edit')) return toast('You do not have access to move inventory stages', 'err');
   const stages = ['acquired','transport','screening','recon','ready','pending','sold','archived'];
   const idx = stages.indexOf(current);
   const next = stages[(idx + 1) % stages.length];
@@ -639,6 +649,7 @@ async function moveUnitToStage(id, next) {
 
 async function deleteUnit(e, id) {
   e.stopPropagation();
+  if (!UN.can('inventory_delete')) return toast('You do not have access to delete inventory', 'err');
   const unit = allUnits.find(u => u.id === id);
   const label = unit ? `${unit.year || ''} ${unit.make || ''} ${unit.model || ''}`.trim() : 'this unit';
   if (!confirm(`Delete ${label}? This permanently removes it from inventory.`)) return;
@@ -650,6 +661,7 @@ async function deleteUnit(e, id) {
 }
 
 function exportInventory() {
+  if (!UN.can('inventory_export')) return toast('You do not have access to export inventory', 'err');
   const params = new URLSearchParams();
   const search = document.getElementById('searchInput')?.value.trim();
   if (currentStage && currentStage !== 'all') params.set('stage', currentStage);

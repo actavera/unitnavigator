@@ -240,7 +240,7 @@
     <div class="section-card recon-card" id="reconSection" style="display:none;">
       <div class="section-header">
         <span class="section-title">Recon Repairs</span>
-        <button class="btn btn-ghost btn-sm" onclick="addRepairItem()">+ Add Repair</button>
+        <button class="btn btn-ghost btn-sm" data-requires="inventory_pricing" onclick="addRepairItem()">+ Add Repair</button>
       </div>
       <div class="section-body" id="reconPanel"></div>
     </div>
@@ -249,7 +249,7 @@
     <div class="section-card">
       <div class="section-header">
         <span class="section-title">Photos</span>
-        <label class="btn btn-ghost btn-sm" style="cursor:pointer;">
+        <label class="btn btn-ghost btn-sm" data-requires="inventory_edit" style="cursor:pointer;">
           + Add Photos
           <input type="file" accept="image/*" multiple style="display:none" onchange="uploadPhotos(this.files)">
         </label>
@@ -266,15 +266,15 @@
       <div class="section-header">
         <span class="section-title">Vehicle Details</span>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <button class="btn btn-ghost btn-sm" id="generateDescriptionBtn" onclick="generateDescription()">Generate Description</button>
-          <button class="btn btn-ghost btn-sm" id="editToggle" onclick="toggleEdit()">Edit</button>
+          <button class="btn btn-ghost btn-sm" id="generateDescriptionBtn" data-requires="inventory_edit" onclick="generateDescription()">Generate Description</button>
+          <button class="btn btn-ghost btn-sm" id="editToggle" data-requires="inventory_edit" onclick="toggleEdit()">Edit</button>
         </div>
       </div>
       <div class="section-body" id="detailsPanel"></div>
     </div>
 
     <!-- Activity Log -->
-    <div class="section-card">
+    <div class="section-card" data-requires="inventory_pricing">
       <div class="section-header"><span class="section-title">Activity</span></div>
       <div class="section-body" id="activityLog">
         <div class="text-muted text-sm">No activity yet.</div>
@@ -290,19 +290,19 @@
     <div class="section-card">
       <div class="section-header">
         <span class="section-title">Cost Stack</span>
-        <button class="btn btn-ghost btn-sm" id="editCostBtn" onclick="toggleCostEdit()">Edit</button>
+        <button class="btn btn-ghost btn-sm" id="editCostBtn" data-requires="inventory_pricing" onclick="toggleCostEdit()">Edit</button>
       </div>
       <div class="section-body" id="costPanel"></div>
     </div>
 
     <!-- Profit Position -->
-    <div class="section-card">
+    <div class="section-card" data-requires="inventory_pricing">
       <div class="section-header"><span class="section-title">Profit Position</span></div>
       <div class="section-body" id="profitPanel"></div>
     </div>
 
     <!-- Stage -->
-    <div class="section-card">
+    <div class="section-card" data-requires="inventory_edit">
       <div class="section-header"><span class="section-title">Stage</span></div>
       <div class="section-body">
         <div class="stage-grid" id="stageGrid"></div>
@@ -313,9 +313,9 @@
     <div class="section-card">
       <div class="section-header"><span class="section-title">Actions</span></div>
       <div class="section-body" style="display:flex;flex-direction:column;gap:10px;">
-        <a href="/paperwork/start" id="startDealBtn" class="btn btn-primary w-full" style="justify-content:center;">Start a Deal</a>
-        <button class="btn btn-ghost w-full" onclick="archiveUnit()" style="justify-content:center;">Archive Unit</button>
-        <button class="btn btn-danger w-full" onclick="deleteUnit()" style="justify-content:center;">Delete Unit</button>
+        <a href="/paperwork/start" id="startDealBtn" class="btn btn-primary w-full" data-requires="deals_manage" style="justify-content:center;">Start a Deal</a>
+        <button class="btn btn-ghost w-full" data-requires="inventory_edit" onclick="archiveUnit()" style="justify-content:center;">Archive Unit</button>
+        <button class="btn btn-danger w-full" data-requires="inventory_delete" onclick="deleteUnit()" style="justify-content:center;">Delete Unit</button>
       </div>
     </div>
 
@@ -333,6 +333,7 @@
 <script>
 UN.requireAuth();
 UN.renderNav();
+applyPermissions();
 
 const unitId = location.pathname.split('/').pop();
 document.getElementById('startDealBtn').href = `/paperwork/start?unit_id=${encodeURIComponent(unitId)}`;
@@ -356,6 +357,12 @@ let unit = null;
 let editMode = false;
 let editCostMode = false;
 let photoIndex = 0;
+
+function applyPermissions() {
+  document.querySelectorAll('[data-requires]').forEach(el => {
+    el.style.display = UN.can(el.dataset.requires) ? '' : 'none';
+  });
+}
 
 function parseMoneyInput(value) {
   const parsed = Number(String(value ?? '').replace(/[^0-9.-]/g, ''));
@@ -393,6 +400,7 @@ async function load() {
 }
 
 function render(activity) {
+  applyPermissions();
   renderHero();
   renderPhotos();
   renderDetails();
@@ -456,7 +464,7 @@ function renderPhotos() {
   strip.innerHTML = unit.photos.map((p, i) => `
     <div class="thumb-item${i === photoIndex ? ' active' : ''}" onclick="heroGo(${i})">
       <img src="${p}" alt="Photo ${i+1}">
-      <button class="thumb-remove" onclick="removePhoto(event,'${p}')">✕</button>
+      ${UN.can('inventory_edit') ? `<button class="thumb-remove" onclick="removePhoto(event,'${p}')">x</button>` : ''}
     </div>`).join('');
 }
 
@@ -553,6 +561,7 @@ function editField(label, id, type, val, style='') {
 }
 
 function toggleEdit() {
+  if (!UN.can('inventory_edit')) return toast('You do not have access to edit inventory details', 'err');
   editMode = !editMode;
   document.getElementById('editToggle').textContent = editMode ? 'Cancel' : 'Edit';
   renderDetails();
@@ -585,6 +594,7 @@ async function saveDetails() {
 }
 
 async function generateDescription() {
+  if (!UN.can('inventory_edit')) return toast('You do not have access to edit descriptions', 'err');
   const textarea = document.getElementById('fNotes');
   const currentDescription = textarea ? textarea.value.trim() : String(unit.notes || '').trim();
   if (currentDescription && !confirm('Replace the current description with a new AI description?')) return;
@@ -651,8 +661,7 @@ function renderReconRepairs() {
       ${items.length ? items.map(repairRow).join('') : `<div class="text-muted text-sm" style="padding:12px 0;">No repair lines yet. Add the first repair to build the Recon work list.</div>`}
     </div>
     <div class="repair-actions">
-      <button class="btn btn-ghost btn-sm" onclick="addRepairItem()">+ Add Repair</button>
-      <button class="btn btn-primary btn-sm" onclick="saveRepairItems()">Save Repairs</button>
+      ${UN.can('inventory_pricing') ? '<button class="btn btn-ghost btn-sm" onclick="addRepairItem()">+ Add Repair</button><button class="btn btn-primary btn-sm" onclick="saveRepairItems()">Save Repairs</button>' : ''}
     </div>
   `;
 }
@@ -670,6 +679,7 @@ function repairRow(item, i) {
 }
 
 function addRepairItem() {
+  if (!UN.can('inventory_pricing')) return toast('You do not have access to change repair costs', 'err');
   unit.repair_items = [...repairItems(), { description: '', cost: 0, status: 'searching' }];
   renderReconRepairs();
 }
@@ -697,6 +707,7 @@ function previewRepairTotal() {
 }
 
 async function saveRepairItems() {
+  if (!UN.can('inventory_pricing')) return toast('You do not have access to change repair costs', 'err');
   try {
     const data = await UN.api('PUT', `/api/inventory/${unitId}`, { repair_items: collectRepairItems() });
     unit = data.unit;
@@ -749,6 +760,7 @@ function previewCostTotal() {
 }
 
 function toggleCostEdit() {
+  if (!UN.can('inventory_pricing')) return toast('You do not have access to edit costs', 'err');
   editCostMode = !editCostMode;
   document.getElementById('editCostBtn').textContent = editCostMode ? 'Cancel' : 'Edit';
   renderCosts();
@@ -806,6 +818,7 @@ function renderProfit() {
 }
 
 async function savePricing() {
+  if (!UN.can('inventory_pricing')) return toast('You do not have access to update pricing', 'err');
   const body = {
     asking_price:  Number(document.getElementById('pAskEdit').value) || null,
     minimum_price: Number(document.getElementById('pMinEdit').value) || null,
@@ -831,6 +844,8 @@ function renderStages() {
 }
 
 async function setStage(stage) {
+  if (!UN.can('inventory_edit')) return toast('You do not have access to move inventory stages', 'err');
+  if (stage === 'sold' && !UN.can('inventory_pricing')) return toast('You do not have access to mark inventory sold', 'err');
   if (stage === unit.stage) return;
   if (stage === 'archived' && !confirm('Archive this unit?')) return;
   const body = { stage };
@@ -882,6 +897,7 @@ async function archiveUnit() {
 }
 
 async function deleteUnit() {
+  if (!UN.can('inventory_delete')) return toast('You do not have access to delete inventory', 'err');
   if (!confirm('Delete this unit permanently? This is not an archive.')) return;
   try {
     await UN.api('DELETE', `/api/inventory/${unitId}`);

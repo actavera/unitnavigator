@@ -540,6 +540,19 @@ let pendingPhotos = []; // File objects for upload after unit creation
 let decoded = null;
 let priceSuggestion = null;
 
+if (!UN.can('inventory_add')) {
+  toast('You do not have access to add inventory', 'err');
+  setTimeout(() => location.href = '/inventory', 800);
+}
+if (!UN.can('inventory_pricing')) {
+  document.getElementById('priceSuggestionCard').style.display = 'none';
+  document.getElementById('grossPreview').style.display = 'none';
+  document.getElementById('pAsk').disabled = true;
+  document.getElementById('pMin').disabled = true;
+  document.getElementById('pAsk').placeholder = 'Restricted';
+  document.getElementById('pMin').placeholder = 'Restricted';
+}
+
 function parseMoneyInput(value) {
   const parsed = Number(String(value ?? '').replace(/[^0-9.-]/g, ''));
   return Number.isFinite(parsed) ? parsed : 0;
@@ -571,7 +584,7 @@ function goStep(n) {
   });
   currentStep = n;
   document.getElementById(`panel-${n}`).classList.add('active');
-  if (n === 2) loadPriceSuggestion();
+  if (n === 2 && UN.can('inventory_pricing')) loadPriceSuggestion();
   if (n === 4) buildReview();
   window.scrollTo(0, 0);
 }
@@ -935,6 +948,7 @@ function renderPriceSuggestion(data) {
 }
 
 async function loadPriceSuggestion() {
+  if (!UN.can('inventory_pricing')) return;
   setPriceSuggestionLoading();
   try {
     renderPriceSuggestion(await UN.api('GET', `/api/inventory/price-suggestion?${priceSuggestionQuery()}`));
@@ -1028,6 +1042,15 @@ function buildReview() {
   const source = document.getElementById('fSource').value;
   const cost = getTotal();
   const ask = Number(document.getElementById('pAsk').value) || null;
+  const pricingHtml = UN.can('inventory_pricing') ? `
+      <div class="flex justify-between" style="font-size:0.875rem;color:var(--text-2);">
+        <span>Asking Price</span><span>${UN.fmt.money(ask)}</span>
+      </div>
+      <div class="flex justify-between" style="font-size:0.875rem;margin-top:6px;">
+        <span style="color:var(--text-2);">Est. Gross</span>
+        <span>${ask ? UN.fmt.gross(ask - cost) : '<span class="money-muted">-</span>'}</span>
+      </div>` : `
+      <div style="font-size:0.875rem;color:var(--muted);">Pricing is restricted for this login.</div>`;
 
   document.getElementById('reviewContent').innerHTML = `
     <div class="card" style="margin-bottom:16px;">
@@ -1049,13 +1072,7 @@ function buildReview() {
         <span class="font-600">Acquisition Cost</span>
         <span class="font-600" style="color:var(--primary);font-size:1.125rem;">${UN.fmt.money(cost)}</span>
       </div>
-      <div class="flex justify-between" style="font-size:0.875rem;color:var(--text-2);">
-        <span>Asking Price</span><span>${UN.fmt.money(ask)}</span>
-      </div>
-      <div class="flex justify-between" style="font-size:0.875rem;margin-top:6px;">
-        <span style="color:var(--text-2);">Est. Gross</span>
-        <span>${ask ? UN.fmt.gross(ask - cost) : '<span class="money-muted">—</span>'}</span>
-      </div>
+      ${pricingHtml}
     </div>
   `;
 }
@@ -1084,16 +1101,20 @@ async function submit() {
     mileage:           Number(document.getElementById('fMileage').value) || 0,
     stage:             initialStage,
     acquisition_cost:  Number(document.getElementById('cAcq').value) || 0,
-    transport_cost:    0,
-    repair_items:      repairItems,
-    detail_cost:       0,
-    other_cost:        0,
-    asking_price:      Number(document.getElementById('pAsk').value) || null,
-    minimum_price:     Number(document.getElementById('pMin').value) || null,
     acquisition_source:document.getElementById('fSource').value.trim() || null,
     acquisition_date:  document.getElementById('fAcqDate').value || null,
     notes:             document.getElementById('fNotes').value.trim() || null,
   };
+  if (UN.can('inventory_pricing')) {
+    Object.assign(body, {
+      transport_cost: 0,
+      repair_items: repairItems,
+      detail_cost: 0,
+      other_cost: 0,
+      asking_price: Number(document.getElementById('pAsk').value) || null,
+      minimum_price: Number(document.getElementById('pMin').value) || null,
+    });
+  }
 
   try {
     const { unit } = await UN.api('POST', '/api/inventory', body);

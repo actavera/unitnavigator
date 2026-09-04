@@ -1,7 +1,7 @@
 'use strict';
 const router = require('express').Router();
 const db = require('../database');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requirePermission } = require('../middleware/auth');
 
 const VALID_STATUSES = new Set(['pending', 'closed', 'dead', 'vehicle_changed']);
 const VALID_DEAL_TYPES = new Set(['we_finance', 'bhph', 'they_finance', 'cash']);
@@ -66,7 +66,7 @@ function splitName(name) {
   return { first_name: parts.slice(0, -1).join(' '), last_name: parts.at(-1) };
 }
 
-router.get('/', requireAuth, (req, res) => {
+router.get('/', ...requirePermission('deals_view'), (req, res) => {
   const { status, q } = req.query;
   let sql = dealSelect();
   const params = [req.user.dealership_id];
@@ -96,7 +96,7 @@ router.get('/', requireAuth, (req, res) => {
   res.json({ deals });
 });
 
-router.post('/', requireAuth, (req, res) => {
+router.post('/', ...requirePermission('deals_manage'), (req, res) => {
   const body = req.body || {};
   const dealType = VALID_DEAL_TYPES.has(body.deal_type) ? body.deal_type : 'they_finance';
   const customerBody = body.customer || {};
@@ -149,7 +149,7 @@ router.post('/', requireAuth, (req, res) => {
   res.status(201).json({ deal: enrichDeal(created) });
 });
 
-router.get('/export/contacts.csv', requireAuth, (req, res) => {
+router.get('/export/contacts.csv', ...requirePermission('reports_view'), (req, res) => {
   const rows = db.prepare(`
     SELECT DISTINCT
       COALESCE(c.first_name, '') AS first_name,
@@ -175,7 +175,7 @@ router.get('/export/contacts.csv', requireAuth, (req, res) => {
   res.send(csv);
 });
 
-router.post('/:id/email-reminder', requireAuth, (req, res) => {
+router.post('/:id/email-reminder', ...requirePermission('deals_manage'), (req, res) => {
   const deal = db.prepare(`${dealSelect()} AND d.id = ?`).get(req.user.dealership_id, req.params.id);
   if (!deal) return res.status(404).json({ error: 'Deal not found' });
   const enriched = enrichDeal(deal);
@@ -199,7 +199,7 @@ router.post('/:id/email-reminder', requireAuth, (req, res) => {
   });
 });
 
-router.patch('/:id/status', requireAuth, (req, res) => {
+router.patch('/:id/status', ...requirePermission('deals_manage'), (req, res) => {
   const { status } = req.body;
   if (!VALID_STATUSES.has(status)) return res.status(400).json({ error: 'Invalid deal status' });
 
@@ -216,7 +216,7 @@ router.patch('/:id/status', requireAuth, (req, res) => {
   res.json({ deal: enrichDeal(updated) });
 });
 
-router.patch('/:id/follow-up', requireAuth, (req, res) => {
+router.patch('/:id/follow-up', ...requirePermission('deals_manage'), (req, res) => {
   const { next_follow_up_at } = req.body;
   const deal = db.prepare('SELECT * FROM deals WHERE id = ? AND dealership_id = ?')
     .get(req.params.id, req.user.dealership_id);
@@ -230,7 +230,7 @@ router.patch('/:id/follow-up', requireAuth, (req, res) => {
   res.json({ deal: enrichDeal(updated) });
 });
 
-router.delete('/:id', requireAuth, (req, res) => {
+router.delete('/:id', ...requirePermission('deals_manage'), (req, res) => {
   const deal = db.prepare('SELECT * FROM deals WHERE id = ? AND dealership_id = ?')
     .get(req.params.id, req.user.dealership_id);
   if (!deal) return res.status(404).json({ error: 'Deal not found' });

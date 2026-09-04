@@ -140,6 +140,7 @@ const staticPages = {
   '/admin':         'admin.html',
   '/admin/sold-vehicle-data': 'admin-sold-data.html',
   '/settings':      'settings.html',
+  '/settings/users':'user-access.html',
   '/paperwork/start':'paperwork-start.html',
   '/inventory':     'inventory.html',
   '/inventory/list':'inventory.html',

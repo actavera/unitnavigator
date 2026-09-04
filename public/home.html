@@ -52,7 +52,7 @@
     </div>
 
     <div class="home-actions" aria-label="Primary workflows">
-      <a class="home-action-card green" href="/credit/new">
+      <a class="home-action-card green" href="/credit/new" data-requires="credit_pull">
         <span class="action-orb">
           <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M9 29a15 15 0 1 1 30 0"/><path d="M24 29l8-10"/><path d="M16 29h-3m22 0h-3M16.9 17.9l-2.1-2.1M31.1 17.9l2.1-2.1M24 14v-3"/><circle cx="24" cy="29" r="2"/></svg>
         </span>
@@ -61,7 +61,7 @@
         <span class="action-link">Start Now <span>→</span></span>
       </a>
 
-      <a class="home-action-card blue" href="/inventory/new">
+      <a class="home-action-card blue" href="/inventory/new" data-requires="inventory_add">
         <span class="action-orb">
           <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M11 29h26l-3-10a5 5 0 0 0-5-4H19a5 5 0 0 0-5 4l-3 10Z"/><path d="M14 29v6m20-6v6M18 35h12"/><circle cx="17" cy="29" r="2"/><circle cx="31" cy="29" r="2"/><path d="M35 17h6m-3-3v6"/></svg>
         </span>
@@ -70,7 +70,7 @@
         <span class="action-link">Add Vehicle <span>→</span></span>
       </a>
 
-      <a class="home-action-card purple" href="/inventory">
+      <a class="home-action-card purple" href="/inventory" data-requires="inventory_view">
         <span class="action-orb">
           <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M11 29h26l-3-10a5 5 0 0 0-5-4H19a5 5 0 0 0-5 4l-3 10Z"/><path d="M14 29v6m20-6v6M18 35h12"/><circle cx="17" cy="29" r="2"/><circle cx="31" cy="29" r="2"/></svg>
         </span>
@@ -79,7 +79,7 @@
         <span class="action-link">View Inventory <span>→</span></span>
       </a>
 
-      <a class="home-action-card orange" href="/deals">
+      <a class="home-action-card orange" href="/deals" data-requires="deals_view">
         <span class="action-orb">
           <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M17 26l5 5a4 4 0 0 0 6 0l7-7"/><path d="M18 18l-5 5 12 12 12-12-5-5"/><path d="M21 21l5-5 6 6"/></svg>
         </span>
@@ -88,7 +88,7 @@
         <span class="action-link">Open Deals <span>→</span></span>
       </a>
 
-      <a class="home-action-card cyan" href="/paperwork/start">
+      <a class="home-action-card cyan" href="/paperwork/start" data-requires="paperwork_manage">
         <span class="action-orb">
           <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M15 8h14l6 6v26H15Z"/><path d="M29 8v7h6"/><path d="M20 23h10M20 29h10M20 35h6"/></svg>
         </span>
@@ -103,6 +103,7 @@
       <a href="/inventory" class="metric blue"><span>▣</span><div><p>Units Missing Photos</p><strong id="mMissingPhotos">0</strong><small>Ready to clean up</small></div></a>
       <a href="/inventory" class="metric purple"><span>✓</span><div><p>Missing Acquisition Cost</p><strong id="mMissingCost">0</strong><small>Profit needs cost stack</small></div></a>
       <a href="/paperwork/start" class="metric orange"><span>!</span><div><p>Paperwork Incomplete</p><strong id="mPaperwork">0</strong><small>Finish started packets</small></div></a>
+      <a href="/settings/users" class="metric blue" id="staleUsersMetric" style="display:none;"><span>U</span><div><p>Stale User Logins</p><strong id="mStaleUsers">0</strong><small>Review old access</small></div></a>
     </section>
   </section>
 </main>
@@ -113,6 +114,7 @@
 <script>
 if (UN.requireAuth()) {
   UN.renderNav();
+  applyPermissions();
   const user = UN.getUser();
   document.getElementById('firstName').textContent = (user?.name || 'Alex').split(' ')[0];
   loadDashboard();
@@ -121,6 +123,12 @@ if (UN.requireAuth()) {
 let dashboardAlerts = [];
 let activeAlert = null;
 let dashboardCustomers = [];
+
+function applyPermissions() {
+  document.querySelectorAll('[data-requires]').forEach(el => {
+    el.style.display = UN.can(el.dataset.requires) ? '' : 'none';
+  });
+}
 
 async function loadDashboard() {
   try {
@@ -142,6 +150,9 @@ function renderMetrics(metrics) {
   document.getElementById('mMissingPhotos').textContent = metrics.units_missing_photos || 0;
   document.getElementById('mMissingCost').textContent = metrics.missing_acquisition_cost || 0;
   document.getElementById('mPaperwork').textContent = metrics.paperwork_incomplete || 0;
+  const staleCount = metrics.stale_user_logins || 0;
+  document.getElementById('mStaleUsers').textContent = staleCount;
+  document.getElementById('staleUsersMetric').style.display = UN.can('users_manage') && staleCount ? '' : 'none';
 }
 
 function showNextAlert() {
@@ -152,7 +163,11 @@ function showNextAlert() {
     modal.innerHTML = '';
     return;
   }
-  modal.innerHTML = activeAlert.type === 'deal' ? dealAlertHtml(activeAlert) : unitAlertHtml(activeAlert);
+  modal.innerHTML = activeAlert.type === 'deal'
+    ? dealAlertHtml(activeAlert)
+    : activeAlert.type === 'user'
+      ? userAlertHtml(activeAlert)
+      : unitAlertHtml(activeAlert);
   modal.classList.add('show');
 }
 
@@ -223,6 +238,28 @@ function unitAlertHtml(alert) {
   `;
 }
 
+function userAlertHtml(alert) {
+  return `
+    <section class="attention-card">
+      <div class="attention-head">
+        <h2>Review old user access.</h2>
+        <p>${esc(alert.name)} has not logged in for ${alert.age_days} days. Revoke access if they no longer need this login.</p>
+      </div>
+      <div class="attention-body">
+        <div class="attention-fact">
+          <div class="attention-icon">U</div>
+          <div><strong>${esc(alert.name)}</strong><span>${esc(alert.email)} · ${esc(alert.role || 'staff')}</span></div>
+        </div>
+        <div class="attention-actions">
+          <button class="btn btn-ghost" onclick="resolveUserAlert('keep_active')">Keep Active</button>
+          <button class="btn btn-danger" onclick="resolveUserAlert('revoke')">Revoke Access</button>
+          <a class="btn btn-primary wide" href="/settings/users" style="justify-content:center;">Open User Access</a>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
 function customerOptions() {
   if (!dashboardCustomers.length) return '<option value="">No customers yet</option>';
   return dashboardCustomers.map(c => `<option value="${c.id}">${esc(c.name)}${c.phone ? ' - ' + esc(c.phone) : ''}</option>`).join('');
@@ -256,9 +293,19 @@ async function resolveUnitAlert() {
   }
 }
 
+async function resolveUserAlert(action) {
+  try {
+    await UN.api('POST', `/api/dashboard/user-alert/${activeAlert.id}/action`, { action });
+    await refreshAfterAlert();
+  } catch (err) {
+    toast(err.message, 'err');
+  }
+}
+
 async function refreshAfterAlert() {
   const dashboard = await UN.api('GET', '/api/dashboard');
   renderMetrics(dashboard.metrics || {});
+  dashboardAlerts = dashboard.alerts || [];
   showNextAlert();
 }
 

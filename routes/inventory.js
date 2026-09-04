@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const db = require('../database');
-const { requireAuth, requireRole } = require('../middleware/auth');
+const { requireAuth, requireRole, requirePermission, hasPermission } = require('../middleware/auth');
 const { suggestedRetailPrice } = require('../services/pricing');
 const { generateVehicleDescription } = require('../services/vehicleDescription');
 
@@ -19,6 +19,17 @@ const storage = multer.diskStorage({
 const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
 
 const REPAIR_STATUSES = new Set(['searching','ordered','working','completed']);
+const PRICING_FIELDS = new Set([
+  'acquisition_cost',
+  'transport_cost',
+  'repair_cost',
+  'repair_items',
+  'detail_cost',
+  'other_cost',
+  'asking_price',
+  'minimum_price',
+  'sold_price',
+]);
 
 function parseRepairItems(value) {
   if (Array.isArray(value)) return value;
@@ -634,7 +645,7 @@ router.get('/decode-vin/:vin', requireAuth, async (req, res) => {
 });
 
 // ── List units ──────────────────────────────────────────────────────────────
-router.get('/', requireAuth, (req, res) => {
+router.get('/', ...requirePermission('inventory_view'), (req, res) => {
   const { stage, search } = req.query;
   let sql = 'SELECT * FROM units WHERE dealership_id = ?';
   const params = [req.user.dealership_id];
@@ -655,6 +666,7 @@ router.get('/', requireAuth, (req, res) => {
 });
 
 router.get('/export', requireAuth, (req, res) => {
+  if (!hasPermission(req.user, 'inventory_export')) return res.status(403).json({ error: 'You do not have access to export inventory' });
   const { stage, search, ids } = req.query;
   let sql = 'SELECT * FROM units WHERE dealership_id = ?';
   const params = [req.user.dealership_id];
@@ -700,7 +712,7 @@ router.get('/export', requireAuth, (req, res) => {
 });
 
 // ── Bulk import units from CSV/other systems ───────────────────────────────
-router.post('/import', requireAuth, async (req, res) => {
+router.post('/import', ...requirePermission('inventory_import'), async (req, res) => {
   const rows = Array.isArray(req.body.rows) ? req.body.rows : [];
   if (!rows.length) return res.status(400).json({ error: 'No import rows received' });
   if (rows.length > 500) return res.status(400).json({ error: 'Import is limited to 500 units at a time' });
@@ -718,7 +730,7 @@ router.post('/import', requireAuth, async (req, res) => {
   res.status(201).json(results);
 });
 
-router.post('/import/dealercenter-sftp/preview', requireAuth, (req, res) => {
+router.post('/import/dealercenter-sftp/preview', ...requirePermission('inventory_import'), (req, res) => {
   const dealershipId = targetDealershipId(req);
   const dealership = db.prepare('SELECT * FROM dealerships WHERE id = ?').get(dealershipId);
   if (!dealership) return res.status(404).json({ error: 'Dealership not found' });
@@ -739,7 +751,7 @@ router.post('/import/dealercenter-sftp/preview', requireAuth, (req, res) => {
   });
 });
 
-router.post('/import/dealercenter-sftp/import', requireAuth, (req, res) => {
+router.post('/import/dealercenter-sftp/import', ...requirePermission('inventory_import'), (req, res) => {
   const dealershipId = targetDealershipId(req);
   const dealership = db.prepare('SELECT * FROM dealerships WHERE id = ?').get(dealershipId);
   if (!dealership) return res.status(404).json({ error: 'Dealership not found' });
@@ -764,7 +776,7 @@ router.post('/import/dealercenter-sftp/import', requireAuth, (req, res) => {
 });
 
 // ── Match public website photos to CSV/import rows ─────────────────────────
-router.post('/import/website-photos', requireAuth, async (req, res) => {
+router.post('/import/website-photos', ...requirePermission('inventory_import'), async (req, res) => {
   const websiteUrl = cleanText(req.body.website_url || req.body.websiteUrl);
   const rows = Array.isArray(req.body.rows) ? req.body.rows : [];
   if (!websiteUrl) return res.status(400).json({ error: 'Dealer website URL is required' });
@@ -827,7 +839,7 @@ router.post('/import/website-photos', requireAuth, async (req, res) => {
   });
 });
 
-router.get('/price-suggestion', requireAuth, (req, res) => {
+router.get('/price-suggestion', ...requirePermission('inventory_pricing'), (req, res) => {
   const suggestion = suggestedRetailPrice(db, {
     year: req.query.year,
     make: req.query.make,
@@ -843,7 +855,7 @@ router.get('/price-suggestion', requireAuth, (req, res) => {
   });
 });
 
-router.post('/description-suggestion', requireAuth, async (req, res) => {
+router.post('/description-suggestion', ...requirePermission('inventory_edit'), async (req, res) => {
   try {
     const description = await generateVehicleDescription({
       year: req.body.year,
@@ -861,7 +873,7 @@ router.post('/description-suggestion', requireAuth, async (req, res) => {
   }
 });
 
-router.post('/:id/description-suggestion', requireAuth, async (req, res) => {
+router.post('/:id/description-suggestion', ...requirePermission('inventory_edit'), async (req, res) => {
   const unit = db.prepare('SELECT * FROM units WHERE id = ? AND dealership_id = ?')
     .get(req.params.id, req.user.dealership_id);
   if (!unit) return res.status(404).json({ error: 'Unit not found' });
@@ -875,7 +887,7 @@ router.post('/:id/description-suggestion', requireAuth, async (req, res) => {
 });
 
 // ── Get single unit ─────────────────────────────────────────────────────────
-router.get('/:id', requireAuth, (req, res) => {
+router.get('/:id', ...requirePermission('inventory_view'), (req, res) => {
   const unit = db.prepare('SELECT * FROM units WHERE id = ? AND dealership_id = ?')
     .get(req.params.id, req.user.dealership_id);
   if (!unit) return res.status(404).json({ error: 'Unit not found' });
@@ -897,7 +909,13 @@ router.get('/:id', requireAuth, (req, res) => {
 });
 
 // ── Create unit ─────────────────────────────────────────────────────────────
-router.post('/', requireAuth, (req, res) => {
+router.post('/', ...requirePermission('inventory_add'), (req, res) => {
+  const restrictedCreatePricingFields = new Set([...PRICING_FIELDS].filter(key => key !== 'acquisition_cost'));
+  const includesPricing = Object.keys(req.body || {}).some(key => restrictedCreatePricingFields.has(key) && req.body[key] !== undefined && req.body[key] !== null && req.body[key] !== '');
+  if (includesPricing && !hasPermission(req.user, 'inventory_pricing')) {
+    return res.status(403).json({ error: 'You do not have access to add or change inventory pricing' });
+  }
+
   const {
     vin, stock_number, year, make, model, trim, body_style, color, mileage,
     acquisition_cost, transport_cost, repair_cost, detail_cost, other_cost,
@@ -943,6 +961,16 @@ router.post('/', requireAuth, (req, res) => {
 
 // ── Update unit ─────────────────────────────────────────────────────────────
 router.put('/:id', requireAuth, (req, res) => {
+  const keys = Object.keys(req.body || {});
+  const touchesPricing = keys.some(key => PRICING_FIELDS.has(key));
+  const touchesDetails = keys.some(key => !PRICING_FIELDS.has(key));
+  if (touchesPricing && !hasPermission(req.user, 'inventory_pricing')) {
+    return res.status(403).json({ error: 'You do not have access to add or change inventory pricing' });
+  }
+  if (touchesDetails && !hasPermission(req.user, 'inventory_edit')) {
+    return res.status(403).json({ error: 'You do not have access to edit inventory details' });
+  }
+
   const unit = db.prepare('SELECT * FROM units WHERE id = ? AND dealership_id = ?')
     .get(req.params.id, req.user.dealership_id);
   if (!unit) return res.status(404).json({ error: 'Unit not found' });
@@ -976,6 +1004,13 @@ router.put('/:id', requireAuth, (req, res) => {
 
 // ── Update stage ────────────────────────────────────────────────────────────
 router.patch('/:id/stage', requireAuth, (req, res) => {
+  if (!hasPermission(req.user, 'inventory_edit')) {
+    return res.status(403).json({ error: 'You do not have access to move inventory stages' });
+  }
+  if (req.body?.stage === 'sold' && !hasPermission(req.user, 'inventory_pricing')) {
+    return res.status(403).json({ error: 'You do not have access to mark inventory sold' });
+  }
+
   const { stage } = req.body;
   if (!VALID_STAGES.includes(stage)) return res.status(400).json({ error: 'Invalid stage' });
 
@@ -999,7 +1034,7 @@ router.patch('/:id/stage', requireAuth, (req, res) => {
 });
 
 // ── Permanently delete unit ────────────────────────────────────────────────
-router.delete('/:id', requireAuth, (req, res) => {
+router.delete('/:id', ...requirePermission('inventory_delete'), (req, res) => {
   const unit = db.prepare('SELECT * FROM units WHERE id = ? AND dealership_id = ?')
     .get(req.params.id, req.user.dealership_id);
   if (!unit) return res.status(404).json({ error: 'Unit not found' });
@@ -1021,7 +1056,7 @@ router.delete('/:id', requireAuth, (req, res) => {
 });
 
 // ── Upload photos ───────────────────────────────────────────────────────────
-router.post('/:id/photos', requireAuth, upload.array('photos', 20), (req, res) => {
+router.post('/:id/photos', ...requirePermission('inventory_edit'), upload.array('photos', 20), (req, res) => {
   const unit = db.prepare('SELECT * FROM units WHERE id = ? AND dealership_id = ?')
     .get(req.params.id, req.user.dealership_id);
   if (!unit) return res.status(404).json({ error: 'Unit not found' });
@@ -1036,7 +1071,7 @@ router.post('/:id/photos', requireAuth, upload.array('photos', 20), (req, res) =
 });
 
 // ── Delete a photo ──────────────────────────────────────────────────────────
-router.delete('/:id/photos', requireAuth, (req, res) => {
+router.delete('/:id/photos', ...requirePermission('inventory_edit'), (req, res) => {
   const { url } = req.body;
   const unit = db.prepare('SELECT * FROM units WHERE id = ? AND dealership_id = ?')
     .get(req.params.id, req.user.dealership_id);

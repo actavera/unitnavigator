@@ -5,22 +5,25 @@ const jwt = require('jsonwebtoken');
 const path = require('path');
 const fs = require('fs');
 const db = require('../database');
-const { JWT_SECRET } = require('../middleware/auth');
+const { JWT_SECRET, parsePermissions } = require('../middleware/auth');
 
 function signUser(user, dealership, extra = {}) {
+  const permissions = parsePermissions(user.permissions, user.role);
   return jwt.sign(
-    { id: user.id, name: user.name, email: user.email, role: user.role, dealership_id: user.dealership_id, ...extra },
+    { id: user.id, name: user.name, email: user.email, role: user.role, dealership_id: user.dealership_id, permissions, ...extra },
     JWT_SECRET,
     { expiresIn: extra.demo ? '8h' : '7d' }
   );
 }
 
 function userPayload(user, dealership, extra = {}) {
+  const permissions = parsePermissions(user.permissions, user.role);
   return {
     id: user.id,
     name: user.name,
     email: user.email,
     role: user.role,
+    permissions,
     dealership: dealership?.name,
     ...extra,
   };
@@ -94,6 +97,8 @@ router.post('/login', (req, res) => {
   if (dealership?.status === 'revoked') {
     return res.status(403).json({ error: 'This dealership has been revoked' });
   }
+  db.prepare("UPDATE users SET last_login_at = datetime('now') WHERE id = ?").run(user.id);
+  user.last_login_at = new Date().toISOString();
   const token = signUser(user, dealership);
   res.json({ token, user: userPayload(user, dealership) });
 });
@@ -126,8 +131,8 @@ router.post('/demo-login', (_req, res) => {
 
   const password = Math.random().toString(36).slice(2);
   const userInfo = db.prepare(`
-    INSERT INTO users (dealership_id, name, email, password_hash, role, status)
-    VALUES (?, ?, ?, ?, 'admin', 'active')
+    INSERT INTO users (dealership_id, name, email, password_hash, role, status, last_login_at)
+    VALUES (?, ?, ?, ?, 'admin', 'active', datetime('now'))
   `).run(
     dealershipId,
     'Demo Dealer',

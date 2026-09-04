@@ -1,10 +1,11 @@
 'use strict';
 const router = require('express').Router();
 const db = require('../database');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requirePermission, hasPermission } = require('../middleware/auth');
 
 const UNIT_STAGES = new Set(['acquired','transport','screening','recon','ready','pending','sold','archived']);
 const DEAL_ACTIONS = new Set(['still_pending','dead','vehicle_changed','closed']);
+const USER_ACTIONS = new Set(['keep_active','revoke']);
 
 function daysOld(value) {
   if (!value) return 0;
@@ -80,10 +81,34 @@ function getUnitAlerts(dealershipId) {
     }));
 }
 
-router.get('/', requireAuth, (req, res) => {
+function getStaleUserAlerts(req) {
+  if (!hasPermission(req.user, 'users_manage')) return [];
+  return db.prepare(`
+    SELECT id, name, email, role, last_login_at, created_at
+    FROM users
+    WHERE dealership_id = ?
+      AND status = 'active'
+      AND id != ?
+      AND datetime(COALESCE(last_login_at, created_at)) <= datetime('now', '-30 days')
+    ORDER BY COALESCE(last_login_at, created_at) ASC
+    LIMIT 10
+  `).all(req.user.dealership_id, req.user.id).map(row => ({
+    id: row.id,
+    type: 'user',
+    name: row.name,
+    email: row.email,
+    role: row.role,
+    last_login_at: row.last_login_at,
+    created_at: row.created_at,
+    age_days: daysOld(row.last_login_at || row.created_at),
+  }));
+}
+
+router.get('/', ...requirePermission('reports_view'), (req, res) => {
   const dealershipId = req.user.dealership_id;
   const dealAlerts = getDealAlerts(dealershipId);
   const unitAlerts = getUnitAlerts(dealershipId);
+  const staleUserAlerts = getStaleUserAlerts(req);
 
   const unitsMissingPhotos = db.prepare(`
     SELECT COUNT(*) AS count FROM units
@@ -112,12 +137,39 @@ router.get('/', requireAuth, (req, res) => {
       units_missing_photos: unitsMissingPhotos,
       missing_acquisition_cost: missingAcquisitionCost,
       paperwork_incomplete: paperworkIncomplete,
+      stale_user_logins: staleUserAlerts.length,
     },
-    alerts: [...dealAlerts, ...unitAlerts],
+    alerts: [...dealAlerts, ...unitAlerts, ...staleUserAlerts],
   });
 });
 
-router.post('/deal-alert/:id/action', requireAuth, (req, res) => {
+router.post('/user-alert/:id/action', ...requirePermission('users_manage'), (req, res) => {
+  const { action } = req.body;
+  if (!USER_ACTIONS.has(action)) return res.status(400).json({ error: 'Invalid user action' });
+  if (Number(req.params.id) === Number(req.user.id)) {
+    return res.status(400).json({ error: 'You cannot change your own login from this alert' });
+  }
+
+  const user = db.prepare('SELECT * FROM users WHERE id = ? AND dealership_id = ?')
+    .get(req.params.id, req.user.dealership_id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+
+  if (action === 'revoke') {
+    db.prepare("UPDATE users SET status = 'revoked' WHERE id = ? AND dealership_id = ?")
+      .run(req.params.id, req.user.dealership_id);
+  } else {
+    db.prepare("UPDATE users SET last_login_at = datetime('now') WHERE id = ? AND dealership_id = ?")
+      .run(req.params.id, req.user.dealership_id);
+  }
+
+  db.prepare(`INSERT INTO activity_logs (dealership_id, entity_type, entity_id, action, note, user_id)
+    VALUES (?, 'user', ?, ?, ?, ?)`)
+    .run(req.user.dealership_id, req.params.id, 'Stale user alert resolved', action, req.user.id);
+
+  res.json({ ok: true });
+});
+
+router.post('/deal-alert/:id/action', ...requirePermission('deals_manage'), (req, res) => {
   const { action } = req.body;
   if (!DEAL_ACTIONS.has(action)) return res.status(400).json({ error: 'Invalid deal action' });
 
@@ -152,6 +204,13 @@ router.post('/deal-alert/:id/action', requireAuth, (req, res) => {
 });
 
 router.post('/unit-alert/:id/action', requireAuth, (req, res) => {
+  if (!hasPermission(req.user, 'inventory_edit')) {
+    return res.status(403).json({ error: 'You do not have access to update inventory alerts' });
+  }
+  if ((req.body?.stage === 'sold' || req.body?.sold_price) && !hasPermission(req.user, 'inventory_pricing')) {
+    return res.status(403).json({ error: 'You do not have access to mark inventory sold' });
+  }
+
   const { stage, customer_id, sold_price } = req.body;
   if (stage && !UNIT_STAGES.has(stage)) return res.status(400).json({ error: 'Invalid inventory stage' });
 

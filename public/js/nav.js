@@ -48,6 +48,35 @@ const UN = {
   },
   setUser(u) { localStorage.setItem('un_user', JSON.stringify(u)); },
   isDemo() { return Boolean(UN.getUser()?.demo || UN.tokenPayload()?.demo); },
+  allPermissions: [
+    'inventory_view',
+    'inventory_add',
+    'inventory_edit',
+    'inventory_pricing',
+    'inventory_import',
+    'inventory_export',
+    'inventory_delete',
+    'deals_view',
+    'deals_manage',
+    'paperwork_manage',
+    'contracts_manage',
+    'reports_view',
+    'settings_manage',
+    'users_manage',
+    'credit_pull',
+  ],
+  defaultPermissions(role) {
+    if (role === 'super_admin' || role === 'admin') return [...UN.allPermissions];
+    if (role === 'manager') return [...UN.allPermissions];
+    return ['inventory_view', 'inventory_add', 'inventory_edit', 'deals_view', 'reports_view'];
+  },
+  can(permission) {
+    const user = UN.getUser() || UN.tokenPayload() || {};
+    if (!permission) return true;
+    if (user.role === 'super_admin' || user.role === 'admin') return true;
+    const permissions = Array.isArray(user.permissions) ? user.permissions : UN.defaultPermissions(user.role);
+    return permissions.includes(permission);
+  },
 
   headers() {
     const headers = { 'Content-Type': 'application/json' };
@@ -104,10 +133,11 @@ const UN = {
     if (!el) return;
     const initials = user?.name ? user.name.split(' ').map(n => n[0]).join('').slice(0,2).toUpperCase() : '?';
     const canSeeAdmin = user?.role === 'super_admin' || String(user?.email || '').toLowerCase() === 'admin@unitnavigator.com';
-    const canSeeSettings = ['super_admin', 'admin', 'manager'].includes(user?.role);
+    const canSeeSettings = UN.can('settings_manage');
     const adminLink = canSeeAdmin ? '<a class="nav-menu-item" href="/admin">Admin</a>' : '';
     const settingsLink = canSeeSettings ? '<a class="nav-menu-item" href="/settings">Dealership Settings</a>' : '';
-    const bulkImportLink = canSeeSettings ? '<a class="nav-menu-item" href="/inventory/import">Bulk Import Inventory</a>' : '';
+    const userAccessLink = UN.can('users_manage') ? '<a class="nav-menu-item" href="/settings/users">User Access</a>' : '';
+    const bulkImportLink = UN.can('inventory_import') ? '<a class="nav-menu-item" href="/inventory/import">Bulk Import Inventory</a>' : '';
     const demoBadge = user?.demo ? '<span class="demo-badge">Demo Mode</span>' : '';
     const clearDemoLink = user?.demo ? '<button class="nav-menu-item" type="button" onclick="UN.restartDemo()">Clear Demo Data</button>' : '';
     const logoutLabel = user?.demo ? 'Exit Demo' : 'Log out';
@@ -130,6 +160,7 @@ const UN = {
             <div class="nav-account-menu" role="menu">
               ${adminLink}
               ${settingsLink}
+              ${userAccessLink}
               ${bulkImportLink}
               ${clearDemoLink}
               <button class="nav-menu-item danger" type="button" onclick="UN.logout()">${logoutLabel}</button>

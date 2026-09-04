@@ -25,7 +25,9 @@ db.exec(`
     email TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     role TEXT DEFAULT 'staff' CHECK(role IN ('super_admin','admin','manager','staff')),
+    permissions TEXT DEFAULT NULL,
     status TEXT DEFAULT 'active' CHECK(status IN ('active','revoked')),
+    last_login_at TEXT DEFAULT NULL,
     created_at TEXT DEFAULT (datetime('now'))
   );
 
@@ -335,6 +337,12 @@ db.prepare('SELECT id, name, public_slug FROM dealerships').all().forEach(row =>
 
 const userSchema = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'").get()?.sql || '';
 const userColumns = db.prepare("PRAGMA table_info(users)").all().map(col => col.name);
+if (!userColumns.includes('permissions')) {
+  db.exec("ALTER TABLE users ADD COLUMN permissions TEXT DEFAULT NULL");
+}
+if (!userColumns.includes('last_login_at')) {
+  db.exec("ALTER TABLE users ADD COLUMN last_login_at TEXT DEFAULT NULL");
+}
 if (userSchema && (!userSchema.includes("'super_admin'") || !userColumns.includes('status'))) {
   db.exec(`
     PRAGMA foreign_keys = OFF;
@@ -346,13 +354,17 @@ if (userSchema && (!userSchema.includes("'super_admin'") || !userColumns.include
       email TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
       role TEXT DEFAULT 'staff' CHECK(role IN ('super_admin','admin','manager','staff')),
+      permissions TEXT DEFAULT NULL,
       status TEXT DEFAULT 'active' CHECK(status IN ('active','revoked')),
+      last_login_at TEXT DEFAULT NULL,
       created_at TEXT DEFAULT (datetime('now'))
     );
-    INSERT INTO users (id, dealership_id, name, email, password_hash, role, status, created_at)
+    INSERT INTO users (id, dealership_id, name, email, password_hash, role, permissions, status, last_login_at, created_at)
     SELECT id, dealership_id, name, email, password_hash,
       CASE WHEN role = 'admin' AND lower(email) = 'admin@unitnavigator.com' THEN 'super_admin' ELSE role END,
+      permissions,
       'active',
+      last_login_at,
       created_at
     FROM users_old_admin_migration;
     DROP TABLE users_old_admin_migration;

@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>User Access - Unit Navigator</title>
+  <script>(function(){var t=localStorage.getItem('un_theme')||'dark';document.documentElement.dataset.theme=t;})()</script>
+  <link rel="stylesheet" href="/css/main.css">
+  <style>
+    .page { max-width: 1180px; margin: 0 auto; padding: 28px 24px 56px; }
+    .page-head { display:flex; justify-content:space-between; align-items:flex-start; gap:18px; margin-bottom:22px; }
+    .page-title { font-size:2rem; font-weight:850; letter-spacing:-0.03em; }
+    .page-sub { color:var(--text-2); max-width:720px; margin-top:6px; line-height:1.45; }
+    .layout { display:grid; grid-template-columns: 390px 1fr; gap:18px; align-items:start; }
+    .panel { background:var(--s1); border:1px solid var(--border); border-radius:var(--r-lg); overflow:hidden; }
+    .panel-head { padding:18px 20px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; gap:12px; }
+    .panel-title { font-size:.88rem; font-weight:800; letter-spacing:.05em; text-transform:uppercase; }
+    .panel-body { padding:20px; }
+    .permission-group { border:1px solid var(--border); border-radius:var(--r); padding:14px; margin-top:12px; background:var(--s2); }
+    .permission-group h3 { font-size:.82rem; text-transform:uppercase; letter-spacing:.05em; margin-bottom:10px; color:var(--text-2); }
+    .check-row { display:flex; align-items:flex-start; gap:9px; padding:7px 0; color:var(--text); font-size:.9rem; line-height:1.3; }
+    .check-row input { margin-top:2px; width:16px; height:16px; }
+    .check-row span small { display:block; color:var(--muted); font-size:.75rem; margin-top:2px; }
+    .user-list { display:flex; flex-direction:column; gap:12px; }
+    .user-card { border:1px solid var(--border); border-radius:var(--r); background:var(--bg); padding:16px; }
+    .user-top { display:flex; justify-content:space-between; gap:14px; align-items:flex-start; }
+    .user-name { font-weight:800; font-size:1rem; }
+    .user-email { color:var(--muted); font-size:.84rem; margin-top:3px; }
+    .pill { display:inline-flex; align-items:center; border:1px solid var(--border-md); border-radius:999px; padding:4px 9px; font-size:.72rem; font-weight:800; color:var(--text-2); background:var(--s2); text-transform:uppercase; letter-spacing:.04em; }
+    .pill.revoked { color:var(--danger); border-color:rgba(248,113,113,.35); background:var(--red-bg); }
+    .perm-tags { display:flex; flex-wrap:wrap; gap:6px; margin-top:12px; }
+    .perm-tag { font-size:.72rem; color:var(--text-2); border:1px solid var(--border); border-radius:999px; padding:4px 8px; background:var(--s1); }
+    .user-actions { display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; }
+    .hidden { display:none !important; }
+    @media(max-width:900px) { .layout { grid-template-columns:1fr; } .page-head { flex-direction:column; } }
+  </style>
+</head>
+<body>
+<div id="nav-container"></div>
+
+<main class="page">
+  <div class="page-head">
+    <div>
+      <div class="page-title">User Access</div>
+      <p class="page-sub">Add dealership logins and control what each person can do. Use this for inventory-only staff, report-only users, managers, or people who should not touch pricing, APR, contracts, or settings.</p>
+    </div>
+    <a class="btn btn-ghost" href="/settings">Dealership Settings</a>
+  </div>
+
+  <div id="locked" class="empty-state hidden">
+    <h3>User access is restricted for this login.</h3>
+    <p>Ask an admin to give you User Access permission.</p>
+  </div>
+
+  <div class="layout" id="accessLayout" style="display:none;">
+    <section class="panel">
+      <div class="panel-head"><span class="panel-title" id="formTitle">Add User</span></div>
+      <div class="panel-body">
+        <div class="form-group" style="margin-bottom:14px;">
+          <label class="form-label">Name</label>
+          <input class="form-input" id="nameInput" placeholder="Jane Smith">
+        </div>
+        <div class="form-group" style="margin-bottom:14px;">
+          <label class="form-label">Email</label>
+          <input class="form-input" id="emailInput" type="email" placeholder="jane@dealer.com">
+        </div>
+        <div class="form-group" style="margin-bottom:14px;">
+          <label class="form-label">Temporary Password</label>
+          <input class="form-input" id="passwordInput" type="text" placeholder="At least 8 characters">
+          <p class="form-hint">Leave blank while editing unless you want to reset it.</p>
+        </div>
+        <div class="form-row form-row-2" style="margin-bottom:14px;">
+          <div class="form-group">
+            <label class="form-label">Role</label>
+            <select class="form-select" id="roleInput" onchange="applyRolePreset()">
+              <option value="staff">Staff</option>
+              <option value="manager">Manager</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Status</label>
+            <select class="form-select" id="statusInput">
+              <option value="active">Active</option>
+              <option value="revoked">Revoked</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="permissionsBox"></div>
+
+        <div style="display:flex;gap:8px;margin-top:18px;flex-wrap:wrap;">
+          <button class="btn btn-primary" id="saveBtn" onclick="saveUser()">Add User</button>
+          <button class="btn btn-ghost hidden" id="cancelBtn" onclick="resetForm()">Cancel</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <span class="panel-title">Dealership Users</span>
+        <button class="btn btn-ghost btn-sm" onclick="loadUsers()">Refresh</button>
+      </div>
+      <div class="panel-body">
+        <div class="user-list" id="userList"></div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<script src="/js/nav.js"></script>
+<script>
+UN.requireAuth();
+UN.renderNav();
+
+const GROUPS = [
+  {
+    title: 'Inventory',
+    permissions: [
+      ['inventory_view', 'View inventory', 'Can see vehicles and photos.'],
+      ['inventory_add', 'Add inventory', 'Can add new cars.'],
+      ['inventory_edit', 'Edit details/photos', 'Can edit vehicle info, descriptions, stages, and photos.'],
+      ['inventory_pricing', 'Pricing and costs', 'Can change asking price, acquisition cost, repairs, sold price, and see suggested pricing.'],
+      ['inventory_import', 'Import inventory', 'Can use CSV and DealerCenter imports.'],
+      ['inventory_export', 'Export inventory', 'Can download inventory CSVs.'],
+      ['inventory_delete', 'Delete inventory', 'Can permanently delete units.'],
+    ],
+  },
+  {
+    title: 'Deals & Paperwork',
+    permissions: [
+      ['deals_view', 'View deals', 'Can see deal lists and follow-ups.'],
+      ['deals_manage', 'Manage deals', 'Can start, update, close, or delete deals.'],
+      ['paperwork_manage', 'Build paperwork', 'Can generate official paperwork packets.'],
+      ['contracts_manage', 'Contracts and e-sign', 'Can export/send contracts for e-signature.'],
+      ['credit_pull', 'Credit pull', 'Can access credit intake and credit-pull workflows.'],
+    ],
+  },
+  {
+    title: 'Admin',
+    permissions: [
+      ['reports_view', 'Reports', 'Can see dashboard alerts and reports.'],
+      ['settings_manage', 'Dealer settings', 'Can change fees, APR options, domains, logos, and public-site settings.'],
+      ['users_manage', 'User access', 'Can add, revoke, and change employee permissions.'],
+    ],
+  },
+];
+
+const ROLE_PRESETS = {
+  admin: UN.allPermissions,
+  manager: UN.allPermissions,
+  staff: ['inventory_view', 'inventory_add', 'inventory_edit', 'deals_view', 'reports_view'],
+};
+
+const PERMISSION_LABELS = Object.fromEntries(GROUPS.flatMap(group => group.permissions.map(([key, label]) => [key, label])));
+let users = [];
+let editingId = null;
+
+function renderPermissions() {
+  document.getElementById('permissionsBox').innerHTML = GROUPS.map(group => `
+    <div class="permission-group">
+      <h3>${group.title}</h3>
+      ${group.permissions.map(([key, label, help]) => `
+        <label class="check-row">
+          <input type="checkbox" value="${key}" data-permission>
+          <span>${label}<small>${help}</small></span>
+        </label>
+      `).join('')}
+    </div>
+  `).join('');
+}
+
+function selectedPermissions() {
+  return Array.from(document.querySelectorAll('[data-permission]:checked')).map(input => input.value);
+}
+
+function setPermissions(list) {
+  const allowed = new Set(list || []);
+  document.querySelectorAll('[data-permission]').forEach(input => {
+    input.checked = allowed.has(input.value);
+  });
+}
+
+function applyRolePreset() {
+  setPermissions(ROLE_PRESETS[document.getElementById('roleInput').value] || ROLE_PRESETS.staff);
+}
+
+function resetForm() {
+  editingId = null;
+  document.getElementById('formTitle').textContent = 'Add User';
+  document.getElementById('saveBtn').textContent = 'Add User';
+  document.getElementById('cancelBtn').classList.add('hidden');
+  document.getElementById('nameInput').value = '';
+  document.getElementById('emailInput').value = '';
+  document.getElementById('passwordInput').value = '';
+  document.getElementById('roleInput').value = 'staff';
+  document.getElementById('statusInput').value = 'active';
+  applyRolePreset();
+}
+
+function editUser(id) {
+  const user = users.find(item => item.id === id);
+  if (!user) return;
+  editingId = id;
+  document.getElementById('formTitle').textContent = 'Edit User';
+  document.getElementById('saveBtn').textContent = 'Save User';
+  document.getElementById('cancelBtn').classList.remove('hidden');
+  document.getElementById('nameInput').value = user.name || '';
+  document.getElementById('emailInput').value = user.email || '';
+  document.getElementById('passwordInput').value = '';
+  document.getElementById('roleInput').value = ['admin','manager','staff'].includes(user.role) ? user.role : 'staff';
+  document.getElementById('statusInput').value = user.status || 'active';
+  setPermissions(user.permissions || []);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+async function saveUser() {
+  const body = {
+    name: document.getElementById('nameInput').value.trim(),
+    email: document.getElementById('emailInput').value.trim().toLowerCase(),
+    password: document.getElementById('passwordInput').value,
+    role: document.getElementById('roleInput').value,
+    status: document.getElementById('statusInput').value,
+    permissions: selectedPermissions(),
+  };
+  if (editingId && !body.password) delete body.password;
+  try {
+    await UN.api(editingId ? 'PATCH' : 'POST', editingId ? `/api/admin/dealership-users/${editingId}` : '/api/admin/dealership-users', body);
+    toast(editingId ? 'User updated' : 'User added');
+    resetForm();
+    await loadUsers();
+  } catch (e) {
+    toast(e.message, 'err');
+  }
+}
+
+async function deleteUser(id) {
+  const user = users.find(item => item.id === id);
+  if (!confirm(`Delete ${user?.name || 'this user'}? This removes their login.`)) return;
+  try {
+    await UN.api('DELETE', `/api/admin/dealership-users/${id}`);
+    toast('User deleted');
+    await loadUsers();
+  } catch (e) {
+    toast(e.message, 'err');
+  }
+}
+
+async function revokeUser(id) {
+  const user = users.find(item => item.id === id);
+  if (!user) return;
+  try {
+    await UN.api('PATCH', `/api/admin/dealership-users/${id}`, {
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      permissions: user.permissions,
+      status: user.status === 'revoked' ? 'active' : 'revoked',
+    });
+    toast(user.status === 'revoked' ? 'User reactivated' : 'User revoked');
+    await loadUsers();
+  } catch (e) {
+    toast(e.message, 'err');
+  }
+}
+
+function renderUsers() {
+  const el = document.getElementById('userList');
+  if (!users.length) {
+    el.innerHTML = '<div class="text-muted text-sm">No users yet.</div>';
+    return;
+  }
+  el.innerHTML = users.map(user => {
+    const perms = (user.permissions || []).filter(key => PERMISSION_LABELS[key]);
+    return `
+      <div class="user-card">
+        <div class="user-top">
+          <div>
+            <div class="user-name">${escapeHtml(user.name)}</div>
+            <div class="user-email">${escapeHtml(user.email)}</div>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
+            <span class="pill">${escapeHtml(user.role)}</span>
+            <span class="pill ${user.status === 'revoked' ? 'revoked' : ''}">${escapeHtml(user.status || 'active')}</span>
+          </div>
+        </div>
+        <div class="perm-tags">${perms.slice(0, 10).map(key => `<span class="perm-tag">${PERMISSION_LABELS[key]}</span>`).join('')}${perms.length > 10 ? `<span class="perm-tag">+${perms.length - 10} more</span>` : ''}</div>
+        <div class="user-actions">
+          <button class="btn btn-ghost btn-sm" onclick="editUser(${user.id})">Edit</button>
+          <button class="btn btn-ghost btn-sm" onclick="revokeUser(${user.id})">${user.status === 'revoked' ? 'Reactivate' : 'Revoke'}</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteUser(${user.id})">Delete</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;',
+  }[ch]));
+}
+
+async function loadUsers() {
+  try {
+    const data = await UN.api('GET', '/api/admin/dealership-users');
+    users = data.users || [];
+    renderUsers();
+  } catch (e) {
+    toast(e.message, 'err');
+  }
+}
+
+async function init() {
+  renderPermissions();
+  if (!UN.can('users_manage')) {
+    document.getElementById('locked').classList.remove('hidden');
+    return;
+  }
+  document.getElementById('accessLayout').style.display = '';
+  resetForm();
+  await loadUsers();
+}
+
+init();
+</script>
+</body>
+</html>
