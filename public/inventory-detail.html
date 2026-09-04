@@ -265,7 +265,10 @@
     <div class="section-card">
       <div class="section-header">
         <span class="section-title">Vehicle Details</span>
-        <button class="btn btn-ghost btn-sm" id="editToggle" onclick="toggleEdit()">Edit</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-ghost btn-sm" id="generateDescriptionBtn" onclick="generateDescription()">Generate Description</button>
+          <button class="btn btn-ghost btn-sm" id="editToggle" onclick="toggleEdit()">Edit</button>
+        </div>
       </div>
       <div class="section-body" id="detailsPanel"></div>
     </div>
@@ -505,7 +508,7 @@ function renderDetails() {
         ${field('Acquisition Date', UN.fmt.date(unit.acquisition_date))}
         ${field('Source', unit.acquisition_source)}
       </div>
-      ${unit.notes ? `<div style="margin-top:16px;padding:14px;background:var(--s2);border-radius:var(--r-sm);font-size:0.875rem;color:var(--text-2);">${unit.notes}</div>` : ''}
+      <div style="margin-top:16px;padding:14px;background:var(--s2);border-radius:var(--r-sm);font-size:0.875rem;color:var(--text-2);white-space:pre-wrap;">${unit.notes ? esc(unit.notes) : 'No listing description yet.'}</div>
     `;
   } else {
     el.innerHTML = `
@@ -525,8 +528,11 @@ function renderDetails() {
       </div>
       ${editField('Source','fSource','text',unit.acquisition_source,'margin-bottom:14px')}
       <div class="form-group" style="margin-bottom:14px;">
-        <label class="form-label">Notes</label>
-        <textarea class="form-textarea" id="fNotes">${unit.notes || ''}</textarea>
+        <div class="flex justify-between items-center gap-12" style="margin-bottom:6px;">
+          <label class="form-label" style="margin-bottom:0;">Description</label>
+          <button class="btn btn-ghost btn-sm" type="button" onclick="generateDescription()">Generate Description</button>
+        </div>
+        <textarea class="form-textarea" id="fNotes">${esc(unit.notes || '')}</textarea>
       </div>
       <div class="flex gap-8">
         <button class="btn btn-primary btn-sm" onclick="saveDetails()">Save</button>
@@ -576,6 +582,38 @@ async function saveDetails() {
     render(null);
     toast('Details saved');
   } catch(e) { toast(e.message, 'err'); }
+}
+
+async function generateDescription() {
+  const textarea = document.getElementById('fNotes');
+  const currentDescription = textarea ? textarea.value.trim() : String(unit.notes || '').trim();
+  if (currentDescription && !confirm('Replace the current description with a new AI description?')) return;
+
+  const btn = document.getElementById('generateDescriptionBtn');
+  const oldText = btn ? btn.textContent : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Writing...';
+  }
+  try {
+    const data = await UN.api('POST', `/api/inventory/${unitId}/description-suggestion`, {});
+    if (editMode && textarea) {
+      textarea.value = data.description || '';
+      toast('Description generated. Save when ready.');
+      return;
+    }
+    const saved = await UN.api('PUT', `/api/inventory/${unitId}`, { notes: data.description || null });
+    unit = saved.unit;
+    renderDetails();
+    toast('Description generated');
+  } catch (e) {
+    toast(e.message, 'err');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = oldText;
+    }
+  }
 }
 
 // ── Recon repairs ──────────────────────────────────────────────────────────

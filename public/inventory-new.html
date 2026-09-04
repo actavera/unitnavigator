@@ -434,7 +434,10 @@
       </div>
     </div>
     <div class="form-group mt-16">
-      <label class="form-label">Notes</label>
+      <div class="flex justify-between items-center gap-12" style="margin-bottom:6px;">
+        <label class="form-label" style="margin-bottom:0;">Description</label>
+        <button class="btn btn-ghost btn-sm" type="button" id="generateDescriptionBtn" onclick="generateDescription()">Generate Description</button>
+      </div>
       <textarea class="form-textarea" id="fNotes" placeholder="Anything relevant about this unit…"></textarea>
     </div>
     <div class="step-nav">
@@ -949,6 +952,35 @@ function useSuggestedPrice() {
   if (!priceSuggestion?.target) return;
   document.getElementById('pAsk').value = priceSuggestion.target;
   updateGross();
+}
+
+// ── AI listing description ──────────────────────────────────────────────────
+async function generateDescription() {
+  const notes = document.getElementById('fNotes');
+  if (notes.value.trim() && !confirm('Replace the current description with a new AI description?')) return;
+  const btn = document.getElementById('generateDescriptionBtn');
+  btn.disabled = true;
+  const oldText = btn.textContent;
+  btn.textContent = 'Writing...';
+  try {
+    const data = await UN.api('POST', '/api/inventory/description-suggestion', {
+      year: document.getElementById('fYear').value || null,
+      make: document.getElementById('fMake').value.trim(),
+      model: document.getElementById('fModel').value.trim(),
+      trim: document.getElementById('fTrim').value.trim() || null,
+      body_style: document.getElementById('fBodyStyle').value.trim() || null,
+      color: document.getElementById('fColor').value.trim() || null,
+      mileage: Number(document.getElementById('fMileage').value) || 0,
+      asking_price: Number(document.getElementById('pAsk').value) || null,
+    });
+    notes.value = data.description || '';
+    toast('Description generated');
+  } catch (e) {
+    toast(e.message, 'err');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = oldText;
+  }
 }
 
 // ── Photos ──────────────────────────────────────────────────────────────────

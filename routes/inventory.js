@@ -6,6 +6,7 @@ const multer = require('multer');
 const db = require('../database');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { suggestedRetailPrice } = require('../services/pricing');
+const { generateVehicleDescription } = require('../services/vehicleDescription');
 
 const uploadDir = path.join(__dirname, '../public/uploads/units');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -840,6 +841,37 @@ router.get('/price-suggestion', requireAuth, (req, res) => {
     suggestion,
     disclaimer: 'Suggested prices are estimates based on available comparable sales, vehicle details, mileage, location, and data recency. Verify pricing against your own market research and actual purchase and sales results.',
   });
+});
+
+router.post('/description-suggestion', requireAuth, async (req, res) => {
+  try {
+    const description = await generateVehicleDescription({
+      year: req.body.year,
+      make: req.body.make,
+      model: req.body.model,
+      trim: req.body.trim,
+      body_style: req.body.body_style,
+      color: req.body.color,
+      mileage: req.body.mileage,
+      asking_price: req.body.asking_price,
+    });
+    res.json({ description });
+  } catch (err) {
+    res.status(err.code === 'missing_openai_key' ? 503 : 502).json({ error: err.message || 'Could not generate description' });
+  }
+});
+
+router.post('/:id/description-suggestion', requireAuth, async (req, res) => {
+  const unit = db.prepare('SELECT * FROM units WHERE id = ? AND dealership_id = ?')
+    .get(req.params.id, req.user.dealership_id);
+  if (!unit) return res.status(404).json({ error: 'Unit not found' });
+
+  try {
+    const description = await generateVehicleDescription(unit);
+    res.json({ description });
+  } catch (err) {
+    res.status(err.code === 'missing_openai_key' ? 503 : 502).json({ error: err.message || 'Could not generate description' });
+  }
 });
 
 // ── Get single unit ─────────────────────────────────────────────────────────
