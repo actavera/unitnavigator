@@ -39,7 +39,7 @@ function dealerAddress(row) {
 }
 
 function publicDealer(req) {
-  const requested = String(req.query.dealer || '').trim().toLowerCase();
+  const requested = String(req.query.dealer || req.headers['x-dealer-slug'] || '').trim().toLowerCase();
   const host = normalizeHost(req.headers['x-forwarded-host'] || req.headers.host);
 
   if (requested) {
