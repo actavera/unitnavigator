@@ -268,6 +268,7 @@ addDealershipColumn('public_apr_options', "public_apr_options TEXT DEFAULT '9.99
 addDealershipColumn('public_share_title', 'public_share_title TEXT');
 addDealershipColumn('public_share_description', 'public_share_description TEXT');
 addDealershipColumn('public_share_image_url', 'public_share_image_url TEXT');
+addDealershipColumn('dealercenter_sftp_username', 'dealercenter_sftp_username TEXT');
 
 db.prepare(`
   UPDATE dealerships

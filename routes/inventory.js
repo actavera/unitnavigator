@@ -8,6 +8,7 @@ const { requireAuth, requireRole } = require('../middleware/auth');
 
 const uploadDir = path.join(__dirname, '../public/uploads/units');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+const dealerCenterSftpRoot = process.env.DEALERCENTER_SFTP_ROOT || '/sftp';
 
 const storage = multer.diskStorage({
   destination: uploadDir,
@@ -351,6 +352,219 @@ function attachWebsitePhotos(rows, candidates) {
   });
 }
 
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let value = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+    const next = text[i + 1];
+
+    if (char === '"') {
+      if (inQuotes && next === '"') {
+        value += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (char === ',' && !inQuotes) {
+      row.push(value);
+      value = '';
+      continue;
+    }
+
+    if ((char === '\n' || char === '\r') && !inQuotes) {
+      if (char === '\r' && next === '\n') i += 1;
+      row.push(value);
+      if (row.some(cell => cleanText(cell))) rows.push(row);
+      row = [];
+      value = '';
+      continue;
+    }
+
+    value += char;
+  }
+
+  row.push(value);
+  if (row.some(cell => cleanText(cell))) rows.push(row);
+  return rows;
+}
+
+function csvToObjects(text) {
+  const rows = parseCsv(text);
+  if (rows.length < 2) return [];
+  const headers = rows[0].map(header => cleanText(header).replace(/^\uFEFF/, ''));
+  return rows.slice(1).map(row => {
+    const object = {};
+    headers.forEach((header, index) => {
+      object[header] = cleanText(row[index]);
+    });
+    return object;
+  });
+}
+
+function firstValue(row, keys) {
+  for (const key of keys) {
+    if (row[key] != null && cleanText(row[key])) return row[key];
+  }
+  return '';
+}
+
+function splitDealerCenterVehicleInfo(value) {
+  const text = cleanText(value);
+  const match = text.match(/^(\d{4})\s+([A-Za-z]+)\s+(.+)$/);
+  if (!match) return {};
+  const [, year, make, rest] = match;
+  const parts = rest.split(/\s{2,}| - | \| /).map(cleanText).filter(Boolean);
+  const modelTrim = parts[0] || rest;
+  const [model, ...trimParts] = modelTrim.split(/\s+/);
+  return { year, make, model, trim: trimParts.join(' ') };
+}
+
+function mapDealerCenterRow(row) {
+  const parsedVehicle = splitDealerCenterVehicleInfo(firstValue(row, ['VehicleInfo', 'Vehicle Info', 'Vehicle']));
+  const inventoryStatus = firstValue(row, ['InventoryStatus', 'Inventory Status', 'Status']);
+  const saleType = firstValue(row, ['VehicleSaleType', 'Vehicle Sale Type']);
+  const notes = [
+    saleType && `Sale type: ${saleType}`,
+    firstValue(row, ['VDPUrl', 'VDP URL']) && `DealerCenter VDP: ${firstValue(row, ['VDPUrl', 'VDP URL'])}`,
+  ].filter(Boolean).join('\n');
+
+  return {
+    vin: normalizeVin(firstValue(row, ['VIN', 'Vin', ' Vin'])),
+    stock_number: firstValue(row, ['StockNumber', 'Stock Number', 'Stock #', ' StockNumber']),
+    year: firstValue(row, ['Year', 'ModelYear']) || parsedVehicle.year,
+    make: firstValue(row, ['Make']) || parsedVehicle.make,
+    model: firstValue(row, ['Model']) || parsedVehicle.model,
+    trim: firstValue(row, ['Trim']) || parsedVehicle.trim,
+    body_style: firstValue(row, ['BodyStyle', 'Body Style', 'VehicleType']),
+    color: firstValue(row, ['Color', 'ExteriorColor', 'Exterior Color']),
+    mileage: firstValue(row, ['Mileage', 'Odometer', 'Miles']),
+    stage: normalizeStage(inventoryStatus),
+    asking_price: firstValue(row, ['SpecialPrice', 'Special Price', 'AskingPrice', 'Asking Price', 'VehiclePrice', 'Vehicle Price', 'Price']),
+    acquisition_cost: firstValue(row, ['Cost', 'VehicleCost', 'Vehicle Cost', 'InventoryCost', 'Inventory Cost']),
+    acquisition_source: 'DealerCenter SFTP',
+    acquisition_date: firstValue(row, ['DateInStock', 'Date In Stock']),
+    notes,
+    photos: firstValue(row, ['PhotoURLs', 'Photo URLs', 'PhotoUrls', 'Photos']),
+  };
+}
+
+function targetDealershipId(req) {
+  if (req.user.role === 'super_admin' && req.body.dealership_id) {
+    return parseInteger(req.body.dealership_id);
+  }
+  return req.user.dealership_id;
+}
+
+function dealerCenterSftpUsername(dealership) {
+  if (cleanText(dealership.dealercenter_sftp_username)) return cleanText(dealership.dealercenter_sftp_username);
+  if (dealership.public_slug === 'new-era-auto-sales' || dealership.public_domain === 'utahautoplug.com') return 'dc_newera';
+  const slug = cleanText(dealership.public_slug || dealership.name).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  return slug ? `dc_${slug}` : '';
+}
+
+function latestDealerCenterFile(username) {
+  if (!username || !/^[a-z0-9_-]+$/i.test(username)) return null;
+  const incomingDir = path.join(dealerCenterSftpRoot, username, 'incoming');
+  let entries = [];
+  try {
+    entries = fs.readdirSync(incomingDir, { withFileTypes: true })
+      .filter(entry => entry.isFile() && /\.(csv|txt)$/i.test(entry.name))
+      .map(entry => {
+        const fullPath = path.join(incomingDir, entry.name);
+        const stat = fs.statSync(fullPath);
+        return { path: fullPath, name: entry.name, size: stat.size, modified_at: stat.mtime.toISOString() };
+      })
+      .sort((a, b) => new Date(b.modified_at) - new Date(a.modified_at));
+  } catch {
+    return null;
+  }
+  return entries[0] || null;
+}
+
+function persistImportRows(rows, req, dealershipId, source, options = {}) {
+  const results = { created: 0, updated: 0, skipped: 0, errors: [] };
+  const tx = db.transaction(() => {
+    rows.forEach((row, index) => {
+      const vin = normalizeVin(row.vin || row.VIN || row.vehicle_vin);
+      const year = parseInteger(row.year || row.Year || row.model_year);
+      const make = cleanText(row.make || row.Make);
+      const model = cleanText(row.model || row.Model);
+      const trim = cleanText(row.trim || row.Trim);
+      const stockNumber = cleanText(row.stock_number || row.stock || row['Stock #'] || row.stock_no || row.unit_number);
+
+      if (!vin && (!year || !make || !model)) {
+        results.skipped += 1;
+        results.errors.push({ row: index + 1, error: 'Missing VIN or year/make/model' });
+        return;
+      }
+
+      const unit = {
+        vin,
+        stock_number: stockNumber,
+        year: year || null,
+        make,
+        model,
+        trim,
+        body_style: cleanText(row.body_style || row.body || row.Body || row.vehicle_type),
+        color: cleanText(row.color || row.Color || row.exterior_color),
+        mileage: parseInteger(row.mileage || row.miles || row.odometer || row.Odometer),
+        stage: VALID_STAGES.includes(normalizeStage(row.stage || row.status || row.Status)) ? normalizeStage(row.stage || row.status || row.Status) : 'ready',
+        acquisition_cost: parseMoney(row.acquisition_cost || row.cost || row.Cost || row.inventory_cost || row.purchase_price),
+        asking_price: parseMoney(row.asking_price || row.price || row.Price || row.retail_price || row.internet_price),
+        minimum_price: parseMoney(row.minimum_price || row.min_price || row.floor_price),
+        acquisition_source: cleanText(row.acquisition_source || row.source || source),
+        acquisition_date: cleanText(row.acquisition_date || row.date_acquired || row.purchase_date),
+        notes: cleanText(row.notes || row.Notes),
+        photos: normalizePhotos(row.photos || row.photo_urls || row.images || row.image_urls),
+      };
+
+      const existing = vin ? db.prepare(`
+        SELECT id FROM units
+        WHERE dealership_id = ? AND vin = ? AND archived_at IS NULL
+      `).get(dealershipId, vin) : null;
+
+      if (existing) {
+        db.prepare(`
+          UPDATE units
+          SET stock_number = ?, year = ?, make = ?, model = ?, trim = ?, body_style = ?, color = ?, mileage = ?,
+              stage = ?, acquisition_cost = ?, asking_price = ?, minimum_price = ?, acquisition_source = ?,
+              acquisition_date = ?, notes = ?, photos = CASE WHEN ? != '[]' THEN ? ELSE photos END
+          WHERE id = ? AND dealership_id = ?
+        `).run(
+          unit.stock_number, unit.year, unit.make, unit.model, unit.trim, unit.body_style, unit.color, unit.mileage,
+          unit.stage, unit.acquisition_cost, unit.asking_price || null, unit.minimum_price || null, unit.acquisition_source,
+          unit.acquisition_date || null, unit.notes || null, JSON.stringify(unit.photos), JSON.stringify(unit.photos),
+          existing.id, dealershipId,
+        );
+        logActivity(dealershipId, existing.id, 'Unit imported', `Updated from ${source}`, req.user.id);
+        results.updated += 1;
+      } else {
+        const info = db.prepare(`
+          INSERT INTO units (dealership_id, vin, stock_number, year, make, model, trim, body_style, color, mileage, stage,
+            acquisition_cost, asking_price, minimum_price, acquisition_source, acquisition_date, notes, photos)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        `).run(
+          dealershipId, vin, unit.stock_number, unit.year, unit.make, unit.model, unit.trim, unit.body_style,
+          unit.color, unit.mileage, unit.stage, unit.acquisition_cost, unit.asking_price || null, unit.minimum_price || null,
+          unit.acquisition_source, unit.acquisition_date || null, unit.notes || null, JSON.stringify(unit.photos),
+        );
+        logActivity(dealershipId, info.lastInsertRowid, 'Unit imported', `${unit.year || ''} ${unit.make} ${unit.model} imported from ${source}`.trim(), req.user.id);
+        results.created += 1;
+      }
+    });
+  });
+
+  tx();
+  return options.includeRows ? { ...results, rows } : results;
+}
+
 // ── VIN decode (NHTSA, no key required) ────────────────────────────────────
 router.get('/decode-vin/:vin', requireAuth, async (req, res) => {
   const { vin } = req.params;
@@ -401,7 +615,6 @@ router.post('/import', requireAuth, async (req, res) => {
   if (!rows.length) return res.status(400).json({ error: 'No import rows received' });
   if (rows.length > 500) return res.status(400).json({ error: 'Import is limited to 500 units at a time' });
 
-  const results = { created: 0, updated: 0, skipped: 0, errors: [] };
   const source = cleanText(req.body.source || 'Inventory import');
   const rowsWithLocalPhotos = [];
   for (const row of rows) {
@@ -411,79 +624,53 @@ router.post('/import', requireAuth, async (req, res) => {
     });
   }
 
-  const tx = db.transaction(() => {
-    rowsWithLocalPhotos.forEach((row, index) => {
-      const vin = normalizeVin(row.vin || row.VIN || row.vehicle_vin);
-      const year = parseInteger(row.year || row.Year || row.model_year);
-      const make = cleanText(row.make || row.Make);
-      const model = cleanText(row.model || row.Model);
-      const trim = cleanText(row.trim || row.Trim);
-      const stockNumber = cleanText(row.stock_number || row.stock || row['Stock #'] || row.stock_no || row.unit_number);
-
-      if (!vin && (!year || !make || !model)) {
-        results.skipped += 1;
-        results.errors.push({ row: index + 1, error: 'Missing VIN or year/make/model' });
-        return;
-      }
-
-      const unit = {
-        vin,
-        stock_number: stockNumber,
-        year: year || null,
-        make,
-        model,
-        trim,
-        body_style: cleanText(row.body_style || row.body || row.Body || row.vehicle_type),
-        color: cleanText(row.color || row.Color || row.exterior_color),
-        mileage: parseInteger(row.mileage || row.miles || row.odometer || row.Odometer),
-        stage: VALID_STAGES.includes(normalizeStage(row.stage || row.status || row.Status)) ? normalizeStage(row.stage || row.status || row.Status) : 'ready',
-        acquisition_cost: parseMoney(row.acquisition_cost || row.cost || row.Cost || row.inventory_cost || row.purchase_price),
-        asking_price: parseMoney(row.asking_price || row.price || row.Price || row.retail_price || row.internet_price),
-        minimum_price: parseMoney(row.minimum_price || row.min_price || row.floor_price),
-        acquisition_source: cleanText(row.acquisition_source || row.source || source),
-        acquisition_date: cleanText(row.acquisition_date || row.date_acquired || row.purchase_date),
-        notes: cleanText(row.notes || row.Notes),
-        photos: normalizePhotos(row.photos || row.photo_urls || row.images || row.image_urls),
-      };
-
-      const existing = vin ? db.prepare(`
-        SELECT id FROM units
-        WHERE dealership_id = ? AND vin = ? AND archived_at IS NULL
-      `).get(req.user.dealership_id, vin) : null;
-
-      if (existing) {
-        db.prepare(`
-          UPDATE units
-          SET stock_number = ?, year = ?, make = ?, model = ?, trim = ?, body_style = ?, color = ?, mileage = ?,
-              stage = ?, acquisition_cost = ?, asking_price = ?, minimum_price = ?, acquisition_source = ?,
-              acquisition_date = ?, notes = ?, photos = CASE WHEN ? != '[]' THEN ? ELSE photos END
-          WHERE id = ? AND dealership_id = ?
-        `).run(
-          unit.stock_number, unit.year, unit.make, unit.model, unit.trim, unit.body_style, unit.color, unit.mileage,
-          unit.stage, unit.acquisition_cost, unit.asking_price || null, unit.minimum_price || null, unit.acquisition_source,
-          unit.acquisition_date || null, unit.notes || null, JSON.stringify(unit.photos), JSON.stringify(unit.photos),
-          existing.id, req.user.dealership_id,
-        );
-        logActivity(req.user.dealership_id, existing.id, 'Unit imported', `Updated from ${source}`, req.user.id);
-        results.updated += 1;
-      } else {
-        const info = db.prepare(`
-          INSERT INTO units (dealership_id, vin, stock_number, year, make, model, trim, body_style, color, mileage, stage,
-            acquisition_cost, asking_price, minimum_price, acquisition_source, acquisition_date, notes, photos)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-        `).run(
-          req.user.dealership_id, vin, unit.stock_number, unit.year, unit.make, unit.model, unit.trim, unit.body_style,
-          unit.color, unit.mileage, unit.stage, unit.acquisition_cost, unit.asking_price || null, unit.minimum_price || null,
-          unit.acquisition_source, unit.acquisition_date || null, unit.notes || null, JSON.stringify(unit.photos),
-        );
-        logActivity(req.user.dealership_id, info.lastInsertRowid, 'Unit imported', `${unit.year || ''} ${unit.make} ${unit.model} imported from ${source}`.trim(), req.user.id);
-        results.created += 1;
-      }
-    });
-  });
-
-  tx();
+  const results = persistImportRows(rowsWithLocalPhotos, req, req.user.dealership_id, source);
   res.status(201).json(results);
+});
+
+router.post('/import/dealercenter-sftp/preview', requireAuth, (req, res) => {
+  const dealershipId = targetDealershipId(req);
+  const dealership = db.prepare('SELECT * FROM dealerships WHERE id = ?').get(dealershipId);
+  if (!dealership) return res.status(404).json({ error: 'Dealership not found' });
+
+  const username = dealerCenterSftpUsername(dealership);
+  const latest = latestDealerCenterFile(username);
+  if (!latest) {
+    return res.status(404).json({ error: `No DealerCenter CSV found in /incoming for ${username || 'this dealership'}` });
+  }
+
+  const rawRows = csvToObjects(fs.readFileSync(latest.path, 'utf8'));
+  const rows = rawRows.map(mapDealerCenterRow).filter(row => row.vin || (row.year && row.make && row.model));
+  const photoRows = rows.filter(row => normalizePhotos(row.photos).length).length;
+  res.json({
+    file: { name: latest.name, size: latest.size, modified_at: latest.modified_at, sftp_username: username },
+    summary: { raw_rows: rawRows.length, importable_rows: rows.length, rows_with_photos: photoRows },
+    rows: rows.slice(0, 20),
+  });
+});
+
+router.post('/import/dealercenter-sftp/import', requireAuth, (req, res) => {
+  const dealershipId = targetDealershipId(req);
+  const dealership = db.prepare('SELECT * FROM dealerships WHERE id = ?').get(dealershipId);
+  if (!dealership) return res.status(404).json({ error: 'Dealership not found' });
+
+  const username = dealerCenterSftpUsername(dealership);
+  const latest = latestDealerCenterFile(username);
+  if (!latest) {
+    return res.status(404).json({ error: `No DealerCenter CSV found in /incoming for ${username || 'this dealership'}` });
+  }
+
+  const rawRows = csvToObjects(fs.readFileSync(latest.path, 'utf8'));
+  const rows = rawRows.map(mapDealerCenterRow).filter(row => row.vin || (row.year && row.make && row.model));
+  if (!rows.length) return res.status(400).json({ error: 'DealerCenter feed did not contain importable vehicles' });
+  if (rows.length > 500) return res.status(400).json({ error: 'Import is limited to 500 units at a time' });
+
+  const results = persistImportRows(rows, req, dealershipId, `DealerCenter SFTP ${latest.name}`);
+  res.status(201).json({
+    ...results,
+    file: { name: latest.name, size: latest.size, modified_at: latest.modified_at, sftp_username: username },
+    rows_with_photos: rows.filter(row => normalizePhotos(row.photos).length).length,
+  });
 });
 
 // ── Match public website photos to CSV/import rows ─────────────────────────

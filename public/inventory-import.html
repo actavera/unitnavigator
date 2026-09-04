@@ -35,6 +35,15 @@
     .match-summary { border:1px solid var(--border); border-radius:var(--r); padding:12px 14px; color:var(--text-2); background:var(--s2); line-height:1.45; }
     .match-summary strong { color:var(--text); }
     .match-summary.err { border-color:rgba(239,68,68,.35); color:var(--red); }
+    .sftp-panel { border:1px solid rgba(34,197,94,.28); background:rgba(34,197,94,.08); border-radius:var(--r); padding:16px; display:grid; gap:12px; }
+    .sftp-panel h3 { font-size:1rem; margin:0; }
+    .sftp-panel p { color:var(--text-2); line-height:1.45; font-size:.9rem; margin:0; }
+    .sftp-actions { display:flex; gap:10px; flex-wrap:wrap; align-items:end; justify-content:flex-end; }
+    .sftp-dealer { flex:1 1 180px; min-width:180px; }
+    .sftp-preview { overflow:auto; max-height:260px; border:1px solid var(--border); border-radius:12px; background:var(--s1); }
+    .sftp-preview table { width:100%; border-collapse:collapse; min-width:720px; }
+    .sftp-preview th, .sftp-preview td { border-bottom:1px solid var(--border); padding:8px 10px; text-align:left; font-size:.8rem; }
+    .sftp-preview th { color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-size:.68rem; }
     .sheet-panel { border:1px solid var(--border); border-radius:var(--r-lg); background:var(--s1); box-shadow:var(--sh); overflow:hidden; }
     .sheet-toolbar { display:flex; justify-content:space-between; gap:12px; align-items:center; padding:16px 18px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
     .sheet-wrap { overflow:auto; }
@@ -122,6 +131,22 @@
     <article class="import-card">
       <div class="import-card-head"><h2>Upload CSV</h2></div>
       <div class="import-card-body">
+        <div class="sftp-panel">
+          <div>
+            <h3>DealerCenter SFTP Feed</h3>
+            <p>DealerCenter can drop the feed directly into Unit Navigator. Preview the newest file first, then import it into inventory.</p>
+          </div>
+          <div class="sftp-actions">
+            <div class="form-group sftp-dealer hidden" id="sftpDealerGroup">
+              <label class="form-label">Dealership ID</label>
+              <input class="form-input" id="sftpDealershipId" type="number" min="1" placeholder="2 for New Era">
+            </div>
+            <button class="btn btn-ghost" type="button" id="previewSftpBtn" onclick="previewDealerCenterSftp()">Preview Latest Feed</button>
+            <button class="btn btn-primary" type="button" id="importSftpBtn" onclick="importDealerCenterSftp()">Import Latest Feed</button>
+          </div>
+          <div class="match-summary hidden" id="sftpSummary"></div>
+          <div class="sftp-preview hidden" id="sftpPreview"></div>
+        </div>
         <label class="drop-zone">
           <strong>Choose CSV file</strong>
           <p class="text-muted mt-8">DealerCenter exports are recognized automatically. If photos are missing, use the website matcher below to pull them from the dealer's public inventory page.</p>
@@ -592,6 +617,96 @@ async function matchWebsitePhotos() {
   }
 }
 
+function sftpPayload() {
+  const user = UN.getUser();
+  const dealershipId = document.getElementById('sftpDealershipId')?.value;
+  if (user?.role === 'super_admin' && dealershipId) return { dealership_id: dealershipId };
+  return {};
+}
+
+function renderSftpResult(result, message) {
+  const summary = document.getElementById('sftpSummary');
+  const preview = document.getElementById('sftpPreview');
+  const file = result.file || {};
+  const stats = result.summary || result;
+  summary.classList.remove('hidden', 'err');
+  summary.innerHTML = `
+    <strong>${escapeHtml(message)}</strong><br>
+    File: ${escapeHtml(file.name || 'latest feed')}
+    ${file.modified_at ? ` · ${escapeHtml(new Date(file.modified_at).toLocaleString())}` : ''}
+    ${file.sftp_username ? ` · inbox ${escapeHtml(file.sftp_username)}` : ''}<br>
+    ${stats.raw_rows != null ? `Rows in file: ${stats.raw_rows}. ` : ''}
+    ${stats.importable_rows != null ? `Importable vehicles: ${stats.importable_rows}. ` : ''}
+    ${stats.rows_with_photos != null ? `Vehicles with photos: ${stats.rows_with_photos}. ` : ''}
+    ${stats.created != null ? `Created: ${stats.created}. Updated: ${stats.updated}. Skipped: ${stats.skipped}.` : ''}
+  `;
+
+  const rows = result.rows || [];
+  preview.classList.toggle('hidden', !rows.length);
+  if (rows.length) {
+    preview.innerHTML = `
+      <table>
+        <thead><tr><th>VIN</th><th>Stock</th><th>Unit</th><th>Miles</th><th>Price</th><th>Photos</th></tr></thead>
+        <tbody>
+          ${rows.map(row => `
+            <tr>
+              <td>${escapeHtml(row.vin || '-')}</td>
+              <td>${escapeHtml(row.stock_number || '-')}</td>
+              <td>${escapeHtml([row.year, row.make, row.model, row.trim].filter(Boolean).join(' ') || '-')}</td>
+              <td>${escapeHtml(row.mileage || '-')}</td>
+              <td>${row.asking_price ? UN.fmt.money(row.asking_price) : '-'}</td>
+              <td>${photoCount(row) || '-'}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+  }
+}
+
+async function previewDealerCenterSftp() {
+  const btn = document.getElementById('previewSftpBtn');
+  const summary = document.getElementById('sftpSummary');
+  btn.disabled = true;
+  btn.textContent = 'Checking...';
+  summary.classList.remove('hidden', 'err');
+  summary.textContent = 'Checking the newest DealerCenter file in the SFTP inbox...';
+  try {
+    const result = await UN.api('POST', '/api/inventory/import/dealercenter-sftp/preview', sftpPayload());
+    renderSftpResult(result, 'Latest DealerCenter feed is ready.');
+    toast(`${result.summary?.importable_rows || 0} vehicles ready from DealerCenter`);
+  } catch (err) {
+    summary.classList.add('err');
+    summary.textContent = err.message;
+    toast(err.message, 'err');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Preview Latest Feed';
+  }
+}
+
+async function importDealerCenterSftp() {
+  const btn = document.getElementById('importSftpBtn');
+  const summary = document.getElementById('sftpSummary');
+  btn.disabled = true;
+  btn.textContent = 'Importing...';
+  summary.classList.remove('hidden', 'err');
+  summary.textContent = 'Importing the newest DealerCenter feed into inventory...';
+  try {
+    const result = await UN.api('POST', '/api/inventory/import/dealercenter-sftp/import', sftpPayload());
+    renderSftpResult(result, 'DealerCenter inventory imported.');
+    toast(`Imported ${result.created} new, updated ${result.updated}, skipped ${result.skipped}`);
+    setTimeout(() => { location.href = '/inventory'; }, 1200);
+  } catch (err) {
+    summary.classList.add('err');
+    summary.textContent = err.message;
+    toast(err.message, 'err');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Import Latest Feed';
+  }
+}
+
 async function importRows() {
   if (!mappedRows.length) return toast('Preview CSV rows first', 'err');
   document.getElementById('primaryAction').disabled = true;
@@ -611,6 +726,12 @@ function escapeHtml(value) {
 }
 
 addRows(5);
+if (UN.getUser()?.role === 'super_admin') {
+  const group = document.getElementById('sftpDealerGroup');
+  if (group) group.classList.remove('hidden');
+  const input = document.getElementById('sftpDealershipId');
+  if (input && !input.value) input.value = '2';
+}
 setMode('sheet');
 </script>
 </body>
