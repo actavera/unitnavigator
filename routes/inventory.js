@@ -635,6 +635,8 @@ router.get('/export', requireAuth, (req, res) => {
   }
   const selectedIds = String(ids || '')
     .split(',')
+    .map(value => value.trim())
+    .filter(Boolean)
     .map(value => Number(value))
     .filter(Number.isFinite);
   if (selectedIds.length) {
@@ -650,7 +652,7 @@ router.get('/export', requireAuth, (req, res) => {
   ];
   const rows = db.prepare(sql).all(...params).map(row => ({
     ...row,
-    photos: parseRepairItems(row.photos).join('\n'),
+    photos: normalizePhotos(row.photos).join('\n'),
   }));
   const csv = [
     headers.join(','),
