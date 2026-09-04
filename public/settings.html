@@ -137,6 +137,32 @@
           <input class="form-input" id="public_apr_options" placeholder="9.99, 12.99, 18.99">
           <p class="settings-note">Comma-separated APRs shown on the public showroom payment estimate.</p>
         </div>
+        <div class="form-group wide">
+          <label class="form-label">Share Preview Title</label>
+          <input class="form-input" id="public_share_title" placeholder="New Era Auto Sales Inventory">
+        </div>
+        <div class="form-group wide">
+          <label class="form-label">Share Preview Description</label>
+          <textarea class="form-input" id="public_share_description" rows="3" placeholder="Browse available vehicles from New Era Auto Sales."></textarea>
+        </div>
+        <div class="form-group wide">
+          <label class="form-label">Share Preview Image URL</label>
+          <input class="form-input" id="public_share_image_url" placeholder="/uploads/dealers/new-era-share.png or https://...">
+        </div>
+        <div class="form-group wide">
+          <label class="form-label">Upload Share Image</label>
+          <div class="logo-upload-row">
+            <div class="logo-preview" id="shareImagePreview">No share image uploaded</div>
+            <div class="logo-upload-controls">
+              <input class="form-input" id="shareImageFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
+              <div class="logo-upload-actions">
+                <button class="btn btn-ghost" type="button" onclick="uploadShareImage()">Upload Share Image</button>
+                <button class="btn btn-ghost" type="button" onclick="clearShareImage()">Clear Share Image</button>
+              </div>
+              <p class="settings-note">A wide image works best for text previews. Aim for roughly 1200 x 630.</p>
+            </div>
+          </div>
+        </div>
         <p class="settings-note wide">Point the dealer domain to the Unit Navigator server, then put that domain here. The preview link uses the slug so you can check the customer side before DNS is live.</p>
       </div>
     </article>
@@ -206,6 +232,7 @@ if (UN.requireAuth()) {
 const SETTING_FIELDS = [
   'name', 'legal_name', 'dealer_number', 'address', 'city', 'state', 'zip', 'phone', 'email', 'website',
   'public_slug', 'public_domain', 'logo_url', 'public_site_enabled', 'public_apr_options',
+  'public_share_title', 'public_share_description', 'public_share_image_url',
   'representative_name', 'representative_title',
   'default_doc_fee', 'default_filing_fee', 'default_lender_fee', 'default_license_fee', 'default_plate_fee',
   'default_age_property_tax', 'default_title_fee', 'default_emissions_fee', 'default_tax_rate',
@@ -246,6 +273,7 @@ async function loadSettings() {
       if (el) el.value = dealer[field] ?? '';
     });
     updateLogoPreview();
+    updateShareImagePreview();
     updateShowroomPreview();
   } catch (err) {
     toast(err.message, 'err');
@@ -297,10 +325,50 @@ async function uploadLogo() {
   }
 }
 
+async function uploadShareImage() {
+  const fileInput = document.getElementById('shareImageFile');
+  const file = fileInput?.files?.[0];
+  if (!file) return toast('Choose a share image first', 'err');
+
+  const form = new FormData();
+  const picker = document.getElementById('dealershipId');
+  if (picker?.value) form.append('dealership_id', picker.value);
+  form.append('image', file);
+
+  try {
+    const res = await fetch('/api/admin/dealership-settings/share-image', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${UN.getToken()}` },
+      body: form,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    document.getElementById('public_share_image_url').value = data.image_url || '';
+    fileInput.value = '';
+    updateShareImagePreview();
+    toast('Share image uploaded');
+  } catch (err) {
+    toast(err.message, 'err');
+  }
+}
+
+function clearShareImage() {
+  document.getElementById('public_share_image_url').value = '';
+  updateShareImagePreview();
+  toast('Share image cleared - save settings to keep it cleared');
+}
+
 function clearLogo() {
   document.getElementById('logo_url').value = '';
   updateLogoPreview();
   toast('Logo cleared - save settings to keep it cleared');
+}
+
+function updateShareImagePreview() {
+  const value = document.getElementById('public_share_image_url')?.value || '';
+  const preview = document.getElementById('shareImagePreview');
+  if (!preview) return;
+  preview.innerHTML = value ? `<img src="${escapeHtml(value)}" alt="Share image preview">` : 'No share image uploaded';
 }
 
 function updateLogoPreview() {
