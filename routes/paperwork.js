@@ -3,11 +3,12 @@ const router = require('express').Router();
 const fs = require('fs');
 const path = require('path');
 const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requirePermission } = require('../middleware/auth');
 const db = require('../database');
 
 const manifestPath = path.join(__dirname, '..', 'public', 'forms', 'originals', 'manifest.json');
 const originalsDir = path.join(__dirname, '..', 'public', 'forms', 'originals');
+const esignArchiveDir = path.join(__dirname, '..', 'data', 'esign-archives');
 
 function templateManifest() {
   return JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
@@ -65,11 +66,47 @@ async function buildOfficialPacket(data, req) {
   return Buffer.from(await merged.save());
 }
 
-function docusealConfig() {
-  const token = process.env.DOCUSEAL_API_KEY || process.env.DOCUSEAL_TOKEN || '';
-  const endpoint = process.env.DOCUSEAL_API_URL ||
-    `${String(process.env.DOCUSEAL_BASE_URL || 'https://api.docuseal.com').replace(/\/$/, '')}/submissions/pdf`;
-  return { token, endpoint };
+function documensoConfig() {
+  const token = process.env.DOCUMENSO_API_KEY || process.env.DOCUMENSO_TOKEN || '';
+  const baseUrl = String(process.env.DOCUMENSO_BASE_URL || process.env.DOCUMENSO_API_URL || '').replace(/\/$/, '');
+  return { token, baseUrl };
+}
+
+function requireDocumensoConfig() {
+  const config = documensoConfig();
+  if (!config.token || !config.baseUrl) {
+    throw Object.assign(new Error('Documenso is not configured yet. Set DOCUMENSO_BASE_URL and DOCUMENSO_API_KEY on the server, then restart Unit Navigator.'), { statusCode: 501 });
+  }
+  return config;
+}
+
+function stirlingConfig() {
+  return {
+    baseUrl: String(process.env.STIRLING_PDF_URL || '').replace(/\/$/, ''),
+    apiKey: process.env.STIRLING_PDF_API_KEY || '',
+  };
+}
+
+async function preparePacketWithStirling(pdf, filename) {
+  const { baseUrl, apiKey } = stirlingConfig();
+  if (!baseUrl) {
+    throw new Error('Stirling PDF is not configured. Set STIRLING_PDF_URL on the server.');
+  }
+
+  const form = new FormData();
+  form.append('fileInput', new Blob([pdf], { type: 'application/pdf' }), filename);
+  form.append('flattenOnlyForms', 'true');
+  const headers = apiKey ? { 'X-API-KEY': apiKey } : {};
+  const response = await fetch(`${baseUrl}/api/v1/misc/flatten`, {
+    method: 'POST',
+    headers,
+    body: form,
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    throw new Error(`Stirling PDF returned HTTP ${response.status}${detail ? `: ${detail.slice(0, 300)}` : ''}`);
+  }
+  return Buffer.from(await response.arrayBuffer());
 }
 
 function signerName(value, fallback) {
@@ -80,20 +117,45 @@ function signerEmail(value) {
   return String(value || '').trim();
 }
 
-function esignFields(data) {
+function esignFieldAreas(data) {
   const buyer = signerName(data.customer?.name, 'Buyer');
   const dealer = signerName(data.dealer?.representativeName || data.dealer?.displayName || data.dealer?.name, 'Dealer');
   return [
-    { name: `${buyer} Signature`, type: 'signature', role: 'Buyer', areas: [{ page: 1, x: 80, y: 690, w: 180, h: 32 }] },
-    { name: `${buyer} Date`, type: 'date', role: 'Buyer', areas: [{ page: 1, x: 300, y: 690, w: 90, h: 24 }] },
-    { name: `${dealer} Signature`, type: 'signature', role: 'Dealer', areas: [{ page: 1, x: 80, y: 730, w: 180, h: 32 }] },
-    { name: `${dealer} Date`, type: 'date', role: 'Dealer', areas: [{ page: 1, x: 300, y: 730, w: 90, h: 24 }] },
+    { name: `${buyer} Signature`, type: 'SIGNATURE', role: 'Buyer', area: { page: 4, x: 42, y: 410, w: 230, h: 24 } },
+    { name: `${buyer} Date`, type: 'DATE', role: 'Buyer', area: { page: 4, x: 292, y: 410, w: 100, h: 24 } },
+    { name: `${dealer} Signature`, type: 'SIGNATURE', role: 'Dealer', area: { page: 4, x: 42, y: 300, w: 300, h: 24 } },
+    { name: `${dealer} Date`, type: 'DATE', role: 'Dealer', area: { page: 4, x: 370, y: 300, w: 120, h: 24 } },
   ];
+}
+
+function toDocumensoPosition(pageWidthPt, pageHeightPt, area) {
+  const yTop = pageHeightPt - area.y - area.h;
+  return {
+    page: area.page,
+    positionX: (area.x / pageWidthPt) * 100,
+    positionY: (yTop / pageHeightPt) * 100,
+    width: (area.w / pageWidthPt) * 100,
+    height: (area.h / pageHeightPt) * 100,
+  };
+}
+
+async function documensoFields(pdf, data) {
+  const doc = await PDFDocument.load(pdf);
+  return esignFieldAreas(data).map(field => {
+    const page = doc.getPage(field.area.page - 1);
+    const { width, height } = page.getSize();
+    return {
+      type: field.type,
+      role: field.role,
+      name: field.name,
+      ...toDocumensoPosition(width, height, field.area),
+    };
+  });
 }
 
 function firstUrl(value) {
   if (!value || typeof value !== 'object') return '';
-  const preferred = ['url', 'slug', 'embed_src', 'submission_url', 'signing_url', 'submitter_url'];
+  const preferred = ['signingUrl', 'signing_url', 'url', 'slug', 'embed_src', 'submission_url', 'submitter_url'];
   for (const key of preferred) {
     if (typeof value[key] === 'string' && /^https?:\/\//.test(value[key])) return value[key];
   }
@@ -109,6 +171,119 @@ function firstUrl(value) {
     }
   }
   return '';
+}
+
+function envelopeIdFrom(value) {
+  if (!value || typeof value !== 'object') return '';
+  return String(value.id || value.envelopeId || value.envelope_id || value.data?.id || '').trim();
+}
+
+function dealIdFrom(data) {
+  const id = Number(data.dealId || data.deal_id || data.deal?.id || 0);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+function signerSummary(submitters) {
+  return JSON.stringify(submitters.map(signer => ({
+    role: signer.role,
+    name: signer.name,
+    email: signer.email,
+  })));
+}
+
+async function createDocumensoEnvelope(pdf, filename, data) {
+  const { token, baseUrl } = requireDocumensoConfig();
+
+  const fields = await documensoFields(pdf, data);
+  const buyerFields = fields.filter(field => field.role === 'Buyer').map(({ role, name, ...field }) => field);
+  const dealerFields = fields.filter(field => field.role === 'Dealer').map(({ role, name, ...field }) => field);
+  const buyerEmail = signerEmail(data.customer?.email);
+  const dealerEmail = signerEmail(data.dealer?.email || data.dealerFromDbEmail);
+  if (!buyerEmail) throw Object.assign(new Error('Buyer email is required before sending for e-signature.'), { statusCode: 400 });
+  if (!dealerEmail) throw Object.assign(new Error('Dealer email is required before sending for e-signature.'), { statusCode: 400 });
+
+  const title = `${vehicleLabel(data) || 'Vehicle'} Deal Packet`;
+  const payload = {
+    title,
+    type: 'DOCUMENT',
+    recipients: [
+      {
+        email: buyerEmail,
+        name: signerName(data.customer?.name, 'Buyer'),
+        role: 'SIGNER',
+        fields: buyerFields,
+      },
+      {
+        email: dealerEmail,
+        name: signerName(data.dealer?.representativeName || data.dealer?.displayName || data.dealer?.name, 'Dealer'),
+        role: 'SIGNER',
+        fields: dealerFields,
+      },
+    ],
+    meta: {
+      subject: `${title} ready for e-signature`,
+      message: 'Please review and sign the attached vehicle paperwork packet.',
+      distributionMethod: 'EMAIL',
+    },
+  };
+
+  const form = new FormData();
+  form.append('payload', JSON.stringify(payload));
+  form.append('files', new Blob([pdf], { type: 'application/pdf' }), filename);
+  const createResponse = await fetch(`${baseUrl}/api/v2/envelope/create`, {
+    method: 'POST',
+    headers: { Authorization: token },
+    body: form,
+  });
+  const created = await createResponse.json().catch(() => ({}));
+  if (!createResponse.ok) {
+    throw Object.assign(new Error(created.error || created.message || `Documenso returned HTTP ${createResponse.status}`), { statusCode: 502, providerResponse: created });
+  }
+
+  const envelopeId = envelopeIdFrom(created);
+  if (!envelopeId) {
+    throw Object.assign(new Error('Documenso did not return an envelope id.'), { statusCode: 502, providerResponse: created });
+  }
+
+  const distributeResponse = await fetch(`${baseUrl}/api/v2/envelope/distribute`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: token },
+    body: JSON.stringify({ envelopeId, meta: { distributionMethod: 'EMAIL' } }),
+  });
+  const distributed = await distributeResponse.json().catch(() => ({}));
+  if (!distributeResponse.ok) {
+    throw Object.assign(new Error(distributed.error || distributed.message || `Documenso distribute returned HTTP ${distributeResponse.status}`), { statusCode: 502, providerResponse: distributed });
+  }
+
+  return { title, envelopeId, submitters: payload.recipients, created, distributed, signingUrl: firstUrl(distributed) || firstUrl(created) };
+}
+
+async function documensoEnvelopeStatus(envelopeId) {
+  const { token, baseUrl } = requireDocumensoConfig();
+  const response = await fetch(`${baseUrl}/api/v2/envelope/${encodeURIComponent(envelopeId)}`, {
+    headers: { Authorization: token },
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw Object.assign(new Error(body.error || body.message || `Documenso returned HTTP ${response.status}`), { statusCode: 502, providerResponse: body });
+  return body;
+}
+
+async function archiveDocumensoEnvelope(envelopeId, dealershipId) {
+  const { token, baseUrl } = documensoConfig();
+  const envelope = await documensoEnvelopeStatus(envelopeId);
+  if (String(envelope.status || '').toUpperCase() !== 'COMPLETED') return { envelope };
+  const envelopeItemId = envelope.fields?.[0]?.envelopeItemId || envelope.documents?.[0]?.envelopeItemId || envelope.envelopeItems?.[0]?.id;
+  if (!envelopeItemId) return { envelope };
+  const response = await fetch(`${baseUrl}/api/v2/envelope/item/${encodeURIComponent(envelopeItemId)}/download`, {
+    headers: { Authorization: token },
+  });
+  if (!response.ok) throw new Error(`Documenso signed PDF download returned HTTP ${response.status}`);
+  fs.mkdirSync(esignArchiveDir, { recursive: true });
+  const safeEnvelopeId = String(envelopeId).replace(/[^a-z0-9_-]+/gi, '-');
+  const relativePath = path.join('data', 'esign-archives', `${dealershipId}-${safeEnvelopeId}.pdf`);
+  const archivePath = path.join(__dirname, '..', relativePath);
+  fs.writeFileSync(archivePath, Buffer.from(await response.arrayBuffer()));
+  return { envelope, archivePath: relativePath };
 }
 
 function splitAddress(address) {
@@ -695,62 +870,97 @@ router.post('/official-packet', requireAuth, async (req, res) => {
   }
 });
 
-router.post('/esign', requireAuth, async (req, res) => {
+router.post('/esign', ...requirePermission('contracts_manage'), async (req, res) => {
   try {
-    const { token, endpoint } = docusealConfig();
-    if (!token) {
-      return res.status(501).json({
-        error: 'DocuSeal is not configured yet. Set DOCUSEAL_API_KEY on the server, then restart Unit Navigator.',
-      });
-    }
-
     const data = req.body || {};
+    data.dealer = { ...(data.dealer || {}), ...dealerFromDb(req) };
+    data.dealerFromDbEmail = data.dealer?.email || '';
+    requireDocumensoConfig();
     const buyerEmail = signerEmail(data.customer?.email);
-    const dealerEmail = signerEmail(data.dealer?.email || dealerFromDb(req).email);
+    const dealerEmail = signerEmail(data.dealer?.email);
     if (!buyerEmail) return res.status(400).json({ error: 'Buyer email is required before sending for e-signature.' });
     if (!dealerEmail) return res.status(400).json({ error: 'Dealer email is required before sending for e-signature.' });
 
-    const pdf = await buildOfficialPacket(data, req);
+    const unpreparedPdf = await buildOfficialPacket(data, req);
     const filename = packetFilename(data);
-    const submitters = [
-      { role: 'Buyer', name: signerName(data.customer?.name, 'Buyer'), email: buyerEmail },
-      { role: 'Dealer', name: signerName(data.dealer?.representativeName || data.dealer?.displayName || data.dealer?.name, 'Dealer'), email: dealerEmail },
-    ];
-    const payload = {
-      name: `${vehicleLabel(data) || 'Vehicle'} Deal Packet`,
-      send_email: true,
-      documents: [{
-        name: filename,
-        file: pdf.toString('base64'),
-        fields: esignFields(data),
-      }],
-      submitters,
-    };
-
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Auth-Token': token,
-      },
-      body: JSON.stringify(payload),
-    });
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      console.error('DocuSeal error', response.status, body);
-      return res.status(502).json({ error: body.error || body.message || `DocuSeal returned HTTP ${response.status}` });
-    }
+    const pdf = await preparePacketWithStirling(unpreparedPdf, filename);
+    const envelope = await createDocumensoEnvelope(pdf, filename, data);
+    const insert = db.prepare(`
+      INSERT INTO esign_envelopes (
+        dealership_id, deal_id, provider, provider_envelope_id, title, status,
+        signer_summary, signing_url, provider_response, created_by
+      ) VALUES (?, ?, 'documenso', ?, ?, 'pending', ?, ?, ?, ?)
+    `).run(
+      req.user.dealership_id,
+      dealIdFrom(data),
+      envelope.envelopeId,
+      envelope.title,
+      signerSummary(envelope.submitters),
+      envelope.signingUrl || null,
+      JSON.stringify({ created: envelope.created, distributed: envelope.distributed }),
+      req.user.id,
+    );
 
     res.status(201).json({
-      message: 'E-sign packet sent through DocuSeal.',
-      provider: 'docuseal',
-      signing_url: firstUrl(body),
-      response: body,
+      message: 'E-sign packet sent through Documenso.',
+      provider: 'documenso',
+      envelope_id: insert.lastInsertRowid,
+      provider_envelope_id: envelope.envelopeId,
+      signing_url: envelope.signingUrl,
+      response: { created: envelope.created, distributed: envelope.distributed },
     });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'E-sign packet could not be created.' });
+    res.status(err.statusCode || 500).json({ error: err.message || 'E-sign packet could not be created.' });
+  }
+});
+
+router.get('/esign/:id/status', ...requirePermission('contracts_manage'), async (req, res) => {
+  const row = db.prepare(`
+    SELECT * FROM esign_envelopes
+    WHERE id = ? AND dealership_id = ?
+  `).get(req.params.id, req.user.dealership_id);
+  if (!row) return res.status(404).json({ error: 'E-sign envelope not found.' });
+
+  try {
+    const archived = await archiveDocumensoEnvelope(row.provider_envelope_id, req.user.dealership_id);
+    const providerStatus = String(archived.envelope?.status || row.status || '').toLowerCase();
+    const completedAt = archived.envelope?.completedAt || archived.envelope?.completed_at || row.completed_at;
+    db.prepare(`
+      UPDATE esign_envelopes
+      SET status = ?,
+          archive_path = COALESCE(?, archive_path),
+          provider_response = ?,
+          completed_at = COALESCE(?, completed_at),
+          archived_at = CASE WHEN ? IS NOT NULL AND archived_at IS NULL THEN datetime('now') ELSE archived_at END
+      WHERE id = ? AND dealership_id = ?
+    `).run(
+      providerStatus,
+      archived.archivePath || null,
+      JSON.stringify(archived.envelope || {}),
+      completedAt || null,
+      archived.archivePath || null,
+      row.id,
+      req.user.dealership_id,
+    );
+
+    res.json({
+      id: row.id,
+      provider: 'documenso',
+      provider_envelope_id: row.provider_envelope_id,
+      status: providerStatus,
+      completed_at: completedAt || null,
+      archived: Boolean(archived.archivePath || row.archive_path),
+      archive_path: archived.archivePath || row.archive_path || null,
+      response: archived.envelope,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(err.statusCode || 500).json({ error: err.message || 'E-sign status could not be checked.' });
   }
 });
 
 module.exports = router;
+module.exports.preparePacketWithStirling = preparePacketWithStirling;
+module.exports.toDocumensoPosition = toDocumensoPosition;
+module.exports.createDocumensoEnvelope = createDocumensoEnvelope;

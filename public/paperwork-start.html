@@ -2219,7 +2219,7 @@ async function sendForEsign() {
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || 'E-sign packet could not be created.');
     toast(data.message || 'E-sign packet sent.');
-    if (data.signing_url && confirm('Open the DocuSeal signing link now?')) {
+    if (data.signing_url && confirm('Open the signing link now?')) {
       window.open(data.signing_url, '_blank', 'noopener');
     }
   } catch (err) {

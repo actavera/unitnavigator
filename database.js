@@ -120,6 +120,24 @@ db.exec(`
     uploaded_at TEXT
   );
 
+  CREATE TABLE IF NOT EXISTS esign_envelopes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    dealership_id INTEGER REFERENCES dealerships(id),
+    deal_id INTEGER REFERENCES deals(id),
+    provider TEXT DEFAULT 'documenso',
+    provider_envelope_id TEXT NOT NULL,
+    title TEXT,
+    status TEXT DEFAULT 'pending',
+    signer_summary TEXT DEFAULT '[]',
+    signing_url TEXT,
+    archive_path TEXT,
+    provider_response TEXT,
+    created_by INTEGER REFERENCES users(id),
+    created_at TEXT DEFAULT (datetime('now')),
+    completed_at TEXT,
+    archived_at TEXT
+  );
+
   CREATE TABLE IF NOT EXISTS activity_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     dealership_id INTEGER,
