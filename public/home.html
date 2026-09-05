@@ -19,6 +19,7 @@
       width: min(100%, 560px); overflow: hidden; border: 1px solid var(--border);
       border-radius: 24px; background: var(--s1); box-shadow: 0 28px 90px rgba(0,0,0,.32);
     }
+    .attention-card.wide { width: min(100%, 920px); }
     .attention-head {
       padding: 22px; border-bottom: 1px solid var(--border);
       background:
@@ -40,8 +41,21 @@
     .attention-fact span { display: block; color: var(--muted); font-size: .85rem; margin-top: 3px; }
     .attention-actions { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; }
     .attention-actions .wide { grid-column: 1 / -1; }
+    .unit-alert-list { display: grid; gap: 10px; max-height: min(56vh, 560px); overflow: auto; padding-right: 3px; }
+    .unit-alert-row {
+      display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(160px, .8fr) auto; gap: 10px; align-items: center;
+      border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--s2); padding: 12px;
+    }
+    .unit-alert-row strong { display: block; color: var(--text); }
+    .unit-alert-row span { display: block; color: var(--muted); font-size: .85rem; margin-top: 3px; }
+    .unit-alert-row .form-select { min-height: 44px; }
+    .unit-alert-footer { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; border-top: 1px solid var(--border); padding-top: 14px; }
     .sold-fields { display: none; gap: 10px; border-top: 1px solid var(--border); padding-top: 14px; }
     .sold-fields.show { display: grid; }
+    @media (max-width: 760px) {
+      .unit-alert-row { grid-template-columns: 1fr; }
+      .unit-alert-footer { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
@@ -159,19 +173,77 @@ function renderMetrics(metrics) {
 }
 
 function showNextAlert() {
-  activeAlert = dashboardAlerts.shift();
   const modal = document.getElementById('attentionModal');
+  activeAlert = dashboardAlerts[0];
   if (!activeAlert) {
     modal.classList.remove('show');
     modal.innerHTML = '';
     return;
   }
+
+  if (activeAlert.type === 'unit') {
+    const unitAlerts = dashboardAlerts.filter(alert => alert.type === 'unit');
+    activeAlert = null;
+    modal.innerHTML = unitAlertsHtml(unitAlerts);
+    modal.classList.add('show');
+    return;
+  }
+
+  activeAlert = dashboardAlerts.shift();
   modal.innerHTML = activeAlert.type === 'deal'
     ? dealAlertHtml(activeAlert)
     : activeAlert.type === 'user'
       ? userAlertHtml(activeAlert)
       : unitAlertHtml(activeAlert);
   modal.classList.add('show');
+}
+
+function unitAlertsHtml(alerts) {
+  const oldest = alerts.reduce((max, alert) => Math.max(max, alert.age_days || 0), 0);
+  return `
+    <section class="attention-card wide">
+      <div class="attention-head">
+        <h2>${alerts.length} inventory ${alerts.length === 1 ? 'unit needs' : 'units need'} a quick age check.</h2>
+        <p>These are active units that hit a 30-day inventory milestone. Review them together, or update one vehicle at a time.</p>
+      </div>
+      <div class="attention-body">
+        <div class="attention-fact">
+          <div class="attention-icon">▣</div>
+          <div><strong>Inventory age review</strong><span>Oldest active reminder: ${oldest} days in inventory</span></div>
+        </div>
+        <div class="unit-alert-list">
+          ${alerts.map(unitAlertRowHtml).join('')}
+        </div>
+        <div class="unit-alert-footer">
+          <button class="btn btn-ghost" onclick="skipUnitAlerts()">Skip For Now</button>
+          <button class="btn btn-ghost" onclick="dismissAllUnitAlerts()">Dismiss All</button>
+          <a class="btn btn-primary" href="/inventory" style="justify-content:center;">Open Inventory</a>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function unitAlertRowHtml(alert) {
+  return `
+    <div class="unit-alert-row" id="unitAlertRow${alert.id}">
+      <div>
+        <strong>${esc(alert.vehicle)}</strong>
+        <span>${esc(alert.vin || 'No VIN')} · ${alert.age_days} days · ${stageLabel(alert.stage)}</span>
+      </div>
+      <select class="form-select" id="unitStageChoice${alert.id}">
+        <option value="${esc(alert.stage)}">Still ${stageLabel(alert.stage)}</option>
+        <option value="transport">Being Transported</option>
+        <option value="screening">Needs Screening</option>
+        <option value="recon">Recon</option>
+        <option value="ready">Ready</option>
+        <option value="pending">Pending</option>
+        <option value="sold">Sold</option>
+        <option value="archived">Archived</option>
+      </select>
+      <button class="btn btn-primary" onclick="resolveUnitAlertRow(${alert.id})">Update</button>
+    </div>
+  `;
 }
 
 function dealAlertHtml(alert) {
@@ -294,6 +366,34 @@ async function resolveUnitAlert() {
   } catch (err) {
     toast(err.message, 'err');
   }
+}
+
+async function resolveUnitAlertRow(id) {
+  try {
+    const stage = document.getElementById(`unitStageChoice${id}`).value;
+    await UN.api('POST', `/api/dashboard/unit-alert/${id}/action`, { stage });
+    const row = document.getElementById(`unitAlertRow${id}`);
+    if (row) row.remove();
+    toast('Inventory updated.');
+    await refreshAfterAlert();
+  } catch (err) {
+    toast(err.message, 'err');
+  }
+}
+
+async function dismissAllUnitAlerts() {
+  try {
+    const data = await UN.api('POST', '/api/dashboard/unit-alerts/dismiss', {});
+    toast(`${data.dismissed || 0} inventory ${Number(data.dismissed) === 1 ? 'alert' : 'alerts'} dismissed.`);
+    await refreshAfterAlert();
+  } catch (err) {
+    toast(err.message, 'err');
+  }
+}
+
+function skipUnitAlerts() {
+  dashboardAlerts = dashboardAlerts.filter(alert => alert.type !== 'unit');
+  showNextAlert();
 }
 
 async function resolveUserAlert(action) {

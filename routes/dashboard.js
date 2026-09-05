@@ -255,4 +255,30 @@ router.post('/unit-alert/:id/action', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+router.post('/unit-alerts/dismiss', requireAuth, (req, res) => {
+  if (!hasPermission(req.user, 'inventory_edit')) {
+    return res.status(403).json({ error: 'You do not have access to update inventory alerts' });
+  }
+
+  const now = new Date().toISOString();
+  const unitAlerts = getUnitAlerts(req.user.dealership_id);
+  const dismiss = db.transaction((alerts) => {
+    const update = db.prepare(`
+      UPDATE units SET last_age_check_at = ?
+      WHERE id = ? AND dealership_id = ? AND stage NOT IN ('sold','archived')
+    `);
+    const log = db.prepare(`
+      INSERT INTO activity_logs (dealership_id, entity_type, entity_id, action, note, user_id)
+      VALUES (?, 'unit', ?, 'Inventory age alert dismissed', ?, ?)
+    `);
+    alerts.forEach(alert => {
+      update.run(now, alert.id, req.user.dealership_id);
+      log.run(req.user.dealership_id, alert.id, `Reviewed at ${alert.milestone} day milestone`, req.user.id);
+    });
+  });
+  dismiss(unitAlerts);
+
+  res.json({ ok: true, dismissed: unitAlerts.length });
+});
+
 module.exports = router;
