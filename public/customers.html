@@ -330,9 +330,25 @@ function renderDetail(customer, creditPulls, deals) {
       <div class="paper-actions" style="margin:0;">
         <a class="btn btn-primary" href="/credit/new">New Credit Pull</a>
         <a class="btn btn-ghost" href="/paperwork/start">Start Paperwork</a>
+        ${UN.can('deals_manage') ? `<button class="btn btn-danger" type="button" onclick="deleteCustomer(${customer.id})">Delete Client</button>` : ''}
       </div>
     </div>
   `;
+}
+
+async function deleteCustomer(id) {
+  if (!UN.can('deals_manage')) return toast('You do not have access to delete clients', 'err');
+  const customer = clients.find(client => Number(client.id) === Number(id));
+  const name = customer?.name || 'this client';
+  if (!confirm(`Delete ${name}? This will remove the client, test credit pulls, pending/dead deals, and related documents. Closed deals or e-sign packets cannot be deleted.`)) return;
+  try {
+    await UN.api('DELETE', `/api/customers/${id}`);
+    toast('Client deleted');
+    selectedId = null;
+    await loadClients();
+  } catch (err) {
+    toast(err.message || 'Could not delete client', 'err');
+  }
 }
 
 function detailLine(label, value) {

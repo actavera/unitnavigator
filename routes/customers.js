@@ -1,7 +1,7 @@
 'use strict';
 const router = require('express').Router();
 const db = require('../database');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requirePermission } = require('../middleware/auth');
 
 function safeLimit(value) {
   const n = Number(value);
@@ -173,6 +173,54 @@ router.get('/:id', requireAuth, (req, res) => {
   }));
 
   res.json({ customer: enrich(customer), credit_pulls, deals });
+});
+
+router.delete('/:id', ...requirePermission('deals_manage'), (req, res) => {
+  const customer = db.prepare('SELECT * FROM customers WHERE id = ? AND dealership_id = ?')
+    .get(req.params.id, req.user.dealership_id);
+  if (!customer) return res.status(404).json({ error: 'Client not found' });
+
+  const closedDeal = db.prepare(`
+    SELECT id FROM deals
+    WHERE customer_id = ? AND dealership_id = ? AND status = 'closed'
+    LIMIT 1
+  `).get(req.params.id, req.user.dealership_id);
+  if (closedDeal) {
+    return res.status(400).json({ error: 'This client has a closed deal. Keep the record for deal history instead of deleting it.' });
+  }
+
+  const signedPacket = db.prepare(`
+    SELECT ee.id
+    FROM esign_envelopes ee
+    JOIN deals d ON d.id = ee.deal_id
+    WHERE d.customer_id = ? AND ee.dealership_id = ?
+    LIMIT 1
+  `).get(req.params.id, req.user.dealership_id);
+  if (signedPacket) {
+    return res.status(400).json({ error: 'This client has an e-sign packet. Keep the record for paperwork history instead of deleting it.' });
+  }
+
+  const tx = db.transaction(() => {
+    const dealIds = db.prepare('SELECT id FROM deals WHERE customer_id = ? AND dealership_id = ?')
+      .all(req.params.id, req.user.dealership_id)
+      .map(row => row.id);
+
+    dealIds.forEach(id => {
+      db.prepare('DELETE FROM documents WHERE deal_id = ? AND dealership_id = ?').run(id, req.user.dealership_id);
+      db.prepare('DELETE FROM activity_logs WHERE entity_type = ? AND entity_id = ? AND dealership_id = ?')
+        .run('deal', id, req.user.dealership_id);
+    });
+
+    db.prepare('DELETE FROM documents WHERE customer_id = ? AND dealership_id = ?').run(req.params.id, req.user.dealership_id);
+    db.prepare('DELETE FROM deals WHERE customer_id = ? AND dealership_id = ?').run(req.params.id, req.user.dealership_id);
+    db.prepare('DELETE FROM credit_pulls WHERE customer_id = ? AND dealership_id = ?').run(req.params.id, req.user.dealership_id);
+    db.prepare('DELETE FROM activity_logs WHERE entity_type = ? AND entity_id = ? AND dealership_id = ?')
+      .run('customer', req.params.id, req.user.dealership_id);
+    db.prepare('DELETE FROM customers WHERE id = ? AND dealership_id = ?').run(req.params.id, req.user.dealership_id);
+  });
+
+  tx();
+  res.json({ ok: true });
 });
 
 module.exports = router;
