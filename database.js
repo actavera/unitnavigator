@@ -3,7 +3,9 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 
-const dataDir = path.join(__dirname, 'data');
+const dataDir = process.env.UNITNAV_DATA_DIR
+  ? path.resolve(process.env.UNITNAV_DATA_DIR)
+  : path.join(__dirname, 'data');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
 const db = new Database(path.join(dataDir, 'unitnavigator.db'));
@@ -250,6 +252,39 @@ if (dealsSchema.includes('units_old_stage_migration')) {
       next_follow_up_at, last_status_check_at, created_at, closed_at
     FROM deals_old_unit_fk_migration;
     DROP TABLE deals_old_unit_fk_migration;
+    PRAGMA foreign_keys = ON;
+  `);
+}
+
+// The migration above renames `deals` out from under `documents.deal_id`'s
+// foreign key, but SQLite's ALTER TABLE RENAME does not rewrite that
+// reference in the *other* table's schema text, so any database that went
+// through it before this fix was added is left with `documents.deal_id`
+// still pointing at the now-dropped `deals_old_unit_fk_migration` table.
+// That doesn't break normal reads, but it makes any statement SQLite needs
+// to compile against `documents` (e.g. `DELETE FROM documents WHERE ...`)
+// fail with "no such table: main.deals_old_unit_fk_migration". Repair it,
+// idempotently, by recreating `documents` with the correct reference.
+const documentsSchema = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'documents'").get()?.sql || '';
+if (documentsSchema.includes('deals_old_unit_fk_migration')) {
+  db.exec(`
+    PRAGMA foreign_keys = OFF;
+    ALTER TABLE documents RENAME TO documents_old_deal_fk_migration;
+    CREATE TABLE documents (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      dealership_id INTEGER REFERENCES dealerships(id),
+      customer_id INTEGER REFERENCES customers(id),
+      deal_id INTEGER REFERENCES deals(id),
+      document_type TEXT,
+      file_url TEXT,
+      status TEXT DEFAULT 'missing'
+        CHECK(status IN ('missing','uploaded','reviewed','rejected')),
+      uploaded_at TEXT
+    );
+    INSERT INTO documents (id, dealership_id, customer_id, deal_id, document_type, file_url, status, uploaded_at)
+    SELECT id, dealership_id, customer_id, deal_id, document_type, file_url, status, uploaded_at
+    FROM documents_old_deal_fk_migration;
+    DROP TABLE documents_old_deal_fk_migration;
     PRAGMA foreign_keys = ON;
   `);
 }

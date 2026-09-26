@@ -4,8 +4,10 @@ const bcrypt = require('bcryptjs');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
+const crypto = require('crypto');
 const db = require('../database');
 const { requireAuth, requireRole, hasPermission, parsePermissions, ALL_PERMISSIONS } = require('../middleware/auth');
+const { finalizeUploadedImage } = require('../services/imageSignature');
 
 const dealerUploadDir = path.join(__dirname, '../public/uploads/dealers');
 if (!fs.existsSync(dealerUploadDir)) fs.mkdirSync(dealerUploadDir, { recursive: true });
@@ -13,17 +15,17 @@ if (!fs.existsSync(dealerUploadDir)) fs.mkdirSync(dealerUploadDir, { recursive: 
 const logoUpload = multer({
   storage: multer.diskStorage({
     destination: dealerUploadDir,
-    filename: (req, file, cb) => {
-      const dealershipId = req.body.dealership_id || req.user?.dealership_id || 'dealer';
-      const ext = path.extname(file.originalname || '').toLowerCase() || '.png';
-      const base = slugify(`${dealershipId}-${Date.now()}-${path.basename(file.originalname || 'logo', ext)}`) || `${dealershipId}-${Date.now()}`;
-      cb(null, `${base}${ext}`);
-    },
+    // A neutral, server-generated temp name: the caller's original filename
+    // (and its extension) is never trusted or retained. finalizeUploadedImage()
+    // renames this to its permanent name once the real content is inspected.
+    filename: (_req, _file, cb) => cb(null, `tmp-${Date.now()}-${crypto.randomBytes(8).toString('hex')}.upload`),
   }),
   limits: { fileSize: 3 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    if (/^image\/(png|jpe?g|webp|gif|svg\+xml)$/.test(file.mimetype)) return cb(null, true);
-    cb(new Error('Logo must be a PNG, JPG, WEBP, GIF, or SVG image'));
+    // SVG is deliberately excluded: it can carry an embedded <script>, and these
+    // files are served from our own origin, so allowing it would be a stored-XSS vector.
+    if (/^image\/(png|jpe?g|webp|gif)$/.test(file.mimetype)) return cb(null, true);
+    cb(new Error('Logo must be a PNG, JPG, WEBP, or GIF image'));
   },
 });
 
@@ -184,22 +186,42 @@ router.put('/dealership-settings', requireAuth, (req, res) => {
 
 router.post('/dealership-settings/logo', requireAuth, logoUpload.single('logo'), (req, res) => {
   const dealershipId = Number(req.body.dealership_id || req.user.dealership_id);
-  if (!canManageDealerSettings(req, dealershipId)) return res.status(403).json({ error: 'Insufficient permissions' });
-  if (!settingsRow(dealershipId)) return res.status(404).json({ error: 'Dealership not found' });
+  if (!canManageDealerSettings(req, dealershipId)) {
+    if (req.file) try { fs.unlinkSync(req.file.path); } catch { /* already gone */ }
+    return res.status(403).json({ error: 'Insufficient permissions' });
+  }
+  if (!settingsRow(dealershipId)) {
+    if (req.file) try { fs.unlinkSync(req.file.path); } catch { /* already gone */ }
+    return res.status(404).json({ error: 'Dealership not found' });
+  }
   if (!req.file) return res.status(400).json({ error: 'Choose a logo file first' });
+  const finalized = finalizeUploadedImage(req.file, { namePrefix: `${dealershipId}-` });
+  if (!finalized) {
+    return res.status(400).json({ error: 'That file is not a valid PNG, JPG, WEBP, or GIF image' });
+  }
 
-  const logoUrl = `/uploads/dealers/${req.file.filename}`;
+  const logoUrl = `/uploads/dealers/${finalized.filename}`;
   db.prepare('UPDATE dealerships SET logo_url = ? WHERE id = ?').run(logoUrl, dealershipId);
   res.status(201).json({ logo_url: logoUrl, dealership: settingsRow(dealershipId) });
 });
 
 router.post('/dealership-settings/share-image', requireAuth, imageUpload.single('image'), (req, res) => {
   const dealershipId = Number(req.body.dealership_id || req.user.dealership_id);
-  if (!canManageDealerSettings(req, dealershipId)) return res.status(403).json({ error: 'Insufficient permissions' });
-  if (!settingsRow(dealershipId)) return res.status(404).json({ error: 'Dealership not found' });
+  if (!canManageDealerSettings(req, dealershipId)) {
+    if (req.file) try { fs.unlinkSync(req.file.path); } catch { /* already gone */ }
+    return res.status(403).json({ error: 'Insufficient permissions' });
+  }
+  if (!settingsRow(dealershipId)) {
+    if (req.file) try { fs.unlinkSync(req.file.path); } catch { /* already gone */ }
+    return res.status(404).json({ error: 'Dealership not found' });
+  }
   if (!req.file) return res.status(400).json({ error: 'Choose a share image first' });
+  const finalized = finalizeUploadedImage(req.file, { namePrefix: `${dealershipId}-` });
+  if (!finalized) {
+    return res.status(400).json({ error: 'That file is not a valid PNG, JPG, WEBP, or GIF image' });
+  }
 
-  const imageUrl = `/uploads/dealers/${req.file.filename}`;
+  const imageUrl = `/uploads/dealers/${finalized.filename}`;
   db.prepare('UPDATE dealerships SET public_share_image_url = ? WHERE id = ?').run(imageUrl, dealershipId);
   res.status(201).json({ image_url: imageUrl, dealership: settingsRow(dealershipId) });
 });

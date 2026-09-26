@@ -856,7 +856,7 @@ function fillBuyersGuide(form, data) {
   setText(form, 'topmostSubform[0].BG-Back[0].DealerPhone[0]', data.dealer?.phone || '');
 }
 
-router.post('/official-packet', requireAuth, async (req, res) => {
+router.post('/official-packet', ...requirePermission('contracts_manage'), async (req, res) => {
   try {
     const data = req.body || {};
     const bytes = await buildOfficialPacket(data, req);

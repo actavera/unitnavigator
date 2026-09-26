@@ -2,6 +2,9 @@
 const jwt = require('jsonwebtoken');
 const db = require('../database');
 const JWT_SECRET = process.env.JWT_SECRET || 'un-dev-secret-change-in-prod';
+if (!process.env.JWT_SECRET && process.env.NODE_ENV === 'production') {
+  throw new Error('JWT_SECRET must be set in production. Refusing to start with the insecure default signing secret.');
+}
 
 const ALL_PERMISSIONS = [
   'inventory_view',
@@ -52,7 +55,7 @@ function requireAuth(req, res, next) {
   try {
     req.user = jwt.verify(token, JWT_SECRET);
     const user = db.prepare(`
-      SELECT u.id, u.role, u.permissions, u.status, d.status AS dealership_status
+      SELECT u.id, u.dealership_id, u.role, u.permissions, u.status, d.status AS dealership_status
       FROM users u
       LEFT JOIN dealerships d ON d.id = u.dealership_id
       WHERE u.id = ?
@@ -60,6 +63,10 @@ function requireAuth(req, res, next) {
     if (!user || user.status === 'revoked' || user.dealership_status === 'revoked') {
       return res.status(403).json({ error: 'Access revoked' });
     }
+    // Trust dealership_id from the live DB row, not the JWT payload: a stale or
+    // (if the signing secret were ever weak) forged token must not be able to
+    // grant access to a different dealership than the user currently belongs to.
+    req.user.dealership_id = user.dealership_id;
     req.user.role = user.role;
     req.user.permissions = parsePermissions(user.permissions, user.role);
     next();

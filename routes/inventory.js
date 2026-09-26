@@ -2,11 +2,15 @@
 const router = require('express').Router();
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const multer = require('multer');
 const db = require('../database');
 const { requireAuth, requireRole, requirePermission, hasPermission } = require('../middleware/auth');
 const { suggestedRetailPrice } = require('../services/pricing');
 const { generateVehicleDescription } = require('../services/vehicleDescription');
+const { safeFetch, readBodyWithLimit, releaseResponse } = require('../services/safeFetch');
+const { resolveUploadPath } = require('../services/uploads');
+const { finalizeUploadedImages } = require('../services/imageSignature');
 
 const uploadDir = path.join(__dirname, '../public/uploads/units');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -14,9 +18,20 @@ const dealerCenterSftpRoot = process.env.DEALERCENTER_SFTP_ROOT || '/sftp';
 
 const storage = multer.diskStorage({
   destination: uploadDir,
-  filename: (_req, file, cb) => cb(null, `${Date.now()}-${file.originalname.replace(/\s+/g, '_')}`),
+  // A neutral, server-generated temp name: the caller's original filename
+  // (and its extension) is never trusted or retained. Once the real content
+  // is inspected, finalizeUploadedImages() renames this to its permanent
+  // name with an extension taken solely from the detected image type.
+  filename: (_req, _file, cb) => cb(null, `tmp-${Date.now()}-${crypto.randomBytes(8).toString('hex')}.upload`),
 });
-const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
+const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (/^image\/(png|jpe?g|webp|gif)$/.test(file.mimetype)) return cb(null, true);
+    cb(new Error('Photos must be a PNG, JPG, WEBP, or GIF image'));
+  },
+});
 
 const REPAIR_STATUSES = new Set(['searching','ordered','working','completed']);
 const PRICING_FIELDS = new Set([
@@ -286,16 +301,23 @@ function extractVehicleCandidate(html, pageUrl) {
   };
 }
 
+const MAX_CRAWL_HTML_BYTES = 5 * 1024 * 1024;
+const MAX_PHOTO_BYTES = 12 * 1024 * 1024;
+
 async function fetchText(url) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 14000);
   try {
-    const response = await fetch(url, {
+    const response = await safeFetch(url, {
       headers: DEFAULT_FETCH_HEADERS,
-      redirect: 'follow',
       signal: controller.signal,
     });
-    const text = await response.text().catch(() => '');
+    let text = '';
+    try {
+      text = (await readBodyWithLimit(response, MAX_CRAWL_HTML_BYTES)).toString('utf8');
+    } catch {
+      text = '';
+    }
     return { ok: response.ok, status: response.status, url: response.url || url, text };
   } finally {
     clearTimeout(timeout);
@@ -315,25 +337,31 @@ function safeImageExtension(contentType, sourceUrl) {
 }
 
 async function saveRemotePhoto(photoUrl, index) {
-  const parsed = new URL(photoUrl);
-  if (!['http:', 'https:'].includes(parsed.protocol)) return '';
-  if (isUnsafeFetchHost(parsed.hostname)) return '';
-
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 18000);
   try {
-    const response = await fetch(parsed.href, {
+    const response = await safeFetch(photoUrl, {
       headers: DEFAULT_FETCH_HEADERS,
-      redirect: 'follow',
       signal: controller.signal,
     });
-    if (!response.ok) return '';
+    if (!response.ok) {
+      await releaseResponse(response);
+      return '';
+    }
     const contentType = response.headers.get('content-type') || '';
-    if (contentType && !contentType.toLowerCase().startsWith('image/')) return '';
-    const arrayBuffer = await response.arrayBuffer();
-    if (!arrayBuffer.byteLength || arrayBuffer.byteLength > 12 * 1024 * 1024) return '';
-    const filename = `${Date.now()}-${index}-${Math.random().toString(16).slice(2)}${safeImageExtension(contentType, parsed.href)}`;
-    fs.writeFileSync(path.join(uploadDir, filename), Buffer.from(arrayBuffer));
+    if (contentType && !contentType.toLowerCase().startsWith('image/')) {
+      await releaseResponse(response);
+      return '';
+    }
+    let buffer;
+    try {
+      buffer = await readBodyWithLimit(response, MAX_PHOTO_BYTES);
+    } catch {
+      return '';
+    }
+    if (!buffer.length) return '';
+    const filename = `${Date.now()}-${index}-${Math.random().toString(16).slice(2)}${safeImageExtension(contentType, response.url || photoUrl)}`;
+    fs.writeFileSync(path.join(uploadDir, filename), buffer);
     return `/uploads/units/${filename}`;
   } catch {
     return '';
@@ -841,6 +869,7 @@ router.post('/import/website-photos', ...requirePermission('inventory_import'), 
 
 router.get('/price-suggestion', ...requirePermission('inventory_pricing'), (req, res) => {
   const suggestion = suggestedRetailPrice(db, {
+    dealership_id: req.user.dealership_id,
     year: req.query.year,
     make: req.query.make,
     model: req.query.model,
@@ -1041,8 +1070,8 @@ router.delete('/:id', ...requirePermission('inventory_delete'), (req, res) => {
 
   const photos = JSON.parse(unit.photos || '[]');
   photos.forEach(url => {
-    const filePath = path.join(__dirname, '../public', url);
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    const filePath = resolveUploadPath(url);
+    if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
   });
 
   db.prepare('UPDATE deals SET unit_id = NULL WHERE unit_id = ? AND dealership_id = ?')
@@ -1059,15 +1088,23 @@ router.delete('/:id', ...requirePermission('inventory_delete'), (req, res) => {
 router.post('/:id/photos', ...requirePermission('inventory_edit'), upload.array('photos', 20), (req, res) => {
   const unit = db.prepare('SELECT * FROM units WHERE id = ? AND dealership_id = ?')
     .get(req.params.id, req.user.dealership_id);
-  if (!unit) return res.status(404).json({ error: 'Unit not found' });
+  if (!unit) {
+    (req.files || []).forEach(f => { try { fs.unlinkSync(f.path); } catch { /* already gone */ } });
+    return res.status(404).json({ error: 'Unit not found' });
+  }
+
+  const { valid, rejected } = finalizeUploadedImages(req.files || []);
+  if (!valid.length && rejected.length) {
+    return res.status(400).json({ error: 'None of the uploaded files were valid images' });
+  }
 
   const existing = JSON.parse(unit.photos || '[]');
-  const newUrls = (req.files || []).map(f => `/uploads/units/${f.filename}`);
+  const newUrls = valid.map(f => `/uploads/units/${f.filename}`);
   const merged = [...existing, ...newUrls];
 
   db.prepare('UPDATE units SET photos = ? WHERE id = ?').run(JSON.stringify(merged), req.params.id);
   logActivity(req.user.dealership_id, req.params.id, 'Photos added', `${newUrls.length} photo(s) uploaded`, req.user.id);
-  res.json({ photos: merged });
+  res.json({ photos: merged, rejected: rejected.length });
 });
 
 // ── Delete a photo ──────────────────────────────────────────────────────────
@@ -1080,8 +1117,8 @@ router.delete('/:id/photos', ...requirePermission('inventory_edit'), (req, res) 
   const photos = JSON.parse(unit.photos || '[]').filter(p => p !== url);
   db.prepare('UPDATE units SET photos = ? WHERE id = ?').run(JSON.stringify(photos), req.params.id);
 
-  const filePath = path.join(__dirname, '../public', url);
-  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  const filePath = resolveUploadPath(url);
+  if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
   res.json({ photos });
 });
 

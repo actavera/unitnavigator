@@ -6,6 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const db = require('../database');
 const { JWT_SECRET, parsePermissions } = require('../middleware/auth');
+const { resolveUploadPath } = require('../services/uploads');
 
 function signUser(user, dealership, extra = {}) {
   const permissions = parsePermissions(user.permissions, user.role);
@@ -39,9 +40,8 @@ function cleanupDemoDealership(dealershipId) {
     let photos = [];
     try { photos = JSON.parse(row.photos || '[]'); } catch {}
     photos.forEach(url => {
-      if (!String(url || '').startsWith('/uploads/units/')) return;
-      const filePath = path.join(__dirname, '../public', url);
-      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      const filePath = resolveUploadPath(url);
+      if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
     });
   });
 

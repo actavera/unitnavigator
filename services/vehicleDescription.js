@@ -6,6 +6,13 @@ function clean(value) {
   return String(value ?? '').trim();
 }
 
+// Vehicle fields are short facts (a make, a trim level, a color), never
+// free-form text. Capping length keeps a caller from turning this endpoint
+// into an arbitrary-size, uncapped prompt to a paid AI API.
+function cleanShort(value, maxLength = 60) {
+  return clean(value).slice(0, maxLength);
+}
+
 function money(value) {
   const n = Number(String(value ?? '').replace(/[^0-9.-]/g, ''));
   return Number.isFinite(n) && n > 0 ? `$${Math.round(n).toLocaleString()}` : '';
@@ -18,12 +25,12 @@ function miles(value) {
 
 function vehicleFacts(unit) {
   return {
-    year: clean(unit.year),
-    make: clean(unit.make),
-    model: clean(unit.model),
-    trim: clean(unit.trim),
-    body_style: clean(unit.body_style),
-    color: clean(unit.color),
+    year: cleanShort(unit.year, 8),
+    make: cleanShort(unit.make),
+    model: cleanShort(unit.model),
+    trim: cleanShort(unit.trim),
+    body_style: cleanShort(unit.body_style),
+    color: cleanShort(unit.color),
     mileage: miles(unit.mileage),
     price: money(unit.asking_price),
   };

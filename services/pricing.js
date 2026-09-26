@@ -76,15 +76,23 @@ function internalComparableEstimate(db, request) {
   const make = normalize(request.make);
   const model = normalize(request.model);
   const year = parseNumber(request.year);
-  if (!make || !model || !year) return null;
+  const dealershipId = parseNumber(request.dealership_id);
+  if (!make || !model || !year || !dealershipId) return null;
 
+  // Pilot-phase policy: only ever compare a dealership's own sold history.
+  // Pooling other dealerships' sold prices into "the" suggestion would hand
+  // every dealer visibility into competitors' private sales figures with no
+  // consent and no disclosure. Cross-dealer benchmarking is a deliberate,
+  // later, opt-in feature (with anonymized aggregation and a much larger
+  // minimum sample size) — not something this estimate does silently.
   const rows = db.prepare(`
     SELECT *
     FROM platform_sold_units
-    WHERE sold_price IS NOT NULL
+    WHERE dealership_id = ?
+      AND sold_price IS NOT NULL
       AND sold_price > 500
       AND year BETWEEN ? AND ?
-  `).all(year - 1, year + 1);
+  `).all(dealershipId, year - 1, year + 1);
 
   const tiered = rows
     .map(row => ({ row, tier: comparableTier(row, request) }))
