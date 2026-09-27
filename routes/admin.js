@@ -52,6 +52,7 @@ const DEALER_SETTING_FIELDS = [
   'public_share_image_url',
   'representative_name',
   'representative_title',
+  'representative_email',
   'default_doc_fee',
   'default_filing_fee',
   'default_lender_fee',

@@ -5,10 +5,44 @@ const path = require('path');
 const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
 const { requireAuth, requirePermission } = require('../middleware/auth');
 const db = require('../database');
+const { safeFetch, readBodyWithLimit, releaseResponse } = require('../services/safeFetch');
 
 const manifestPath = path.join(__dirname, '..', 'public', 'forms', 'originals', 'manifest.json');
 const originalsDir = path.join(__dirname, '..', 'public', 'forms', 'originals');
-const esignArchiveDir = path.join(__dirname, '..', 'data', 'esign-archives');
+const esignArchiveDir = path.join(db.dataDir, 'esign-archives');
+
+// Applied to every request to our own configured Stirling/DocuSeal
+// endpoints — an unreachable or hung provider must never hang the request
+// that's waiting on it indefinitely. The timer must stay armed through full
+// response-body consumption, not just until headers arrive: a provider that
+// sends a 200 immediately and then stalls (or streams forever) is just as
+// broken as one that never responds at all. Overridable via env var so
+// tests can use a short timeout instead of waiting out the real one.
+const PROVIDER_REQUEST_TIMEOUT_MS = Number(process.env.UNITNAV_PROVIDER_TIMEOUT_MS) || 20000;
+// Provider JSON responses (submission create/status) should always be small;
+// this bounds how much we'll ever buffer before parsing.
+const MAX_PROVIDER_JSON_BYTES = 5 * 1024 * 1024;
+// A flattened packet from Stirling is a real multi-page PDF with embedded
+// government forms — allow generously more than the archive/photo caps.
+const MAX_PROVIDER_PDF_BYTES = 50 * 1024 * 1024;
+
+function withTimeout(ms) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  return { signal: controller.signal, cancel: () => clearTimeout(timer) };
+}
+
+function isAbortError(err) {
+  return err && (err.name === 'AbortError' || err.code === 'ABORT_ERR');
+}
+
+function parseJsonLoosely(buffer) {
+  try {
+    return JSON.parse(buffer.toString('utf8'));
+  } catch {
+    return {};
+  }
+}
 
 function templateManifest() {
   return JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
@@ -66,16 +100,16 @@ async function buildOfficialPacket(data, req) {
   return Buffer.from(await merged.save());
 }
 
-function documensoConfig() {
-  const token = process.env.DOCUMENSO_API_KEY || process.env.DOCUMENSO_TOKEN || '';
-  const baseUrl = String(process.env.DOCUMENSO_BASE_URL || process.env.DOCUMENSO_API_URL || '').replace(/\/$/, '');
+function docusealConfig() {
+  const token = process.env.DOCUSEAL_API_KEY || '';
+  const baseUrl = String(process.env.DOCUSEAL_BASE_URL || 'https://api.docuseal.com').replace(/\/$/, '');
   return { token, baseUrl };
 }
 
-function requireDocumensoConfig() {
-  const config = documensoConfig();
-  if (!config.token || !config.baseUrl) {
-    throw Object.assign(new Error('Documenso is not configured yet. Set DOCUMENSO_BASE_URL and DOCUMENSO_API_KEY on the server, then restart Unit Navigator.'), { statusCode: 501 });
+function requireDocusealConfig() {
+  const config = docusealConfig();
+  if (!config.token) {
+    throw Object.assign(new Error('DocuSeal is not configured yet. Set DOCUSEAL_API_KEY on the server, then restart Unit Navigator.'), { statusCode: 501 });
   }
   return config;
 }
@@ -97,16 +131,29 @@ async function preparePacketWithStirling(pdf, filename) {
   form.append('fileInput', new Blob([pdf], { type: 'application/pdf' }), filename);
   form.append('flattenOnlyForms', 'true');
   const headers = apiKey ? { 'X-API-KEY': apiKey } : {};
-  const response = await fetch(`${baseUrl}/api/v1/misc/flatten`, {
-    method: 'POST',
-    headers,
-    body: form,
-  });
-  if (!response.ok) {
-    const detail = await response.text().catch(() => '');
-    throw new Error(`Stirling PDF returned HTTP ${response.status}${detail ? `: ${detail.slice(0, 300)}` : ''}`);
+  const { signal, cancel } = withTimeout(PROVIDER_REQUEST_TIMEOUT_MS);
+  // The timer stays armed for the entire call, including body consumption
+  // below — cancel() only runs once in the outer finally, after everything
+  // has either completed or thrown.
+  try {
+    const response = await fetch(`${baseUrl}/api/v1/misc/flatten`, {
+      method: 'POST',
+      headers,
+      body: form,
+      signal,
+    });
+    if (!response.ok) {
+      const detailBuf = await readBodyWithLimit(response, MAX_PROVIDER_JSON_BYTES).catch(() => Buffer.alloc(0));
+      const detail = detailBuf.toString('utf8');
+      throw new Error(`Stirling PDF returned HTTP ${response.status}${detail ? `: ${detail.slice(0, 300)}` : ''}`);
+    }
+    return await readBodyWithLimit(response, MAX_PROVIDER_PDF_BYTES);
+  } catch (err) {
+    if (isAbortError(err)) throw new Error('Stirling PDF did not respond in time.');
+    throw err;
+  } finally {
+    cancel();
   }
-  return Buffer.from(await response.arrayBuffer());
 }
 
 function signerName(value, fallback) {
@@ -117,38 +164,53 @@ function signerEmail(value) {
   return String(value || '').trim();
 }
 
-function esignFieldAreas(data) {
-  const buyer = signerName(data.customer?.name, 'Buyer');
-  const dealer = signerName(data.dealer?.representativeName || data.dealer?.displayName || data.dealer?.name, 'Dealer');
+// Coordinates (in PDF points, y measured from the bottom like pdf-lib) of the
+// signature/date boxes on the official packet, positioned just above the
+// hand-drawn signature lines on addPurchaseAgreementPageFour (paperwork.js).
+// `page` is the ABSOLUTE 1-indexed page of the merged packet returned by
+// buildOfficialPacket, not that sub-section's own "Page 4" label printed on
+// the sheet: createCustomPages() emits, in order, 1 insurance page + 4
+// purchase-agreement pages, so the purchase agreement's own "page 4" (the
+// signature page) lands at absolute page 5. This was previously hardcoded
+// as page 4, which is the trade-in page, not the signature page — verified
+// against a rendered copy of the actual generated packet (see
+// test/paperwork-esign-coordinates.test.js) rather than assumed.
+const SIGNATURE_PAGE = 5;
+
+function esignFieldAreas() {
   return [
-    { name: `${buyer} Signature`, type: 'SIGNATURE', role: 'Buyer', area: { page: 4, x: 42, y: 410, w: 230, h: 24 } },
-    { name: `${buyer} Date`, type: 'DATE', role: 'Buyer', area: { page: 4, x: 292, y: 410, w: 100, h: 24 } },
-    { name: `${dealer} Signature`, type: 'SIGNATURE', role: 'Dealer', area: { page: 4, x: 42, y: 300, w: 300, h: 24 } },
-    { name: `${dealer} Date`, type: 'DATE', role: 'Dealer', area: { page: 4, x: 370, y: 300, w: 120, h: 24 } },
+    { name: 'Buyer Signature', type: 'signature', role: 'Buyer', area: { page: SIGNATURE_PAGE, x: 42, y: 410, w: 230, h: 24 } },
+    { name: 'Buyer Date', type: 'date', role: 'Buyer', area: { page: SIGNATURE_PAGE, x: 292, y: 410, w: 100, h: 24 } },
+    { name: 'Dealer Signature', type: 'signature', role: 'Dealer', area: { page: SIGNATURE_PAGE, x: 42, y: 300, w: 300, h: 24 } },
+    { name: 'Dealer Date', type: 'date', role: 'Dealer', area: { page: SIGNATURE_PAGE, x: 370, y: 300, w: 120, h: 24 } },
   ];
 }
 
-function toDocumensoPosition(pageWidthPt, pageHeightPt, area) {
+// DocuSeal areas are fractions (0-1) of the page's own width/height, with
+// page numbers 1-indexed — unlike Documenso's 0-100 percentages, but the
+// same top-left-origin geometry, so only the scale changes.
+function toDocusealArea(pageWidthPt, pageHeightPt, area) {
   const yTop = pageHeightPt - area.y - area.h;
   return {
     page: area.page,
-    positionX: (area.x / pageWidthPt) * 100,
-    positionY: (yTop / pageHeightPt) * 100,
-    width: (area.w / pageWidthPt) * 100,
-    height: (area.h / pageHeightPt) * 100,
+    x: area.x / pageWidthPt,
+    y: yTop / pageHeightPt,
+    w: area.w / pageWidthPt,
+    h: area.h / pageHeightPt,
   };
 }
 
-async function documensoFields(pdf, data) {
+async function docusealFields(pdf) {
   const doc = await PDFDocument.load(pdf);
-  return esignFieldAreas(data).map(field => {
+  return esignFieldAreas().map(field => {
     const page = doc.getPage(field.area.page - 1);
     const { width, height } = page.getSize();
     return {
+      name: field.name,
       type: field.type,
       role: field.role,
-      name: field.name,
-      ...toDocumensoPosition(width, height, field.area),
+      required: true,
+      areas: [toDocusealArea(width, height, field.area)],
     };
   });
 }
@@ -173,9 +235,10 @@ function firstUrl(value) {
   return '';
 }
 
-function envelopeIdFrom(value) {
+function submissionIdFrom(value) {
   if (!value || typeof value !== 'object') return '';
-  return String(value.id || value.envelopeId || value.envelope_id || value.data?.id || '').trim();
+  const id = value.id;
+  return id !== undefined && id !== null ? String(id).trim() : '';
 }
 
 function dealIdFrom(data) {
@@ -191,99 +254,289 @@ function signerSummary(submitters) {
   })));
 }
 
-async function createDocumensoEnvelope(pdf, filename, data) {
-  const { token, baseUrl } = requireDocumensoConfig();
-
-  const fields = await documensoFields(pdf, data);
-  const buyerFields = fields.filter(field => field.role === 'Buyer').map(({ role, name, ...field }) => field);
-  const dealerFields = fields.filter(field => field.role === 'Dealer').map(({ role, name, ...field }) => field);
-  const buyerEmail = signerEmail(data.customer?.email);
-  const dealerEmail = signerEmail(data.dealer?.email || data.dealerFromDbEmail);
-  if (!buyerEmail) throw Object.assign(new Error('Buyer email is required before sending for e-signature.'), { statusCode: 400 });
-  if (!dealerEmail) throw Object.assign(new Error('Dealer email is required before sending for e-signature.'), { statusCode: 400 });
-
-  const title = `${vehicleLabel(data) || 'Vehicle'} Deal Packet`;
-  const payload = {
-    title,
-    type: 'DOCUMENT',
-    recipients: [
-      {
-        email: buyerEmail,
-        name: signerName(data.customer?.name, 'Buyer'),
-        role: 'SIGNER',
-        fields: buyerFields,
-      },
-      {
-        email: dealerEmail,
-        name: signerName(data.dealer?.representativeName || data.dealer?.displayName || data.dealer?.name, 'Dealer'),
-        role: 'SIGNER',
-        fields: dealerFields,
-      },
-    ],
-    meta: {
-      subject: `${title} ready for e-signature`,
-      message: 'Please review and sign the attached vehicle paperwork packet.',
-      distributionMethod: 'EMAIL',
-    },
-  };
-
-  const form = new FormData();
-  form.append('payload', JSON.stringify(payload));
-  form.append('files', new Blob([pdf], { type: 'application/pdf' }), filename);
-  const createResponse = await fetch(`${baseUrl}/api/v2/envelope/create`, {
-    method: 'POST',
-    headers: { Authorization: token },
-    body: form,
-  });
-  const created = await createResponse.json().catch(() => ({}));
-  if (!createResponse.ok) {
-    throw Object.assign(new Error(created.error || created.message || `Documenso returned HTTP ${createResponse.status}`), { statusCode: 502, providerResponse: created });
+// DocuSeal responses can carry document/audit/embed/signing URLs — some of
+// them signing tokens in disguise (e.g. a submitter's `slug`, which alone
+// grants access to sign). None of that belongs in permanent storage. This is
+// a strict ALLOWLIST of durable, non-secret fields; anything not explicitly
+// copied here — including the entire response, if its shape is unexpected —
+// is dropped, never passed through.
+function sanitizeSubmitterForStorage(submitter) {
+  if (!submitter || typeof submitter !== 'object') return null;
+  const out = {};
+  if (typeof submitter.role === 'string') out.role = submitter.role;
+  if (typeof submitter.status === 'string') out.status = submitter.status;
+  for (const key of ['sent_at', 'opened_at', 'completed_at', 'declined_at']) {
+    if (typeof submitter[key] === 'string') out[key] = submitter[key];
   }
-
-  const envelopeId = envelopeIdFrom(created);
-  if (!envelopeId) {
-    throw Object.assign(new Error('Documenso did not return an envelope id.'), { statusCode: 502, providerResponse: created });
-  }
-
-  const distributeResponse = await fetch(`${baseUrl}/api/v2/envelope/distribute`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: token },
-    body: JSON.stringify({ envelopeId, meta: { distributionMethod: 'EMAIL' } }),
-  });
-  const distributed = await distributeResponse.json().catch(() => ({}));
-  if (!distributeResponse.ok) {
-    throw Object.assign(new Error(distributed.error || distributed.message || `Documenso distribute returned HTTP ${distributeResponse.status}`), { statusCode: 502, providerResponse: distributed });
-  }
-
-  return { title, envelopeId, submitters: payload.recipients, created, distributed, signingUrl: firstUrl(distributed) || firstUrl(created) };
+  if (typeof submitter.decline_reason === 'string') out.decline_reason = submitter.decline_reason;
+  return out;
 }
 
-async function documensoEnvelopeStatus(envelopeId) {
-  const { token, baseUrl } = requireDocumensoConfig();
-  const response = await fetch(`${baseUrl}/api/v2/envelope/${encodeURIComponent(envelopeId)}`, {
-    headers: { Authorization: token },
-  });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw Object.assign(new Error(body.error || body.message || `Documenso returned HTTP ${response.status}`), { statusCode: 502, providerResponse: body });
+function sanitizeDocusealResponseForStorage(payload) {
+  if (!payload || typeof payload !== 'object') return {};
+  const out = {};
+  if (typeof payload.id === 'number' || typeof payload.id === 'string') out.id = payload.id;
+  if (typeof payload.status === 'string') out.status = payload.status;
+  for (const key of ['created_at', 'completed_at', 'declined_at']) {
+    if (typeof payload[key] === 'string') out[key] = payload[key];
+  }
+  if (typeof payload.decline_reason === 'string') out.decline_reason = payload.decline_reason;
+  if (Array.isArray(payload.submitters)) {
+    out.submitters = payload.submitters.map(sanitizeSubmitterForStorage).filter(Boolean);
+  }
+  return out;
+}
+
+const MAX_ARCHIVE_BYTES = 25 * 1024 * 1024;
+
+// dealerInfo must always be the server-side dealerFromDb(req) result — never
+// anything sourced from the request body — so the countersigner's identity
+// can't be spoofed by whoever calls this route.
+async function createDocusealSubmission(pdf, filename, data, dealerInfo) {
+  const { token, baseUrl } = requireDocusealConfig();
+
+  const buyerEmail = signerEmail(data.customer?.email);
+  const buyerName = signerName(data.customer?.name, 'Buyer');
+  // The legal countersigner must be the dealership's designated
+  // representative — never the dealership's general contact email/name, even
+  // as a fallback. If the dealership hasn't configured a representative
+  // name+email, this must fail loudly rather than silently sign as "Dealer"
+  // via a generic mailbox.
+  const dealerEmail = signerEmail(dealerInfo.representativeEmail);
+  const dealerName = signerName(dealerInfo.representativeName, '');
+  if (!buyerEmail) throw Object.assign(new Error('Buyer email is required before sending for e-signature.'), { statusCode: 400 });
+  if (!dealerName || !dealerEmail) {
+    throw Object.assign(new Error('Dealership does not have a representative name and email configured for e-signature. Set both in dealership settings.'), { statusCode: 400 });
+  }
+
+  const fields = await docusealFields(pdf);
+  const title = `${vehicleLabel(data) || 'Vehicle'} Deal Packet`;
+
+  const payload = {
+    name: title,
+    // "preserved": submitter order in the array below IS the signing order,
+    // and DocuSeal withholds the next signer's notification until the
+    // previous one completes — the customer (index 0) signs before the
+    // dealership representative (index 1) is ever notified.
+    order: 'preserved',
+    send_email: true,
+    documents: [
+      {
+        name: filename,
+        file: pdf.toString('base64'),
+        fields,
+      },
+    ],
+    submitters: [
+      { name: buyerName, email: buyerEmail, role: 'Buyer' },
+      { name: dealerName, email: dealerEmail, role: 'Dealer' },
+    ],
+  };
+
+  const { signal, cancel } = withTimeout(PROVIDER_REQUEST_TIMEOUT_MS);
+  let created;
+  try {
+    const response = await fetch(`${baseUrl}/submissions/pdf`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Auth-Token': token },
+      body: JSON.stringify(payload),
+      signal,
+    });
+    const buf = await readBodyWithLimit(response, MAX_PROVIDER_JSON_BYTES);
+    created = parseJsonLoosely(buf);
+    if (!response.ok) {
+      throw Object.assign(new Error(created.error || created.message || `DocuSeal returned HTTP ${response.status}`), { statusCode: 502, providerResponse: created });
+    }
+  } catch (err) {
+    if (isAbortError(err)) throw Object.assign(new Error('DocuSeal did not respond in time.'), { statusCode: 504 });
+    throw err;
+  } finally {
+    cancel();
+  }
+
+  const submissionId = submissionIdFrom(created);
+  if (!submissionId) {
+    throw Object.assign(new Error('DocuSeal did not return a submission id.'), { statusCode: 502, providerResponse: created });
+  }
+
+  return { title, submissionId, submitters: payload.submitters, created, signingUrl: firstUrl(created) };
+}
+
+async function docusealSubmissionStatus(submissionId) {
+  const { token, baseUrl } = requireDocusealConfig();
+  const { signal, cancel } = withTimeout(PROVIDER_REQUEST_TIMEOUT_MS);
+  let body;
+  try {
+    const response = await fetch(`${baseUrl}/submissions/${encodeURIComponent(submissionId)}`, {
+      headers: { 'X-Auth-Token': token },
+      signal,
+    });
+    const buf = await readBodyWithLimit(response, MAX_PROVIDER_JSON_BYTES);
+    body = parseJsonLoosely(buf);
+    if (!response.ok) throw Object.assign(new Error(body.error || body.message || `DocuSeal returned HTTP ${response.status}`), { statusCode: 502, providerResponse: body });
+  } catch (err) {
+    if (isAbortError(err)) throw Object.assign(new Error('DocuSeal did not respond in time.'), { statusCode: 504 });
+    throw err;
+  } finally {
+    cancel();
+  }
   return body;
 }
 
-async function archiveDocumensoEnvelope(envelopeId, dealershipId) {
-  const { token, baseUrl } = documensoConfig();
-  const envelope = await documensoEnvelopeStatus(envelopeId);
-  if (String(envelope.status || '').toUpperCase() !== 'COMPLETED') return { envelope };
-  const envelopeItemId = envelope.fields?.[0]?.envelopeItemId || envelope.documents?.[0]?.envelopeItemId || envelope.envelopeItems?.[0]?.id;
-  if (!envelopeItemId) return { envelope };
-  const response = await fetch(`${baseUrl}/api/v2/envelope/item/${encodeURIComponent(envelopeItemId)}/download`, {
-    headers: { Authorization: token },
-  });
-  if (!response.ok) throw new Error(`Documenso signed PDF download returned HTTP ${response.status}`);
+const DOWNLOAD_TIMEOUT_MS = Number(process.env.UNITNAV_PROVIDER_TIMEOUT_MS) || 20000;
+
+// DocuSeal's document/audit-log URLs are provider-returned data, not our own
+// configured endpoint — a compromised or malformed provider response must
+// not be able to turn this into an SSRF vector. Routed through the same
+// safeFetch/readBodyWithLimit guard used for arbitrary user-supplied URLs
+// elsewhere (DNS-rebinding-safe, size-limited, redirect-revalidated).
+async function downloadProviderFile(url, maxBytes) {
+  const { signal, cancel } = withTimeout(DOWNLOAD_TIMEOUT_MS);
+  let response;
+  try {
+    response = await safeFetch(url, { signal });
+  } catch (err) {
+    cancel();
+    if (isAbortError(err)) throw new Error('Timed out downloading a file from DocuSeal.');
+    throw err;
+  }
+  try {
+    if (!response.ok) {
+      throw new Error(`DocuSeal returned HTTP ${response.status} downloading a file`);
+    }
+    return await readBodyWithLimit(response, maxBytes);
+  } catch (err) {
+    if (!response.ok) await releaseResponse(response).catch(() => {});
+    if (isAbortError(err)) throw new Error('Timed out downloading a file from DocuSeal.');
+    throw err;
+  } finally {
+    cancel();
+  }
+}
+
+// fs.existsSync is true for directories too; the idempotency check must
+// only ever treat an actual, previously-written file as "already archived".
+function isRegularFile(p) {
+  try {
+    return fs.statSync(p).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function cleanupArchiveFiles(paths) {
+  for (const p of paths) {
+    if (!p) continue;
+    try {
+      if (fs.existsSync(p)) fs.unlinkSync(p);
+    } catch { /* best-effort cleanup */ }
+  }
+}
+
+// All-or-nothing: a completed submission archives BOTH the signed document
+// AND the audit log, or neither. Both are downloaded fully into memory
+// first, written to temp files, then committed into their final location
+// with a no-clobber fs.linkSync (never fs.renameSync, which would silently
+// overwrite) only once both writes succeed — so a failure partway through
+// never leaves a permanent archive with just one of the two files, and
+// never overwrites a pre-existing or concurrently-created file. Never marks
+// anything complete/archived on a provider failure: if the status check, either
+// download, or either write throws, this function throws too, and the
+// caller (the /esign/:id/status route) leaves the existing DB row untouched.
+async function archiveDocusealSubmission(submissionId, dealershipId, { download = downloadProviderFile } = {}) {
+  const submission = await docusealSubmissionStatus(submissionId);
+  if (String(submission.status || '').toLowerCase() !== 'completed') return { submission };
+
+  const safeId = String(submissionId).replace(/[^a-z0-9_-]+/gi, '-');
+  const docFilename = `${dealershipId}-${safeId}.pdf`;
+  const auditFilename = `${dealershipId}-${safeId}-audit.pdf`;
+  const docFinalPath = path.join(esignArchiveDir, docFilename);
+  const auditFinalPath = path.join(esignArchiveDir, auditFilename);
+  const relativeArchivePath = path.join('data', 'esign-archives', docFilename);
+  const relativeAuditLogPath = path.join('data', 'esign-archives', auditFilename);
+
+  const docExists = isRegularFile(docFinalPath);
+  const auditExists = isRegularFile(auditFinalPath);
+
+  // Idempotent: a previous status check may have already archived this
+  // submission. Never re-download or re-touch those files — hand back the
+  // paths that are already there, byte-for-byte untouched.
+  if (docExists && auditExists) {
+    return { submission, archivePath: relativeArchivePath, auditLogPath: relativeAuditLogPath };
+  }
+
+  // Exactly one final file already exists: an inconsistent partial archive
+  // left over from some prior attempt (e.g. a process killed mid-archive
+  // before this idempotent-retry/no-clobber logic existed). Never guess at
+  // "fixing" this automatically — that risks silently discarding whichever
+  // half is actually the valid one. Leave both untouched, download nothing,
+  // and surface a clear error for a human to resolve.
+  if (docExists !== auditExists) {
+    throw Object.assign(
+      new Error(
+        `This submission has an inconsistent partial archive on disk (the ${docExists ? 'signed document exists but the audit log is missing' : 'audit log exists but the signed document is missing'}). ` +
+        'Automatic archival has stopped rather than risk overwriting or losing a file — this needs manual review of the esign-archives directory before it can proceed.',
+      ),
+      { statusCode: 409, retryable: false, needsManualRecovery: true },
+    );
+  }
+
+  // Neither exists: proceed with a normal first-time archive.
+  const documentUrl = submission.combined_document_url;
+  const auditLogUrl = submission.audit_log_url;
+  if (!documentUrl || !auditLogUrl) {
+    throw Object.assign(
+      new Error('DocuSeal reported this submission as completed but did not return both a signed-document URL and an audit-log URL. This is retryable — check status again shortly.'),
+      { statusCode: 502, retryable: true },
+    );
+  }
+
+  // Fetch fresh copies of both now; neither is ever stored anywhere as a URL
+  // — only the bytes, written to our own local archive below.
+  const docBuffer = await download(documentUrl, MAX_ARCHIVE_BYTES);
+  const auditBuffer = await download(auditLogUrl, MAX_ARCHIVE_BYTES);
+
   fs.mkdirSync(esignArchiveDir, { recursive: true });
-  const safeEnvelopeId = String(envelopeId).replace(/[^a-z0-9_-]+/gi, '-');
-  const relativePath = path.join('data', 'esign-archives', `${dealershipId}-${safeEnvelopeId}.pdf`);
-  const archivePath = path.join(__dirname, '..', relativePath);
-  fs.writeFileSync(archivePath, Buffer.from(await response.arrayBuffer()));
-  return { envelope, archivePath: relativePath };
+  const uniqueSuffix = `${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const docTempPath = `${docFinalPath}.tmp-${uniqueSuffix}`;
+  const auditTempPath = `${auditFinalPath}.tmp-${uniqueSuffix}`;
+
+  // fs.linkSync is a hard no-clobber commit: unlike fs.renameSync, it fails
+  // (EEXIST) rather than silently overwriting if the final path already
+  // exists — including if something raced to create it between the
+  // existence check above and this attempt. The temp file is then unlinked,
+  // leaving the final path as a second hard link to the same bytes (atomic
+  // on the same filesystem, which esignArchiveDir always is here).
+  let docLinked = false;
+  let auditLinked = false;
+  try {
+    fs.writeFileSync(docTempPath, docBuffer);
+    fs.writeFileSync(auditTempPath, auditBuffer);
+    fs.linkSync(docTempPath, docFinalPath);
+    docLinked = true;
+    fs.unlinkSync(docTempPath);
+    fs.linkSync(auditTempPath, auditFinalPath);
+    auditLinked = true;
+    fs.unlinkSync(auditTempPath);
+  } catch (err) {
+    // Remove only what THIS attempt created: docFinalPath only if we
+    // ourselves just linked it, auditFinalPath only if we ourselves just
+    // linked it (e.g. the final fs.unlinkSync(auditTempPath) can still
+    // throw *after* the audit link already succeeded — that must not leave
+    // an audit-only partial archive behind) — never a pre-existing file or
+    // a concurrent collision winner (the no-clobber link above would have
+    // thrown before either flag was set, had one already existed there),
+    // plus any leftover temp files from this attempt, best-effort.
+    if (docLinked) cleanupArchiveFiles([docFinalPath]);
+    if (auditLinked) cleanupArchiveFiles([auditFinalPath]);
+    cleanupArchiveFiles([docTempPath, auditTempPath]);
+    throw Object.assign(
+      new Error(`Could not write the signed document/audit log archive to disk: ${err.message}`),
+      { statusCode: 500, retryable: true },
+    );
+  }
+
+  return { submission, archivePath: relativeArchivePath, auditLogPath: relativeAuditLogPath };
 }
 
 function splitAddress(address) {
@@ -312,6 +565,10 @@ function dealerFromDb(req) {
     website: row.website || '',
     representativeName: row.representative_name || '',
     representativeTitle: row.representative_title || '',
+    // Deliberately separate from `email` (the dealership's general contact
+    // address): the e-sign countersigner must be a specific person the
+    // dealership has designated for that role, never a generic mailbox.
+    representativeEmail: row.representative_email || '',
   };
 }
 
@@ -873,41 +1130,52 @@ router.post('/official-packet', ...requirePermission('contracts_manage'), async 
 router.post('/esign', ...requirePermission('contracts_manage'), async (req, res) => {
   try {
     const data = req.body || {};
-    data.dealer = { ...(data.dealer || {}), ...dealerFromDb(req) };
-    data.dealerFromDbEmail = data.dealer?.email || '';
-    requireDocumensoConfig();
+    // The countersigner's name/email come exclusively from the authenticated
+    // dealership's own row in the database — dealerInfo is never derived from
+    // req.body, so a request body attempting to override the dealer's name or
+    // email for signing purposes has no effect. data.dealer is still merged
+    // (dealerInfo last, so it always wins) purely for template rendering
+    // fields like address/phone shown on the packet itself.
+    const dealerInfo = dealerFromDb(req);
+    data.dealer = { ...(data.dealer || {}), ...dealerInfo };
+    requireDocusealConfig();
+
     const buyerEmail = signerEmail(data.customer?.email);
-    const dealerEmail = signerEmail(data.dealer?.email);
     if (!buyerEmail) return res.status(400).json({ error: 'Buyer email is required before sending for e-signature.' });
-    if (!dealerEmail) return res.status(400).json({ error: 'Dealer email is required before sending for e-signature.' });
+    if (!signerName(dealerInfo.representativeName, '') || !signerEmail(dealerInfo.representativeEmail)) {
+      return res.status(400).json({ error: 'Dealership does not have a representative name and email configured for e-signature. Set both in dealership settings before sending for e-signature.' });
+    }
 
     const unpreparedPdf = await buildOfficialPacket(data, req);
     const filename = packetFilename(data);
     const pdf = await preparePacketWithStirling(unpreparedPdf, filename);
-    const envelope = await createDocumensoEnvelope(pdf, filename, data);
+    const submission = await createDocusealSubmission(pdf, filename, data, dealerInfo);
     const insert = db.prepare(`
       INSERT INTO esign_envelopes (
         dealership_id, deal_id, provider, provider_envelope_id, title, status,
         signer_summary, signing_url, provider_response, created_by
-      ) VALUES (?, ?, 'documenso', ?, ?, 'pending', ?, ?, ?, ?)
+      ) VALUES (?, ?, 'docuseal', ?, ?, 'pending', ?, ?, ?, ?)
     `).run(
       req.user.dealership_id,
       dealIdFrom(data),
-      envelope.envelopeId,
-      envelope.title,
-      signerSummary(envelope.submitters),
-      envelope.signingUrl || null,
-      JSON.stringify({ created: envelope.created, distributed: envelope.distributed }),
+      submission.submissionId,
+      submission.title,
+      signerSummary(submission.submitters),
+      // The DocuSeal embed/signing URL is a live signing token — never
+      // persisted, here or anywhere else. It's returned once, below, in this
+      // response only, for the "open signing link now" immediate UX.
+      null,
+      JSON.stringify({ created: sanitizeDocusealResponseForStorage(submission.created) }),
       req.user.id,
     );
 
     res.status(201).json({
-      message: 'E-sign packet sent through Documenso.',
-      provider: 'documenso',
+      message: 'E-sign packet sent through DocuSeal.',
+      provider: 'docuseal',
       envelope_id: insert.lastInsertRowid,
-      provider_envelope_id: envelope.envelopeId,
-      signing_url: envelope.signingUrl,
-      response: { created: envelope.created, distributed: envelope.distributed },
+      provider_submission_id: submission.submissionId,
+      signing_url: submission.signingUrl,
+      response: { created: sanitizeDocusealResponseForStorage(submission.created) },
     });
   } catch (err) {
     console.error(err);
@@ -922,14 +1190,25 @@ router.get('/esign/:id/status', ...requirePermission('contracts_manage'), async 
   `).get(req.params.id, req.user.dealership_id);
   if (!row) return res.status(404).json({ error: 'E-sign envelope not found.' });
 
+  // This record predates the DocuSeal migration (or was created by some
+  // other integration). Its provider_envelope_id is not a DocuSeal
+  // submission id, so it must never be sent to the DocuSeal API.
+  if (row.provider !== 'docuseal') {
+    return res.status(409).json({
+      error: `This e-sign record was created with a legacy provider ("${row.provider}") that Unit Navigator no longer integrates with. It must be checked or migrated separately.`,
+      provider: row.provider,
+    });
+  }
+
   try {
-    const archived = await archiveDocumensoEnvelope(row.provider_envelope_id, req.user.dealership_id);
-    const providerStatus = String(archived.envelope?.status || row.status || '').toLowerCase();
-    const completedAt = archived.envelope?.completedAt || archived.envelope?.completed_at || row.completed_at;
+    const archived = await archiveDocusealSubmission(row.provider_envelope_id, req.user.dealership_id);
+    const providerStatus = String(archived.submission?.status || row.status || '').toLowerCase();
+    const completedAt = archived.submission?.completed_at || row.completed_at;
     db.prepare(`
       UPDATE esign_envelopes
       SET status = ?,
           archive_path = COALESCE(?, archive_path),
+          audit_log_path = COALESCE(?, audit_log_path),
           provider_response = ?,
           completed_at = COALESCE(?, completed_at),
           archived_at = CASE WHEN ? IS NOT NULL AND archived_at IS NULL THEN datetime('now') ELSE archived_at END
@@ -937,7 +1216,8 @@ router.get('/esign/:id/status', ...requirePermission('contracts_manage'), async 
     `).run(
       providerStatus,
       archived.archivePath || null,
-      JSON.stringify(archived.envelope || {}),
+      archived.auditLogPath || null,
+      JSON.stringify(sanitizeDocusealResponseForStorage(archived.submission)),
       completedAt || null,
       archived.archivePath || null,
       row.id,
@@ -946,13 +1226,14 @@ router.get('/esign/:id/status', ...requirePermission('contracts_manage'), async 
 
     res.json({
       id: row.id,
-      provider: 'documenso',
-      provider_envelope_id: row.provider_envelope_id,
+      provider: 'docuseal',
+      provider_submission_id: row.provider_envelope_id,
       status: providerStatus,
       completed_at: completedAt || null,
       archived: Boolean(archived.archivePath || row.archive_path),
       archive_path: archived.archivePath || row.archive_path || null,
-      response: archived.envelope,
+      audit_log_path: archived.auditLogPath || row.audit_log_path || null,
+      response: sanitizeDocusealResponseForStorage(archived.submission),
     });
   } catch (err) {
     console.error(err);
@@ -962,5 +1243,10 @@ router.get('/esign/:id/status', ...requirePermission('contracts_manage'), async 
 
 module.exports = router;
 module.exports.preparePacketWithStirling = preparePacketWithStirling;
-module.exports.toDocumensoPosition = toDocumensoPosition;
-module.exports.createDocumensoEnvelope = createDocumensoEnvelope;
+module.exports.toDocusealArea = toDocusealArea;
+module.exports.createDocusealSubmission = createDocusealSubmission;
+module.exports.buildOfficialPacket = buildOfficialPacket;
+module.exports.esignFieldAreas = esignFieldAreas;
+module.exports.archiveDocusealSubmission = archiveDocusealSubmission;
+module.exports.downloadProviderFile = downloadProviderFile;
+module.exports.sanitizeDocusealResponseForStorage = sanitizeDocusealResponseForStorage;
