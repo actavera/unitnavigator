@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/site.webmanifest">
+  <title>Today's Priorities — Unit Navigator</title>
+  <script>(function(){var t=localStorage.getItem('un_theme')||'dark';document.documentElement.dataset.theme=t;})()</script>
+  <link rel="stylesheet" href="/css/main.css">
+  <style>
+    .priorities-shell { max-width: 920px; margin: 0 auto; padding: 28px 18px 60px; }
+    .priorities-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 22px; }
+    .priorities-head h1 { font-size: 1.6rem; letter-spacing: -.03em; }
+    .priorities-head p { color: var(--text-2); margin-top: 4px; }
+    .priority-list { display: grid; gap: 12px; }
+    .priority-card {
+      border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--s1);
+      padding: 16px 18px; display: grid; gap: 8px;
+    }
+    .priority-card.level-high { border-left: 4px solid var(--red, #ef4444); }
+    .priority-card.level-medium { border-left: 4px solid var(--orange, #f59e0b); }
+    .priority-card.level-low { border-left: 4px solid var(--blue, #3b82f6); }
+    .priority-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+    .priority-title { font-weight: 700; font-size: 1.02rem; }
+    .priority-level-badge {
+      font-size: .72rem; font-weight: 800; text-transform: uppercase; letter-spacing: .04em;
+      padding: 3px 9px; border-radius: 999px; background: var(--s2); color: var(--text-2);
+    }
+    .priority-meta { color: var(--muted); font-size: .85rem; }
+    .priority-reason { color: var(--text-2); font-size: .92rem; line-height: 1.45; }
+    .priority-next-step { font-size: .92rem; line-height: 1.45; }
+    .priority-next-step strong { color: var(--text); }
+    .priority-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+    .ai-note { font-size: .76rem; color: var(--muted); margin-top: 2px; }
+    .priorities-empty { text-align: center; padding: 60px 20px; color: var(--muted); }
+    .priorities-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+    .priorities-toolbar .status { font-size: .82rem; color: var(--muted); }
+  </style>
+</head>
+<body>
+<div id="nav-container"></div>
+<main class="priorities-shell">
+  <div class="priorities-head">
+    <div>
+      <h1>Today's Priorities</h1>
+      <p>Ranked automatically from your deals, inventory, and user-access alerts.</p>
+    </div>
+  </div>
+
+  <div class="priorities-toolbar">
+    <button class="btn btn-secondary" id="aiGuidanceBtn" onclick="requestAiGuidance()">Generate AI Guidance</button>
+    <span class="status" id="aiStatus"></span>
+  </div>
+
+  <div class="priority-list" id="priorityList"></div>
+  <div class="priorities-empty" id="priorityEmpty" style="display:none;">Nothing needs attention right now.</div>
+</main>
+
+<script src="/js/nav.js"></script>
+<script>
+if (UN.requireAuth()) {
+  UN.renderNav();
+  loadPriorities();
+}
+
+let priorities = [];
+
+async function loadPriorities() {
+  try {
+    const data = await UN.api('GET', '/api/dashboard/priorities');
+    priorities = data.priorities || [];
+    renderPriorities();
+  } catch (err) {
+    toast(err.message, 'err');
+  }
+}
+
+function renderPriorities() {
+  const list = document.getElementById('priorityList');
+  const empty = document.getElementById('priorityEmpty');
+  if (!priorities.length) {
+    list.innerHTML = '';
+    empty.style.display = '';
+    return;
+  }
+  empty.style.display = 'none';
+  list.innerHTML = priorities.map(priorityCardHtml).join('');
+}
+
+function priorityCardHtml(p) {
+  const actionButtons = (p.actions?.options || []).map(opt =>
+    `<button class="btn btn-ghost" onclick="runAction('${esc(p.id)}', '${esc(opt)}')">${esc(actionLabel(opt))}</button>`
+  ).join('');
+  return `
+    <article class="priority-card level-${esc(p.priority_level)}" id="priorityCard-${esc(cssId(p.id))}">
+      <div class="priority-top">
+        <span class="priority-title">${esc(p.title)}</span>
+        <span class="priority-level-badge">${esc(p.priority_level)}</span>
+      </div>
+      <div class="priority-meta">${p.age_days} day${p.age_days === 1 ? '' : 's'} · ${esc(p.status || '')}</div>
+      <div class="priority-reason" id="priorityReason-${esc(cssId(p.id))}">${esc(p.reason)}</div>
+      <div class="priority-next-step" id="priorityNextStep-${esc(cssId(p.id))}"><strong>Next step:</strong> ${esc(p.next_step)}</div>
+      <div class="priority-actions">
+        ${actionButtons}
+        <a class="btn btn-primary" href="${esc(p.link)}">Open</a>
+      </div>
+    </article>
+  `;
+}
+
+function cssId(id) {
+  return String(id).replace(/[^a-z0-9]+/gi, '-');
+}
+
+function actionLabel(option) {
+  return {
+    still_pending: 'Still Pending',
+    vehicle_changed: 'Switch Vehicle',
+    dead: 'Dead Deal',
+    closed: 'Sold',
+    update_stage: 'Update Stage',
+    keep_active: 'Keep Active',
+    revoke: 'Revoke Access',
+  }[option] || option;
+}
+
+async function runAction(priorityId, option) {
+  const priority = priorities.find(p => p.id === priorityId);
+  if (!priority) return;
+  try {
+    if (option === 'update_stage') {
+      // Inventory stage changes require picking a target stage — send the
+      // dealer to the existing inventory workflow rather than guessing one.
+      location.href = priority.link;
+      return;
+    }
+    await UN.api('POST', priority.actions.endpoint, { action: option });
+    toast('Updated.');
+    await loadPriorities();
+  } catch (err) {
+    toast(err.message, 'err');
+  }
+}
+
+async function requestAiGuidance() {
+  const btn = document.getElementById('aiGuidanceBtn');
+  const status = document.getElementById('aiStatus');
+  if (!priorities.length) return;
+  btn.disabled = true;
+  status.textContent = 'Generating…';
+  try {
+    const ids = priorities.map(p => p.id);
+    const data = await UN.api('POST', '/api/dashboard/priorities/ai-guidance', { ids });
+    if (data.ai_unavailable) {
+      status.textContent = 'AI guidance is unavailable right now — showing the standard summary.';
+    } else {
+      applyGuidance(data.guidance || {});
+      status.textContent = data.cached ? 'AI guidance (cached).' : 'AI guidance applied.';
+    }
+  } catch (err) {
+    status.textContent = 'AI guidance is unavailable right now — showing the standard summary.';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function applyGuidance(guidance) {
+  // Only ever rewrites the visible text for an id already present on the
+  // page — never adds a new card, changes a link/action, or reorders
+  // anything. `guidance` is server-validated, but this is still untrusted
+  // text and is inserted the same escaped way as any other AI/DB text.
+  for (const [id, text] of Object.entries(guidance)) {
+    if (!priorities.some(p => p.id === id)) continue;
+    const reasonEl = document.getElementById(`priorityReason-${cssId(id)}`);
+    if (reasonEl && text.summary) reasonEl.textContent = text.summary;
+    const nextStepEl = document.getElementById(`priorityNextStep-${cssId(id)}`);
+    if (nextStepEl && text.recommendation) nextStepEl.innerHTML = `<strong>Next step:</strong> ${esc(text.recommendation)}`;
+  }
+}
+
+function esc(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch]));
+}
+</script>
+</body>
+</html>

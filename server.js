@@ -134,6 +134,7 @@ const staticPages = {
   '/demo':          'demo.html',
   '/login':         'login.html',
   '/home':          'home.html',
+  '/priorities':    'priorities.html',
   '/credit/new':    'credit-new.html',
   '/deals':         'deals.html',
   '/customers':     'customers.html',
