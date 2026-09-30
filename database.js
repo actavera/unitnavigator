@@ -126,7 +126,7 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     dealership_id INTEGER REFERENCES dealerships(id),
     deal_id INTEGER REFERENCES deals(id),
-    provider TEXT DEFAULT 'documenso',
+    provider TEXT DEFAULT 'docuseal',
     provider_envelope_id TEXT NOT NULL,
     title TEXT,
     status TEXT DEFAULT 'pending',
@@ -310,6 +310,11 @@ if (!customerColumns.includes('id_number')) {
   db.exec("ALTER TABLE customers ADD COLUMN id_number TEXT");
 }
 
+const esignEnvelopeColumns = db.prepare("PRAGMA table_info(esign_envelopes)").all().map(col => col.name);
+if (!esignEnvelopeColumns.includes('audit_log_path')) {
+  db.exec("ALTER TABLE esign_envelopes ADD COLUMN audit_log_path TEXT");
+}
+
 const dealershipColumns = db.prepare("PRAGMA table_info(dealerships)").all().map(col => col.name);
 function addDealershipColumn(column, ddl) {
   if (!dealershipColumns.includes(column)) db.exec(`ALTER TABLE dealerships ADD COLUMN ${ddl}`);
@@ -325,6 +330,7 @@ addDealershipColumn('email', 'email TEXT');
 addDealershipColumn('website', 'website TEXT');
 addDealershipColumn('representative_name', 'representative_name TEXT');
 addDealershipColumn('representative_title', 'representative_title TEXT');
+addDealershipColumn('representative_email', 'representative_email TEXT');
 addDealershipColumn('default_doc_fee', 'default_doc_fee REAL DEFAULT 399');
 addDealershipColumn('default_filing_fee', 'default_filing_fee REAL DEFAULT 0');
 addDealershipColumn('default_lender_fee', 'default_lender_fee REAL DEFAULT 0');
@@ -453,3 +459,7 @@ db.prepare(`
 `).run();
 
 module.exports = db;
+// Exposed so other modules (e.g. the e-sign archive directory) resolve
+// relative to the same, test-overridable data directory rather than
+// hardcoding their own path back to the repo root.
+module.exports.dataDir = dataDir;
