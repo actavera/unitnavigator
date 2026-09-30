@@ -433,6 +433,27 @@ function cleanupArchiveFiles(paths) {
   }
 }
 
+// DocuSeal's "completed" response shape for a single-document submission
+// doesn't always include combined_document_url — it can instead carry the
+// signed PDF only in documents[0].url (observed on a real completed
+// submission). combined_document_url is preferred when present since it's
+// explicitly the provider's own merged/final artifact; documents[0].url is
+// only accepted as a fallback, and only when the documents array contains
+// EXACTLY one entry and that entry's url is a usable http(s) URL — with any
+// other document count, or a document present but lacking a usable URL,
+// there is no safe way to guess which one is the final signed packet, so
+// this deliberately returns nothing and lets the caller's existing
+// retryable-502 path handle it, rather than ever guessing.
+function resolveDocumentUrl(submission) {
+  if (typeof submission.combined_document_url === 'string' && submission.combined_document_url) {
+    return submission.combined_document_url;
+  }
+  const documents = Array.isArray(submission.documents) ? submission.documents : [];
+  if (documents.length !== 1) return '';
+  const url = documents[0] && typeof documents[0].url === 'string' ? documents[0].url : '';
+  return /^https?:\/\//.test(url) ? url : '';
+}
+
 // All-or-nothing: a completed submission archives BOTH the signed document
 // AND the audit log, or neither. Both are downloaded fully into memory
 // first, written to temp files, then committed into their final location
@@ -482,7 +503,7 @@ async function archiveDocusealSubmission(submissionId, dealershipId, { download 
   }
 
   // Neither exists: proceed with a normal first-time archive.
-  const documentUrl = submission.combined_document_url;
+  const documentUrl = resolveDocumentUrl(submission);
   const auditLogUrl = submission.audit_log_url;
   if (!documentUrl || !auditLogUrl) {
     throw Object.assign(

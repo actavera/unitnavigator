@@ -396,6 +396,184 @@ test('a no-clobber collision at finalization time cannot overwrite an existing f
   assert.equal(tempFileCount(), 0, 'no temp files must survive');
 });
 
+// Real single-document DocuSeal "completed" response shape (observed on
+// submission 11714958): no combined_document_url, but exactly one document
+// whose own .url is the signed PDF.
+test('a real single-document response (no combined_document_url, one documents[].url) archives via that document URL', async () => {
+  const id = nextId();
+  const dealershipId = 1001;
+  nextStatusBody = {
+    status: 'completed',
+    audit_log_url: 'https://provider.example/audit-single-doc',
+    documents: [{ name: 'packet.pdf', url: 'https://provider.example/single-doc' }],
+  };
+  const download = async url => {
+    if (url === 'https://provider.example/single-doc') return Buffer.from('SINGLE-DOC-BYTES');
+    if (url === 'https://provider.example/audit-single-doc') return Buffer.from('SINGLE-DOC-AUDIT-BYTES');
+    throw new Error(`unexpected url ${url}`);
+  };
+
+  const result = await paperwork.archiveDocusealSubmission(id, dealershipId, { download });
+  assert.ok(result.archivePath);
+  assert.ok(result.auditLogPath);
+  const docFile = path.join(archiveDir(), path.basename(result.archivePath));
+  const auditFile = path.join(archiveDir(), path.basename(result.auditLogPath));
+  assert.equal(fs.readFileSync(docFile, 'utf8'), 'SINGLE-DOC-BYTES');
+  assert.equal(fs.readFileSync(auditFile, 'utf8'), 'SINGLE-DOC-AUDIT-BYTES');
+});
+
+test('existing combined_document_url-only behavior is unchanged', async () => {
+  const id = nextId();
+  const dealershipId = 1002;
+  nextStatusBody = {
+    status: 'completed',
+    combined_document_url: 'https://provider.example/combined-only',
+    audit_log_url: 'https://provider.example/audit-combined-only',
+  };
+  const download = async url => {
+    if (url === 'https://provider.example/combined-only') return Buffer.from('COMBINED-ONLY-BYTES');
+    if (url === 'https://provider.example/audit-combined-only') return Buffer.from('COMBINED-ONLY-AUDIT-BYTES');
+    throw new Error(`unexpected url ${url}`);
+  };
+
+  const result = await paperwork.archiveDocusealSubmission(id, dealershipId, { download });
+  const docFile = path.join(archiveDir(), path.basename(result.archivePath));
+  assert.equal(fs.readFileSync(docFile, 'utf8'), 'COMBINED-ONLY-BYTES');
+});
+
+test('combined_document_url is preferred over documents[].url when both are present', async () => {
+  const id = nextId();
+  const dealershipId = 1003;
+  nextStatusBody = {
+    status: 'completed',
+    combined_document_url: 'https://provider.example/preferred-combined',
+    audit_log_url: 'https://provider.example/audit-both-present',
+    documents: [{ name: 'packet.pdf', url: 'https://provider.example/should-not-be-used' }],
+  };
+  const download = async url => {
+    if (url === 'https://provider.example/preferred-combined') return Buffer.from('PREFERRED-COMBINED-BYTES');
+    if (url === 'https://provider.example/audit-both-present') return Buffer.from('BOTH-PRESENT-AUDIT-BYTES');
+    throw new Error(`unexpected url ${url} — must prefer combined_document_url over documents[].url`);
+  };
+
+  const result = await paperwork.archiveDocusealSubmission(id, dealershipId, { download });
+  const docFile = path.join(archiveDir(), path.basename(result.archivePath));
+  assert.equal(fs.readFileSync(docFile, 'utf8'), 'PREFERRED-COMBINED-BYTES');
+});
+
+test('empty/missing documents array with no combined_document_url is rejected as retryable, downloading nothing', async () => {
+  const id = nextId();
+  const dealershipId = 1004;
+  nextStatusBody = {
+    status: 'completed',
+    audit_log_url: 'https://provider.example/audit-empty-docs',
+    documents: [],
+  };
+  let downloadCalled = false;
+  const download = async () => { downloadCalled = true; return Buffer.from('x'); };
+
+  await assert.rejects(
+    () => paperwork.archiveDocusealSubmission(id, dealershipId, { download }),
+    err => {
+      assert.match(err.message, /did not return both/);
+      assert.equal(err.statusCode, 502);
+      assert.equal(err.retryable, true);
+      return true;
+    },
+  );
+  assert.equal(downloadCalled, false);
+});
+
+test('multiple documents with no combined_document_url is rejected as retryable — never guesses which one to archive', async () => {
+  const id = nextId();
+  const dealershipId = 1005;
+  nextStatusBody = {
+    status: 'completed',
+    audit_log_url: 'https://provider.example/audit-multi-docs',
+    documents: [
+      { name: 'a.pdf', url: 'https://provider.example/doc-a' },
+      { name: 'b.pdf', url: 'https://provider.example/doc-b' },
+    ],
+  };
+  let downloadCalled = false;
+  const download = async () => { downloadCalled = true; return Buffer.from('x'); };
+
+  await assert.rejects(
+    () => paperwork.archiveDocusealSubmission(id, dealershipId, { download }),
+    err => {
+      assert.match(err.message, /did not return both/);
+      assert.equal(err.statusCode, 502);
+      assert.equal(err.retryable, true);
+      return true;
+    },
+  );
+  assert.equal(downloadCalled, false, 'must never guess which of multiple documents is the signed packet');
+});
+
+test('two documents where only one has a usable HTTP(S) URL is still rejected as retryable — document count, not URL validity, governs', async () => {
+  const id = nextId();
+  const dealershipId = 1008;
+  nextStatusBody = {
+    status: 'completed',
+    audit_log_url: 'https://provider.example/audit-two-docs-one-valid',
+    documents: [
+      { name: 'a.pdf', url: '' },
+      { name: 'b.pdf', url: 'https://provider.example/doc-b-valid' },
+    ],
+  };
+  let downloadCalled = false;
+  const download = async () => { downloadCalled = true; return Buffer.from('x'); };
+
+  await assert.rejects(
+    () => paperwork.archiveDocusealSubmission(id, dealershipId, { download }),
+    err => {
+      assert.match(err.message, /did not return both/);
+      assert.equal(err.statusCode, 502);
+      assert.equal(err.retryable, true);
+      return true;
+    },
+  );
+  assert.equal(downloadCalled, false, 'must never guess even when only one of two documents has a usable URL — zero downloads or writes');
+});
+
+test('a single usable documents[].url but a missing audit_log_url is still rejected as retryable', async () => {
+  const id = nextId();
+  const dealershipId = 1006;
+  nextStatusBody = {
+    status: 'completed',
+    documents: [{ name: 'packet.pdf', url: 'https://provider.example/doc-no-audit' }],
+  };
+  let downloadCalled = false;
+  const download = async () => { downloadCalled = true; return Buffer.from('x'); };
+
+  await assert.rejects(
+    () => paperwork.archiveDocusealSubmission(id, dealershipId, { download }),
+    err => {
+      assert.match(err.message, /did not return both/);
+      assert.equal(err.statusCode, 502);
+      assert.equal(err.retryable, true);
+      return true;
+    },
+  );
+  assert.equal(downloadCalled, false, 'audit_log_url is still required regardless of the document-URL source');
+});
+
+test('archiving via documents[].url never persists the temporary provider URL anywhere in the result', async () => {
+  const id = nextId();
+  const dealershipId = 1007;
+  const providerDocUrl = 'https://provider.example/temp-signing-doc-token-abc123';
+  nextStatusBody = {
+    status: 'completed',
+    audit_log_url: 'https://provider.example/audit-no-persist',
+    documents: [{ name: 'packet.pdf', url: providerDocUrl }],
+  };
+  const download = async url => Buffer.from(url.includes('audit') ? 'AUDIT-NO-PERSIST' : 'DOC-NO-PERSIST');
+
+  const result = await paperwork.archiveDocusealSubmission(id, dealershipId, { download });
+  const serialized = JSON.stringify({ archivePath: result.archivePath, auditLogPath: result.auditLogPath });
+  assert.ok(!serialized.includes(providerDocUrl), 'the temporary provider document URL must never appear in the persisted result — only local archive paths');
+});
+
 test('a failure unlinking the audit temp file AFTER both final links succeeded does not leave an audit-only partial archive', async () => {
   // This is the specific gap being closed: fs.linkSync(auditTempPath,
   // auditFinalPath) succeeds (auditLinked = true), but the subsequent
