@@ -363,7 +363,7 @@ router.post('/dealerships', (req, res) => {
   const name = String(req.body.name || '').trim();
   if (!name) return res.status(400).json({ error: 'Dealership name required' });
   const info = db.prepare('INSERT INTO dealerships (name, legal_name, public_slug, public_site_enabled, status) VALUES (?, ?, ?, ?, ?)')
-    .run(name, name, slugify(req.body.public_slug || name), 1, req.body.status === 'revoked' ? 'revoked' : 'active');
+    .run(name, name, slugify(req.body.public_slug || name), 0, req.body.status === 'revoked' ? 'revoked' : 'active');
   const dealership = db.prepare('SELECT * FROM dealerships WHERE id = ?').get(info.lastInsertRowid);
   res.status(201).json({ dealership });
 });

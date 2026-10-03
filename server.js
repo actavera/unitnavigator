@@ -58,18 +58,21 @@ function publicDealerForRequest(req) {
     const bySlug = db.prepare(`
       SELECT * FROM dealerships
       WHERE status = 'active'
-        AND COALESCE(public_site_enabled, 1) = 1
+        AND public_site_enabled = 1
         AND (lower(public_slug) = ? OR CAST(id AS TEXT) = ?)
       LIMIT 1
     `).get(requested, requested);
-    if (bySlug) return bySlug;
+    // An explicit selection that doesn't match must not fall through to host
+    // matching — same rule as routes/public.js, so the share-preview metadata
+    // never names a dealership the showroom API wouldn't serve.
+    return bySlug;
   }
 
   if (host && !['localhost', '127.0.0.1', '::1', 'unitnavigator.com'].includes(host)) {
     return db.prepare(`
       SELECT * FROM dealerships
       WHERE status = 'active'
-        AND COALESCE(public_site_enabled, 1) = 1
+        AND public_site_enabled = 1
         AND COALESCE(public_domain, '') != ''
     `).all().find(row => normalizeDomain(row.public_domain) === host);
   }
