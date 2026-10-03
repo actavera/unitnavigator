@@ -2,15 +2,13 @@
 
 This file holds current, durable state only. It replaces stale entries rather than accumulating a diary. **Never store credentials, customer data, signing links, or temporary tokens here.**
 
-- **Current workstream**: DocuSeal integration validation
-- **Branch**: `claude/docuseal-migration`
-- **Completed checkpoints**:
-  - DocuSeal migration committed and pushed at `cb64a098f83328a7bdfd79ad67107735f6ec5963`
-  - Safe integration-test scaffolding committed and pushed at `9a9c6118ba53a6055447daa6211acc056762a6cd`
-  - Project workflow efficiency layer committed and pushed at `83fb8d5bbd29deb818b96e1d7cf44aaaee057df9`
-  - Independent verification: focused scaffolding tests 27/27 and full suite 82/82 passed
-  - Controlled live integration test succeeded: signed 14-page contract and 2-page audit log archived
-  - Fixed a DocuSeal single-document archival fallback bug found by the live test (real completed submissions can omit `combined_document_url` and carry the signed PDF only in `documents[0].url`); committed and pushed at `1e2da37a11e5fd1bfa80b1f7c0bfee113d367dd0`
-- **Current status**: DocuSeal migration, integration-test scaffolding, and the archival fallback fix are pushed; nothing is merged or deployed; no further provider submission has been sent since the completed live test
-- **Next action**: none currently queued for this workstream
-- **Known manual dependency**: a human must complete both test signatures for any future live test run
+- **Current workstream**: Roadmap item 2 — AI Listing Suite Enhancements (see `PRODUCT_ROADMAP.md`). Planning only: implementation plan delivered for review, no item 2 code written. `DEPLOY_DIGITALOCEAN.md` now documents the production `JWT_SECRET` requirement and a pre-restart check (uncommitted).
+- **Branch**: `claude/ai-listing-suite` (from `main` at `b15dd699f997de502b5e6d6d9ec676e738f3cb91`)
+- **Closed workstreams** (merged to `main` and deployed to production):
+  - DocuSeal e-sign migration, integration-test scaffolding, and the single-document archival fix (PR #1)
+  - Today's Priorities, roadmap item 1 (PR #2, merge commit `b15dd699f997de502b5e6d6d9ec676e738f3cb91`)
+- **Production**: running `main` at `b15dd699`. The deploy initially crashed because `JWT_SECRET` was unset in production; it is now set in root's PM2 environment (outside the repo) and the app is stable. No AI guidance has been generated in production.
+- **Operational notes**: the app runs as `unitnavigator` in root's PM2 on the droplet. Deploy steps are `git pull`, `npm ci --omit=dev`, `pm2 restart unitnavigator --update-env`, then check logs and smoke-test. `DEPLOY_DIGITALOCEAN.md` was updated to match.
+- **Open issue found during planning (not yet fixed)**: the public showroom API (`routes/public.js`, `mapUnit`) spreads the whole unit row into its response, so it returns `minimum_price` and `vin` along with `notes` to anyone. `minimum_price` is the dealer's private floor price. This predates item 2 and needs its own fix.
+- **Next action**: approve or adjust the item 2 plan, decide how to handle the `minimum_price` exposure, then implement.
+- **Known manual dependency**: a human must complete both test signatures for any future live e-sign test run.
