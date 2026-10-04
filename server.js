@@ -3,6 +3,7 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const db = require('./database');
+const { assertPrivate } = require('./services/dataDirSecurity');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -168,5 +169,10 @@ app.get('/:dealerSlug', (req, res, next) => {
   req.query.dealer = slug;
   sendShowroom(req, res);
 });
+
+// Final gate: never accept traffic if the data directory or database files are
+// readable by anyone other than the runtime account. database.js already
+// repairs loosened modes at load; this fails closed if anything is still open.
+assertPrivate(db.dataDir, db.dbFilePath);
 
 app.listen(PORT, () => console.log(`Unit Navigator → http://localhost:${PORT}`));
