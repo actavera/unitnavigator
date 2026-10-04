@@ -343,7 +343,12 @@ addDealershipColumn('default_tax_rate', 'default_tax_rate REAL DEFAULT 7.25');
 addDealershipColumn('public_slug', 'public_slug TEXT');
 addDealershipColumn('public_domain', 'public_domain TEXT');
 addDealershipColumn('logo_url', 'logo_url TEXT');
-addDealershipColumn('public_site_enabled', 'public_site_enabled INTEGER DEFAULT 1');
+// Public showroom visibility is opt-in. This default only applies to databases
+// created fresh from this code: SQLite cannot change an existing column's
+// default, so an already-deployed database keeps DEFAULT 1 at the table level
+// and every INSERT INTO dealerships must set public_site_enabled explicitly
+// (routes/admin.js does). Existing rows are never modified here.
+addDealershipColumn('public_site_enabled', 'public_site_enabled INTEGER DEFAULT 0');
 addDealershipColumn('public_apr_options', "public_apr_options TEXT DEFAULT '9.99,7.99,12.99,18.99'");
 addDealershipColumn('public_share_title', 'public_share_title TEXT');
 addDealershipColumn('public_share_description', 'public_share_description TEXT');
@@ -363,7 +368,6 @@ db.prepare(`
       default_title_fee = COALESCE(default_title_fee, 6),
       default_emissions_fee = COALESCE(default_emissions_fee, 30),
       default_tax_rate = COALESCE(default_tax_rate, 7.25),
-      public_site_enabled = COALESCE(public_site_enabled, 1),
       public_apr_options = COALESCE(NULLIF(public_apr_options, ''), '9.99,7.99,12.99,18.99')
 `).run();
 

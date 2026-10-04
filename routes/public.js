@@ -11,12 +11,27 @@ function parsePhotos(value) {
   }
 }
 
+// Everything an unauthenticated visitor can ever receive about a unit.
+// This is an explicit allowlist in two layers: the SQL below selects only
+// these columns, and mapUnit copies only these keys — so neither a future
+// database column nor a future change to the SELECT can leak a private field
+// (VIN, minimum_price, costs, stage, dealership_id, timestamps, ...) by
+// accident. `notes` is included on purpose: it is the dealer-facing
+// "Description" field and the showroom displays it as the vehicle
+// description. `id` is required for the showroom's detail link.
+const PUBLIC_UNIT_COLUMNS = ['id', 'stock_number', 'year', 'make', 'model', 'trim', 'body_style', 'color', 'mileage', 'asking_price', 'notes', 'photos'];
+const PUBLIC_UNIT_SELECT = PUBLIC_UNIT_COLUMNS.join(', ');
+
 function mapUnit(row) {
-  return {
-    ...row,
-    photos: parsePhotos(row.photos),
-    price: row.asking_price || row.minimum_price || null,
-  };
+  const unit = {};
+  for (const column of PUBLIC_UNIT_COLUMNS) {
+    if (column !== 'photos') unit[column] = row[column] ?? null;
+  }
+  unit.photos = parsePhotos(row.photos);
+  // Only the asking price is ever public. This previously fell back to
+  // minimum_price (the dealer's private floor) when no asking price was set.
+  unit.price = row.asking_price || null;
+  return unit;
 }
 
 function normalizeHost(value) {
@@ -38,37 +53,38 @@ function dealerAddress(row) {
     : '';
 }
 
+// Resolves which dealership's showroom a request is for — or none. There is
+// deliberately NO fallback: a missing, unknown, disabled, or mismatched
+// selection returns undefined, so no other dealership's data is ever served
+// (and none is identified) by accident. Only active dealerships whose
+// public_site_enabled is explicitly 1 are ever visible; NULL counts as off.
+// An explicit ?dealer= / x-dealer-slug that fails to match does not fall
+// through to host matching. Numeric-id lookup is kept for now, under the same
+// active + explicitly-enabled restriction.
 function publicDealer(req) {
   const requested = String(req.query.dealer || req.headers['x-dealer-slug'] || '').trim().toLowerCase();
-  const host = normalizeHost(req.headers['x-forwarded-host'] || req.headers.host);
 
   if (requested) {
-    const bySlug = db.prepare(`
+    return db.prepare(`
       SELECT * FROM dealerships
       WHERE status = 'active'
-        AND COALESCE(public_site_enabled, 1) = 1
+        AND public_site_enabled = 1
         AND (lower(public_slug) = ? OR CAST(id AS TEXT) = ?)
       LIMIT 1
     `).get(requested, requested);
-    if (bySlug) return bySlug;
   }
 
+  const host = normalizeHost(req.headers['x-forwarded-host'] || req.headers.host);
   if (host && !['localhost', '127.0.0.1', '::1'].includes(host)) {
-    const byDomain = db.prepare(`
+    return db.prepare(`
       SELECT * FROM dealerships
       WHERE status = 'active'
-        AND COALESCE(public_site_enabled, 1) = 1
+        AND public_site_enabled = 1
         AND COALESCE(public_domain, '') != ''
     `).all().find(row => normalizeDomain(row.public_domain) === host);
-    if (byDomain) return byDomain;
   }
 
-  return db.prepare(`
-    SELECT * FROM dealerships
-    WHERE status = 'active' AND COALESCE(public_site_enabled, 1) = 1
-    ORDER BY id
-    LIMIT 1
-  `).get();
+  return undefined;
 }
 
 function dealerPayload(row) {
@@ -107,22 +123,12 @@ router.get('/inventory', (req, res) => {
   const dealer = publicDealer(req);
   if (!dealer) return res.json({ units: [] });
 
-  let rows = db.prepare(`
-    SELECT id, vin, stock_number, year, make, model, trim, body_style, color, mileage, asking_price, minimum_price, notes, photos, stage
+  const rows = db.prepare(`
+    SELECT ${PUBLIC_UNIT_SELECT}
     FROM units
     WHERE dealership_id = ? AND stage = 'ready' AND archived_at IS NULL
     ORDER BY created_at DESC
   `).all(dealer.id);
-
-  if (!rows.length) {
-    rows = db.prepare(`
-      SELECT id, vin, stock_number, year, make, model, trim, body_style, color, mileage, asking_price, minimum_price, notes, photos, stage
-      FROM units
-      WHERE dealership_id = ? AND stage NOT IN ('sold','archived') AND archived_at IS NULL
-      ORDER BY created_at DESC
-      LIMIT 24
-    `).all(dealer.id);
-  }
 
   res.json({
     dealer: dealerPayload(dealer),
@@ -139,13 +145,16 @@ router.get('/inventory/:id', (req, res) => {
   if (!dealer) return res.status(404).json({ error: 'Vehicle not found' });
 
   const row = db.prepare(`
-    SELECT id, vin, stock_number, year, make, model, trim, body_style, color, mileage, asking_price, minimum_price, notes, photos, stage
+    SELECT ${PUBLIC_UNIT_SELECT}
     FROM units
-    WHERE id = ? AND dealership_id = ? AND stage NOT IN ('sold','archived') AND archived_at IS NULL
+    WHERE id = ? AND dealership_id = ? AND stage = 'ready' AND archived_at IS NULL
   `).get(req.params.id, dealer.id);
 
   if (!row) return res.status(404).json({ error: 'Vehicle not found' });
   res.json({ dealer: dealerPayload(dealer), unit: mapUnit(row) });
 });
+
+router.mapUnit = mapUnit;
+router.PUBLIC_UNIT_COLUMNS = PUBLIC_UNIT_COLUMNS;
 
 module.exports = router;
