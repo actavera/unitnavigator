@@ -1,16 +1,28 @@
 'use strict';
 const Database = require('better-sqlite3');
 const path = require('path');
-const fs = require('fs');
+const { ensurePrivateDataDir, ensurePrivateDbFiles, assertPrivate } = require('./services/dataDirSecurity');
 
 const dataDir = process.env.UNITNAV_DATA_DIR
   ? path.resolve(process.env.UNITNAV_DATA_DIR)
   : path.join(__dirname, 'data');
-if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+const dbFilePath = path.join(dataDir, 'unitnavigator.db');
 
-const db = new Database(path.join(dataDir, 'unitnavigator.db'));
+// The data directory holds the database, WAL/SHM files and signed-document
+// archives. Make it private to the runtime account before anything is opened
+// (see services/dataDirSecurity.js for why this is a directory + file mode
+// and not a global umask).
+ensurePrivateDataDir(dataDir);
+ensurePrivateDbFiles(dbFilePath); // files left behind by an older deployment
+
+const db = new Database(dbFilePath);
+// Tighten the main file BEFORE enabling WAL: SQLite creates -wal/-shm with the
+// main file's permissions, so they come out 0600 now and after every restart.
+ensurePrivateDbFiles(dbFilePath);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
+ensurePrivateDbFiles(dbFilePath);
+assertPrivate(dataDir, dbFilePath);
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS dealerships (
@@ -467,3 +479,4 @@ module.exports = db;
 // relative to the same, test-overridable data directory rather than
 // hardcoding their own path back to the repo root.
 module.exports.dataDir = dataDir;
+module.exports.dbFilePath = dbFilePath;
