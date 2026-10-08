@@ -3,6 +3,7 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const db = require('./database');
+const { assertPrivate } = require('./services/dataDirSecurity');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -58,18 +59,21 @@ function publicDealerForRequest(req) {
     const bySlug = db.prepare(`
       SELECT * FROM dealerships
       WHERE status = 'active'
-        AND COALESCE(public_site_enabled, 1) = 1
+        AND public_site_enabled = 1
         AND (lower(public_slug) = ? OR CAST(id AS TEXT) = ?)
       LIMIT 1
     `).get(requested, requested);
-    if (bySlug) return bySlug;
+    // An explicit selection that doesn't match must not fall through to host
+    // matching — same rule as routes/public.js, so the share-preview metadata
+    // never names a dealership the showroom API wouldn't serve.
+    return bySlug;
   }
 
   if (host && !['localhost', '127.0.0.1', '::1', 'unitnavigator.com'].includes(host)) {
     return db.prepare(`
       SELECT * FROM dealerships
       WHERE status = 'active'
-        AND COALESCE(public_site_enabled, 1) = 1
+        AND public_site_enabled = 1
         AND COALESCE(public_domain, '') != ''
     `).all().find(row => normalizeDomain(row.public_domain) === host);
   }
@@ -165,5 +169,10 @@ app.get('/:dealerSlug', (req, res, next) => {
   req.query.dealer = slug;
   sendShowroom(req, res);
 });
+
+// Final gate: never accept traffic if the data directory or database files are
+// readable by anyone other than the runtime account. database.js already
+// repairs loosened modes at load; this fails closed if anything is still open.
+assertPrivate(db.dataDir, db.dbFilePath);
 
 app.listen(PORT, () => console.log(`Unit Navigator → http://localhost:${PORT}`));

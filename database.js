@@ -1,16 +1,28 @@
 'use strict';
 const Database = require('better-sqlite3');
 const path = require('path');
-const fs = require('fs');
+const { ensurePrivateDataDir, ensurePrivateDbFiles, assertPrivate } = require('./services/dataDirSecurity');
 
 const dataDir = process.env.UNITNAV_DATA_DIR
   ? path.resolve(process.env.UNITNAV_DATA_DIR)
   : path.join(__dirname, 'data');
-if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+const dbFilePath = path.join(dataDir, 'unitnavigator.db');
 
-const db = new Database(path.join(dataDir, 'unitnavigator.db'));
+// The data directory holds the database, WAL/SHM files and signed-document
+// archives. Make it private to the runtime account before anything is opened
+// (see services/dataDirSecurity.js for why this is a directory + file mode
+// and not a global umask).
+ensurePrivateDataDir(dataDir);
+ensurePrivateDbFiles(dbFilePath); // files left behind by an older deployment
+
+const db = new Database(dbFilePath);
+// Tighten the main file BEFORE enabling WAL: SQLite creates -wal/-shm with the
+// main file's permissions, so they come out 0600 now and after every restart.
+ensurePrivateDbFiles(dbFilePath);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
+ensurePrivateDbFiles(dbFilePath);
+assertPrivate(dataDir, dbFilePath);
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS dealerships (
@@ -343,7 +355,12 @@ addDealershipColumn('default_tax_rate', 'default_tax_rate REAL DEFAULT 7.25');
 addDealershipColumn('public_slug', 'public_slug TEXT');
 addDealershipColumn('public_domain', 'public_domain TEXT');
 addDealershipColumn('logo_url', 'logo_url TEXT');
-addDealershipColumn('public_site_enabled', 'public_site_enabled INTEGER DEFAULT 1');
+// Public showroom visibility is opt-in. This default only applies to databases
+// created fresh from this code: SQLite cannot change an existing column's
+// default, so an already-deployed database keeps DEFAULT 1 at the table level
+// and every INSERT INTO dealerships must set public_site_enabled explicitly
+// (routes/admin.js does). Existing rows are never modified here.
+addDealershipColumn('public_site_enabled', 'public_site_enabled INTEGER DEFAULT 0');
 addDealershipColumn('public_apr_options', "public_apr_options TEXT DEFAULT '9.99,7.99,12.99,18.99'");
 addDealershipColumn('public_share_title', 'public_share_title TEXT');
 addDealershipColumn('public_share_description', 'public_share_description TEXT');
@@ -363,7 +380,6 @@ db.prepare(`
       default_title_fee = COALESCE(default_title_fee, 6),
       default_emissions_fee = COALESCE(default_emissions_fee, 30),
       default_tax_rate = COALESCE(default_tax_rate, 7.25),
-      public_site_enabled = COALESCE(public_site_enabled, 1),
       public_apr_options = COALESCE(NULLIF(public_apr_options, ''), '9.99,7.99,12.99,18.99')
 `).run();
 
@@ -463,3 +479,4 @@ module.exports = db;
 // relative to the same, test-overridable data directory rather than
 // hardcoding their own path back to the repo root.
 module.exports.dataDir = dataDir;
+module.exports.dbFilePath = dbFilePath;
