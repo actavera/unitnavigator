@@ -8,6 +8,7 @@ const db = require('../database');
 const { requireAuth, requireRole, requirePermission, hasPermission } = require('../middleware/auth');
 const { suggestedRetailPrice } = require('../services/pricing');
 const { generateVehicleDescription } = require('../services/vehicleDescription');
+const { runBulkSuggestions, ListingSuiteError } = require('../services/listingSuite');
 const { safeFetch, readBodyWithLimit, releaseResponse } = require('../services/safeFetch');
 const { resolveUploadPath } = require('../services/uploads');
 const { finalizeUploadedImages } = require('../services/imageSignature');
@@ -899,6 +900,18 @@ router.post('/description-suggestion', ...requirePermission('inventory_edit'), a
     res.json({ description });
   } catch (err) {
     res.status(err.code === 'missing_openai_key' ? 503 : 502).json({ error: err.message || 'Could not generate description' });
+  }
+});
+
+// Bulk SUGGESTIONS only (up to 10 units, one provider call): nothing is saved
+// here. The dealer saves each reviewed suggestion explicitly through the
+// existing PUT /api/inventory/:id update path.
+router.post('/description-suggestions/bulk', ...requirePermission('inventory_edit'), async (req, res) => {
+  try {
+    res.json(await runBulkSuggestions({ db, dealershipId: req.user.dealership_id, body: req.body }));
+  } catch (err) {
+    if (err instanceof ListingSuiteError) return res.status(err.statusCode).json({ error: err.message });
+    res.status(500).json({ error: 'Could not generate description suggestions' });
   }
 });
 

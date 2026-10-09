@@ -155,6 +155,45 @@
       transition: border-color 0.15s, transform 0.15s;
     }
     .unit-card.dragging { opacity: 0.55; transform: scale(0.98); }
+    .unit-card { position: relative; }
+    .select-box {
+      position: absolute; top: 8px; left: 8px; z-index: 2;
+      background: rgba(2,6,23,.62); border-radius: 6px; padding: 5px;
+      display: flex; align-items: center; cursor: pointer;
+    }
+    .select-box input, .list-select input { width: 16px; height: 16px; cursor: pointer; }
+    .list-select { width: 34px; }
+    .listing-bar {
+      position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 900;
+      display: none; align-items: center; gap: 12px; padding: 10px 14px;
+      background: var(--s1); border: 1px solid var(--border-md, var(--border)); border-radius: 14px;
+      box-shadow: 0 14px 40px rgba(0,0,0,.35);
+    }
+    .listing-bar.show { display: flex; }
+    .listing-bar span { font-size: .875rem; color: var(--text-2); }
+    .listing-modal {
+      position: fixed; inset: 0; z-index: 1000; display: none; place-items: center;
+      background: rgba(2,6,23,.55); padding: 18px;
+    }
+    .listing-modal.show { display: grid; }
+    .listing-panel {
+      width: min(100%, 860px); max-height: 90vh; overflow: auto; background: var(--s1);
+      border: 1px solid var(--border); border-radius: 20px; padding: 22px;
+    }
+    .listing-panel h2 { font-size: 1.3rem; margin-bottom: 4px; }
+    .listing-panel .hint { color: var(--muted); font-size: .85rem; margin-bottom: 14px; }
+    .listing-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 14px; }
+    .listing-controls label { font-size: .85rem; color: var(--text-2); display: flex; gap: 6px; align-items: center; }
+    .listing-status { font-size: .85rem; color: var(--text-2); margin: 8px 0; min-height: 1.2em; }
+    .listing-item { border: 1px solid var(--border); border-radius: 14px; padding: 14px; margin-top: 12px; background: var(--bg); }
+    .listing-item-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+    .listing-item-head strong { font-size: .98rem; }
+    .chip { font-size: .72rem; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: var(--s2); color: var(--text-2); }
+    .chip.warn { background: rgba(245,158,11,.16); color: #f59e0b; }
+    .chip.info { background: rgba(59,130,246,.16); color: var(--blue); }
+    .listing-item textarea { width: 100%; min-height: 96px; margin-top: 10px; }
+    .listing-item .current { margin-top: 10px; font-size: .85rem; color: var(--muted); white-space: pre-wrap; }
+    .listing-item-actions { display: flex; gap: 8px; margin-top: 8px; }
     .unit-card:hover { border-color: var(--border-hi); transform: translateY(-2px); }
     .unit-photo {
       width: 100%; height: 130px; object-fit: cover;
@@ -285,6 +324,32 @@
 
 <div id="mainContent"></div>
 
+<div class="listing-bar" id="listingBar" role="region" aria-label="Selected vehicles">
+  <span id="listingBarCount">0 selected</span>
+  <button class="btn btn-primary btn-sm" type="button" onclick="openListingSuite()">Write Descriptions</button>
+  <button class="btn btn-ghost btn-sm" type="button" onclick="clearSelection()">Clear</button>
+</div>
+
+<div class="listing-modal" id="listingModal" role="dialog" aria-modal="true" aria-labelledby="listingTitle">
+  <div class="listing-panel">
+    <h2 id="listingTitle">Listing descriptions</h2>
+    <p class="hint">Suggestions are drafts. Nothing is saved until you review one and click Save. Up to 10 vehicles at a time.</p>
+    <div class="listing-controls">
+      <label>Style
+        <select class="form-select" id="listingVariant">
+          <option value="standard">Standard description</option>
+          <option value="facebook">Shorter, Facebook-style</option>
+        </select>
+      </label>
+      <label><input type="checkbox" id="listingIncludeExisting"> Also suggest replacements for vehicles that already have a description</label>
+      <button class="btn btn-primary btn-sm" type="button" id="listingGenerateBtn" onclick="generateListingSuggestions()">Generate suggestions</button>
+      <button class="btn btn-ghost btn-sm" type="button" onclick="closeListingSuite()">Close</button>
+    </div>
+    <div class="listing-status" id="listingStatus"></div>
+    <div id="listingResults"></div>
+  </div>
+</div>
+
 <script src="/js/nav.js"></script>
 <script>
 UN.requireAuth();
@@ -298,6 +363,8 @@ let allUnits = [];
 let currentStage = 'all';
 let currentView = location.pathname.endsWith('/list') ? 'list' : 'board';
 let listSort = { key: 'created_at', dir: 'desc' };
+const MAX_LISTING_SELECTION = 10;
+const selectedIds = new Set();
 
 function applyPermissions() {
   document.querySelectorAll('[data-requires]').forEach(el => {
@@ -416,6 +483,7 @@ function renderSummary() {
 }
 
 function renderUnits() {
+  pruneSelection();
   const units = filteredUnits();
   renderSoldReport();
   const el = document.getElementById('mainContent');
@@ -482,13 +550,14 @@ function renderList(units, el) {
       <table class="list-table">
         <thead>
           <tr>
-            <th onclick="sortList('unit')">Unit</th><th onclick="sortList('vin')">VIN</th><th onclick="sortList('stage')">Stage</th><th onclick="sortList('mileage')">Mileage</th>
+            ${UN.can('inventory_edit') ? '<th class="list-select"></th>' : ''}<th onclick="sortList('unit')">Unit</th><th onclick="sortList('vin')">VIN</th><th onclick="sortList('stage')">Stage</th><th onclick="sortList('mileage')">Mileage</th>
             <th onclick="sortList('total_cost')">In Cost</th><th onclick="sortList('asking_price')">Asking</th><th onclick="sortList('estimated_gross')">Est. Gross</th><th onclick="sortList('created_at')">Added</th><th></th>
           </tr>
         </thead>
         <tbody>
           ${sorted.map(u => `
             <tr onclick="location.href='/inventory/${u.id}'" style="cursor:pointer">
+              ${UN.can('inventory_edit') ? `<td class="list-select" onclick="event.stopPropagation()"><input type="checkbox" aria-label="Select vehicle" ${selectedIds.has(u.id) ? 'checked' : ''} onchange="toggleSelect(${Number(u.id)}, this)"></td>` : ''}
               <td>
                 <div class="list-unit-name">${u.year} ${u.make} ${u.model}</div>
                 <div class="list-vin">…${UN.fmt.vin(u.vin)}</div>
@@ -533,6 +602,7 @@ function makeCard(u) {
   div.onclick = () => location.href = `/inventory/${u.id}`;
   const photo = u.photos?.[0];
   div.innerHTML = `
+    ${UN.can('inventory_edit') ? `<label class="select-box" onclick="event.stopPropagation()" draggable="false"><input type="checkbox" aria-label="Select vehicle" ${selectedIds.has(u.id) ? 'checked' : ''} onchange="toggleSelect(${Number(u.id)}, this)"></label>` : ''}
     <div class="unit-photo">
       ${photo ? `<img src="${photo}" alt="${u.year} ${u.make} ${u.model}" loading="lazy">` : '🚗'}
     </div>
@@ -674,6 +744,165 @@ function exportInventory() {
 }
 
 load();
+
+// ── Listing Suite: bulk description SUGGESTIONS (never auto-saved) ──────────
+function listingEsc(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch]));
+}
+
+function updateSelectionBar() {
+  const bar = document.getElementById('listingBar');
+  const count = selectedIds.size;
+  document.getElementById('listingBarCount').textContent = `${count} selected (max ${MAX_LISTING_SELECTION})`;
+  bar.classList.toggle('show', count > 0 && UN.can('inventory_edit'));
+}
+
+function toggleSelect(id, input) {
+  if (input.checked) {
+    if (selectedIds.size >= MAX_LISTING_SELECTION) {
+      input.checked = false;
+      toast(`You can select up to ${MAX_LISTING_SELECTION} vehicles at a time.`, 'err');
+      return;
+    }
+    selectedIds.add(id);
+  } else {
+    selectedIds.delete(id);
+  }
+  updateSelectionBar();
+}
+
+// Drop selections for units that no longer exist (deleted or reloaded away).
+function pruneSelection() {
+  const known = new Set(allUnits.map(u => u.id));
+  [...selectedIds].forEach(id => { if (!known.has(id)) selectedIds.delete(id); });
+  updateSelectionBar();
+}
+
+function clearSelection() {
+  selectedIds.clear();
+  document.querySelectorAll('.select-box input, .list-select input').forEach(input => { input.checked = false; });
+  updateSelectionBar();
+}
+
+let listingSuggestions = [];
+
+function openListingSuite() {
+  if (!UN.can('inventory_edit')) return toast('You do not have access to edit descriptions', 'err');
+  if (!selectedIds.size) return toast('Select at least one vehicle first.', 'err');
+  document.getElementById('listingResults').innerHTML = '';
+  document.getElementById('listingStatus').textContent = `${selectedIds.size} vehicle${selectedIds.size === 1 ? '' : 's'} selected.`;
+  listingSuggestions = [];
+  document.getElementById('listingModal').classList.add('show');
+}
+
+function closeListingSuite() {
+  document.getElementById('listingModal').classList.remove('show');
+}
+
+async function generateListingSuggestions() {
+  const btn = document.getElementById('listingGenerateBtn');
+  const status = document.getElementById('listingStatus');
+  btn.disabled = true;
+  status.textContent = 'Writing suggestions…';
+  try {
+    const data = await UN.api('POST', '/api/inventory/description-suggestions/bulk', {
+      unit_ids: [...selectedIds],
+      variant: document.getElementById('listingVariant').value,
+      include_existing: document.getElementById('listingIncludeExisting').checked,
+    });
+    listingSuggestions = data.units || [];
+    status.textContent = data.ai_unavailable ? (data.message || 'AI descriptions are unavailable right now.') : 'Review each suggestion, edit if you like, then save the ones you want.';
+    renderListingResults();
+  } catch (err) {
+    status.textContent = err.message || 'Could not generate suggestions.';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderListingResults() {
+  const container = document.getElementById('listingResults');
+  container.innerHTML = '';
+  listingSuggestions.forEach(item => {
+    const card = document.createElement('div');
+    card.className = 'listing-item';
+    card.dataset.unitId = String(item.id);
+
+    const head = document.createElement('div');
+    head.className = 'listing-item-head';
+    head.innerHTML = `<strong>${listingEsc(item.label)}</strong>`;
+    const chips = document.createElement('div');
+    if (item.has_description) chips.insertAdjacentHTML('beforeend', '<span class="chip info">Already has a description</span> ');
+    (item.warnings || []).forEach(w => chips.insertAdjacentHTML('beforeend', `<span class="chip warn" title="${listingEsc(w.message)}">Missing: ${listingEsc(w.label)}</span> `));
+    head.appendChild(chips);
+    card.appendChild(head);
+
+    if (item.status === 'suggested') {
+      if (item.has_description) {
+        const current = document.createElement('div');
+        current.className = 'current';
+        current.textContent = `Current description: ${item.current_description}`;
+        card.appendChild(current);
+      }
+      const area = document.createElement('textarea');
+      area.className = 'form-textarea';
+      area.setAttribute('aria-label', `Suggested description for ${item.label}`);
+      area.value = item.suggestion;
+      card.appendChild(area);
+      const actions = document.createElement('div');
+      actions.className = 'listing-item-actions';
+      const save = document.createElement('button');
+      save.className = 'btn btn-primary btn-sm';
+      save.type = 'button';
+      save.textContent = item.has_description ? 'Replace description' : 'Save description';
+      save.addEventListener('click', () => saveListingSuggestion(item, area, save));
+      const copy = document.createElement('button');
+      copy.className = 'btn btn-ghost btn-sm';
+      copy.type = 'button';
+      copy.textContent = 'Copy';
+      copy.addEventListener('click', () => navigator.clipboard?.writeText(area.value).then(() => toast('Copied')));
+      actions.append(save, copy);
+      card.appendChild(actions);
+    } else {
+      const note = document.createElement('div');
+      note.className = 'current';
+      note.textContent = {
+        skipped_existing: 'Skipped: this vehicle already has a description. Tick "Also suggest replacements" to get a suggestion.',
+        unavailable: 'AI descriptions are unavailable for this vehicle right now.',
+        failed: 'No usable suggestion came back for this vehicle. Try again.',
+      }[item.status] || '';
+      card.appendChild(note);
+      if (item.has_description) {
+        const current = document.createElement('div');
+        current.className = 'current';
+        current.textContent = `Current description: ${item.current_description}`;
+        card.appendChild(current);
+      }
+    }
+    container.appendChild(card);
+  });
+}
+
+// The only write in this flow: an explicit click, one unit, through the
+// existing update route (which enforces inventory_edit and tenant scoping).
+async function saveListingSuggestion(item, area, button) {
+  const text = area.value.trim();
+  if (!text) return toast('The description is empty.', 'err');
+  if (item.has_description && !confirm('Replace the current description with this new one?')) return;
+  button.disabled = true;
+  try {
+    await UN.api('PUT', `/api/inventory/${Number(item.id)}`, { notes: text });
+    item.has_description = true;
+    item.current_description = text;
+    const unit = allUnits.find(u => u.id === item.id);
+    if (unit) unit.notes = text;
+    button.textContent = 'Saved';
+    toast('Description saved');
+  } catch (err) {
+    button.disabled = false;
+    toast(err.message, 'err');
+  }
+}
 </script>
 </body>
 </html>
