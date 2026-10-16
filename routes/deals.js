@@ -2,6 +2,7 @@
 const router = require('express').Router();
 const db = require('../database');
 const { safeText, safePhone } = require('../services/csv');
+const { buildFollowUpDraft, FollowUpError } = require('../services/followUpDraft');
 const { requireAuth, requirePermission } = require('../middleware/auth');
 
 const VALID_STATUSES = new Set(['pending', 'closed', 'dead', 'vehicle_changed']);
@@ -180,6 +181,25 @@ router.get('/export/contacts.csv', ...requirePermission('reports_view'), (req, r
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', 'attachment; filename="unit-navigator-contacts.csv"');
   res.send(`\uFEFF${csv}`);
+});
+
+// Follow-up DRAFT for a pending deal: text only. This route reads data and
+// returns a suggestion; it sends nothing and writes nothing (no deal,
+// customer, price, task, workflow, or activity-log change). AI is used only
+// when the caller explicitly sets `ai: true`; otherwise the draft comes from a
+// deterministic template.
+router.post('/:id/follow-up-draft', ...requirePermission('deals_manage'), async (req, res) => {
+  try {
+    const body = req.body || {};
+    res.json(await buildFollowUpDraft({
+      db, dealershipId: req.user.dealership_id, userId: req.user.id, dealId: req.params.id,
+      channel: body.channel, useAi: body.ai === true,
+    }));
+  } catch (err) {
+    if (err instanceof FollowUpError) return res.status(err.statusCode).json({ error: err.message });
+    console.error('[follow-up-draft] unexpected error:', err.message);
+    res.status(500).json({ error: 'Could not prepare a follow-up draft' });
+  }
 });
 
 router.post('/:id/email-reminder', ...requirePermission('deals_manage'), (req, res) => {

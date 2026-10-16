@@ -137,6 +137,19 @@
       .deal-actions { grid-template-columns: 1fr; }
       .deal-alert { top: 82px; right: 16px; }
     }
+
+    .draft-modal { position: fixed; inset: 0; z-index: 1000; display: none; place-items: center; background: rgba(2,6,23,.55); padding: 18px; }
+    .draft-modal.show { display: grid; }
+    .draft-panel { width: min(100%, 640px); max-height: 92vh; overflow: auto; background: var(--s1); border: 1px solid var(--border); border-radius: 20px; padding: 22px; }
+    .draft-panel h2 { font-size: 1.25rem; margin-bottom: 4px; }
+    .draft-panel .hint { color: var(--muted); font-size: .84rem; margin-bottom: 14px; line-height: 1.4; }
+    .draft-tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+    .draft-tabs .btn.active { background: var(--blue); color: #fff; }
+    .draft-field { margin-bottom: 12px; }
+    .draft-field label { display: block; font-size: .78rem; font-weight: 700; color: var(--text-2); margin-bottom: 4px; }
+    .draft-field textarea { width: 100%; min-height: 190px; }
+    .draft-status { font-size: .84rem; color: var(--text-2); min-height: 1.3em; margin: 6px 0 10px; }
+    .draft-actions { display: flex; flex-wrap: wrap; gap: 8px; }
   </style>
 </head>
 <body>
@@ -185,6 +198,32 @@
 </main>
 
 <aside class="deal-alert" id="dealAlert"></aside>
+
+<div class="draft-modal" id="draftModal" role="dialog" aria-modal="true" aria-labelledby="draftTitle">
+  <div class="draft-panel">
+    <h2 id="draftTitle">Draft follow-up</h2>
+    <p class="hint">This is a draft only. Unit Navigator never sends it and does not save it. Review and edit it, then copy it or open it in your own email app and send it yourself.</p>
+    <div class="draft-tabs">
+      <button class="btn btn-ghost btn-sm active" type="button" id="draftTabEmail" onclick="setDraftChannel('email')">Email</button>
+      <button class="btn btn-ghost btn-sm" type="button" id="draftTabText" onclick="setDraftChannel('text')">Text</button>
+    </div>
+    <div class="draft-field" id="draftSubjectRow">
+      <label for="draftSubject">Subject</label>
+      <input class="form-input" id="draftSubject" type="text" maxlength="200">
+    </div>
+    <div class="draft-field">
+      <label for="draftBody">Message</label>
+      <textarea class="form-textarea" id="draftBody"></textarea>
+    </div>
+    <div class="draft-status" id="draftStatus"></div>
+    <div class="draft-actions">
+      <button class="btn btn-primary btn-sm" type="button" onclick="copyDraft()">Copy</button>
+      <button class="btn btn-ghost btn-sm" type="button" id="draftMailBtn" onclick="openDraftInMail()">Open in my email app</button>
+      <button class="btn btn-ghost btn-sm" type="button" id="draftAiBtn" onclick="rewriteDraftWithAi()">Rewrite with AI</button>
+      <button class="btn btn-ghost btn-sm" type="button" onclick="closeDraft()">Close</button>
+    </div>
+  </div>
+</div>
 
 <script src="/js/nav.js"></script>
 <script>
@@ -354,6 +393,7 @@ function dealCard(deal) {
         <a class="btn btn-ghost btn-sm" href="/paperwork/start">Prepare Paperwork</a>
         <button class="btn btn-ghost btn-sm" onclick="markStatus(${deal.id}, 'dead')">Mark Dead</button>
         <button class="btn btn-ghost btn-sm" onclick="markStatus(${deal.id}, 'closed')">Mark Closed</button>
+        ${deal.status === 'pending' && UN.can('deals_manage') ? `<button class="btn btn-ghost btn-sm" onclick="openDraft(${Number(deal.id)})">Draft Follow-up</button>` : ''}
         <button class="btn btn-ghost btn-sm" onclick="emailReminder(${deal.id})">Email Dealer</button>
         <button class="btn btn-danger btn-sm" onclick="deleteDeal(${deal.id})">Delete Test Deal</button>
       </div>
@@ -550,6 +590,103 @@ function dismissAlert() {
 }
 
 loadDeals();
+
+// ── Follow-up drafts (draft only: nothing is sent or saved) ────────────────
+let draftState = { dealId: null, channel: 'email', busy: false, loaded: { subject: '', body: '' } };
+
+function draftEl(id) { return document.getElementById(id); }
+
+function openDraft(dealId) {
+  if (!UN.can('deals_manage')) return toast('You do not have access to draft follow-ups', 'err');
+  draftState = { dealId, channel: 'email', busy: false, loaded: { subject: '', body: '' } };
+  draftEl('draftModal').classList.add('show');
+  loadDraft(false);
+}
+
+function closeDraft() {
+  draftEl('draftModal').classList.remove('show');
+  draftState = { dealId: null, channel: 'email', busy: false, loaded: { subject: '', body: '' } };
+}
+
+// True when the person has changed the text since it was last loaded.
+function draftEdited() {
+  return draftEl('draftBody').value !== draftState.loaded.body || draftEl('draftSubject').value !== draftState.loaded.subject;
+}
+
+function setDraftChannel(channel) {
+  if (draftState.busy || (channel !== 'email' && channel !== 'text') || channel === draftState.channel) return;
+  if (draftEdited() && !confirm('Replace your edits with a new draft?')) return;
+  draftState.channel = channel;
+  loadDraft(false);
+}
+
+function rewriteDraftWithAi() {
+  if (draftState.busy) return;
+  if (draftEdited() && !confirm('Replace your edits with an AI rewrite?')) return;
+  loadDraft(true);
+}
+
+// Always an explicit click: opening the modal, switching channel, and
+// "Rewrite with AI" are the only things that request a draft.
+async function loadDraft(useAi) {
+  if (!draftState.dealId) return;
+  const { dealId, channel } = draftState;
+  const status = draftEl('draftStatus');
+  draftState.busy = true;
+  draftEl('draftAiBtn').disabled = true;
+  status.textContent = useAi ? 'Rewriting with AI…' : 'Preparing a draft…';
+  try {
+    const data = await UN.api('POST', `/api/deals/${Number(dealId)}/follow-up-draft`, { channel, ai: useAi });
+    if (draftState.dealId !== dealId || draftState.channel !== channel) return;
+    const draft = data.draft || {};
+    draftEl('draftTabEmail').classList.toggle('active', channel === 'email');
+    draftEl('draftTabText').classList.toggle('active', channel === 'text');
+    draftEl('draftSubjectRow').style.display = channel === 'email' ? '' : 'none';
+    draftEl('draftSubject').value = draft.subject || '';
+    draftEl('draftBody').value = draft.body || '';
+    draftState.loaded = { subject: draftEl('draftSubject').value, body: draftEl('draftBody').value };
+    const deal = deals.find(d => d.id === dealId);
+    const hasEmail = channel === 'email' && deal && deal.email;
+    draftEl('draftMailBtn').style.display = channel === 'email' ? '' : 'none';
+    draftEl('draftMailBtn').disabled = !hasEmail;
+    draftEl('draftMailBtn').title = hasEmail ? '' : 'This client has no email address on file';
+    status.textContent = data.ai_unavailable
+      ? (data.message || 'AI rewriting is unavailable. Showing the standard draft.')
+      : (draft.source === 'ai' ? 'Rewritten with AI. Review it before using it.' : 'Standard draft. You can rewrite it with AI or edit it yourself.');
+  } catch (err) {
+    status.textContent = err.message || 'Could not prepare a draft.';
+  } finally {
+    draftState.busy = false;
+    draftEl('draftAiBtn').disabled = false;
+  }
+}
+
+function currentDraftText() {
+  const subject = draftState.channel === 'email' ? draftEl('draftSubject').value.trim() : '';
+  const body = draftEl('draftBody').value;
+  return { subject, body };
+}
+
+async function copyDraft() {
+  const { subject, body } = currentDraftText();
+  const text = subject ? `Subject: ${subject}\n\n${body}` : body;
+  if (!body.trim()) return toast('There is nothing to copy', 'err');
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('Draft copied');
+  } catch {
+    toast('Could not copy. Select the text and copy it manually.', 'err');
+  }
+}
+
+// Opens the user's own email app with the draft filled in. The user reviews
+// it and presses Send there; Unit Navigator sends nothing.
+function openDraftInMail() {
+  const deal = deals.find(d => d.id === draftState.dealId);
+  if (!deal || !deal.email) return toast('This client has no email address on file', 'err');
+  const { subject, body } = currentDraftText();
+  window.location.href = `mailto:${encodeURIComponent(deal.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
 </script>
 </body>
 </html>
