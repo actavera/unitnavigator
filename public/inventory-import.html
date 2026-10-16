@@ -193,6 +193,27 @@ VIN,Stock #,Year,Make,Model,Trim,Mileage,Color,Price,Cost,Status,Photos
         </div>
       </div>
     </article>
+
+    <article class="import-card hidden" id="importResultCard">
+      <div class="import-card-head">
+        <h2>Import result</h2>
+        <a class="btn btn-ghost btn-sm" href="/inventory/import/history">Import history</a>
+      </div>
+      <div class="import-card-body">
+        <div id="importResultSummary"></div>
+        <div id="importResultIssues"></div>
+        <div id="retryPanel" class="hidden">
+          <h3 style="margin-top:16px;">Fix and retry the skipped rows</h3>
+          <p class="text-muted">These rows could not be imported. Correct them here, then retry only these rows. Vehicles that were imported are not sent again.</p>
+          <div id="retryRows"></div>
+          <button class="btn btn-primary mt-16" type="button" id="retryBtn" onclick="retrySkippedRows()">Retry these rows</button>
+        </div>
+        <div class="mt-16">
+          <button class="btn btn-ghost" type="button" onclick="downloadIssueReport()" id="issueReportBtn">Download issue report (CSV)</button>
+          <a class="btn btn-primary" href="/inventory">Go to inventory</a>
+        </div>
+      </div>
+    </article>
   </section>
 </main>
 
@@ -642,6 +663,8 @@ function renderSftpResult(result, message) {
     ${stats.importable_rows != null ? `Importable vehicles: ${stats.importable_rows}. ` : ''}
     ${stats.rows_with_photos != null ? `Vehicles with photos: ${stats.rows_with_photos}. ` : ''}
     ${stats.created != null ? `Created: ${stats.created}. Updated: ${stats.updated}. Skipped: ${stats.skipped}.` : ''}
+    ${result.batch_id ? `<br>Saved to <a href="/inventory/import/history">import history</a> as #${Number(result.batch_id)}.` : ''}
+    ${(result.issues || []).length ? `<br>${(result.issues || []).slice(0, 20).map(issue => `Row ${Number(issue.row_number) || '-'}: ${escapeHtml(issue.message || issue.code || '')}`).join('<br>')}` : ''}
   `;
 
   const rows = result.rows || [];
@@ -698,8 +721,11 @@ async function importDealerCenterSftp() {
   try {
     const result = await UN.api('POST', '/api/inventory/import/dealercenter-sftp/import', sftpPayload());
     renderSftpResult(result, 'DealerCenter inventory imported.');
-    toast(`Imported ${result.created} new, updated ${result.updated}, skipped ${result.skipped}`);
-    setTimeout(() => { location.href = '/inventory'; }, 1200);
+    toast(`Imported ${Number(result.created) || 0} new, updated ${Number(result.updated) || 0}, skipped ${Number(result.skipped) || 0}`);
+    // Stay on this page when there is anything to review; the issues are listed above.
+    if (!(result.issues || []).length && !result.skipped) {
+      setTimeout(() => { location.href = '/inventory'; }, 1200);
+    }
   } catch (err) {
     summary.classList.add('err');
     summary.textContent = err.message;
@@ -710,18 +736,128 @@ async function importDealerCenterSftp() {
   }
 }
 
-async function importRows() {
+let lastBatch = null;       // { id, issues, rowsByNumber }
+let retryDrafts = [];       // editable copies of the skipped rows
+
+async function importRows(retryOf) {
+  if (typeof retryOf !== 'number') retryOf = null;
   if (!mappedRows.length) return toast('Preview CSV rows first', 'err');
   document.getElementById('primaryAction').disabled = true;
+  const sent = mappedRows.slice();
   try {
-    const result = await UN.api('POST', '/api/inventory/import', { source: 'CSV import', rows: mappedRows });
-    toast(`Imported ${result.created} new, updated ${result.updated}, skipped ${result.skipped}`);
-    setTimeout(() => { location.href = '/inventory'; }, 900);
+    const body = { source: 'CSV import', rows: sent };
+    if (retryOf) body.retry_of = retryOf;
+    const result = await UN.api('POST', '/api/inventory/import', body);
+    handleImportResult(result, sent);
   } catch (err) {
     toast(err.message, 'err');
   } finally {
     document.getElementById('primaryAction').disabled = false;
   }
+}
+
+function handleImportResult(result, sentRows) {
+  const issues = result.issues || [];
+  const rowsByNumber = {};
+  sentRows.forEach((row, i) => { rowsByNumber[i + 1] = row; });
+  lastBatch = { id: result.batch_id || null, issues, rowsByNumber };
+
+  if (!issues.length && !result.skipped) {
+    toast(`Imported ${Number(result.created) || 0} new, updated ${Number(result.updated) || 0}, skipped ${Number(result.skipped) || 0}`);
+    setTimeout(() => { location.href = '/inventory'; }, 900);
+    return;
+  }
+
+  const card = document.getElementById('importResultCard');
+  card.classList.remove('hidden');
+  document.getElementById('importResultSummary').innerHTML = `
+    <strong>Created ${Number(result.created) || 0}, updated ${Number(result.updated) || 0}, skipped ${Number(result.skipped) || 0}.</strong>
+    ${result.batch_id ? ` Saved to import history as #${Number(result.batch_id)}.` : ''}`;
+  document.getElementById('importResultIssues').innerHTML = issues.length ? `
+    <table style="margin-top:12px;">
+      <thead><tr><th>Row</th><th>Type</th><th>Vehicle</th><th>Stock #</th><th>VIN (last 6)</th><th>Details</th></tr></thead>
+      <tbody>${issues.map(issue => `
+        <tr>
+          <td>${Number(issue.row_number) || '-'}</td>
+          <td>${issue.severity === 'error' ? 'Skipped' : 'Warning'}</td>
+          <td>${escapeHtml(issue.vehicle || '-')}</td>
+          <td>${escapeHtml(issue.stock_number || '-')}</td>
+          <td>${escapeHtml((issue.vin_tail || '').slice(-6) || '-')}</td>
+          <td>${escapeHtml(issue.message || issue.code || '')}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>` : '';
+  renderRetryPanel();
+  card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// Only rows that were skipped for being unidentifiable can be fixed in place.
+// Ambiguous stock matches need a VIN, which the same editor provides.
+function renderRetryPanel() {
+  const skipped = (lastBatch.issues || []).filter(issue => issue.severity === 'error' && lastBatch.rowsByNumber[issue.row_number]);
+  retryDrafts = skipped.map(issue => ({ rowNumber: issue.row_number, row: { ...lastBatch.rowsByNumber[issue.row_number] } }));
+  const panel = document.getElementById('retryPanel');
+  panel.classList.toggle('hidden', !retryDrafts.length);
+  document.getElementById('retryRows').innerHTML = retryDrafts.map((draft, i) => `
+    <div class="form-row" style="display:grid;grid-template-columns:70px repeat(5, minmax(0,1fr));gap:8px;margin-top:8px;">
+      <span>Row ${draft.rowNumber}</span>
+      ${['vin', 'stock_number', 'year', 'make', 'model'].map(field => `
+        <input class="form-input" data-draft="${Number(i)}" data-field="${escapeHtml(field)}" placeholder="${escapeHtml(field.replace('_', ' '))}"
+          value="${escapeHtml(draft.row[field] || '')}" oninput="updateRetryDraft(${Number(i)}, '${escapeHtml(field)}', this.value)">`).join('')}
+    </div>`).join('');
+}
+
+function updateRetryDraft(index, field, value) {
+  if (retryDrafts[index]) retryDrafts[index].row[field] = value;
+}
+
+async function retrySkippedRows() {
+  if (!retryDrafts.length) return;
+  const btn = document.getElementById('retryBtn');
+  btn.disabled = true;
+  try {
+    const rows = retryDrafts.map(draft => draft.row);
+    const body = { source: 'CSV import (retry)', rows };
+    if (lastBatch && lastBatch.id) body.retry_of = lastBatch.id;
+    const result = await UN.api('POST', '/api/inventory/import', body);
+    toast(`Retry: created ${Number(result.created) || 0}, updated ${Number(result.updated) || 0}, skipped ${Number(result.skipped) || 0}`);
+    handleImportResult(result, rows);
+  } catch (err) {
+    toast(err.message, 'err');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// Spreadsheet programs run a cell as a formula when it starts with = + - @ (or
+// a tab, carriage return, or newline), even after leading whitespace. Prefix
+// such a cell with an apostrophe so it is shown as text, keep the original
+// content readable, and always quote the cell with embedded quotes doubled.
+function csvSafeCell(value) {
+  let text = String(value ?? '');
+  if (/^[\t\r\n]/.test(text) || /^\s*[=+\-@]/.test(text)) text = `'${text}`;
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function buildIssueReportCsv(issues) {
+  const header = ['row', 'type', 'vehicle', 'stock_number', 'vin_last_6', 'details'];
+  const lines = [header.map(csvSafeCell).join(',')];
+  (issues || []).forEach(issue => {
+    lines.push([
+      issue.row_number, issue.severity === 'error' ? 'skipped' : 'warning', issue.vehicle,
+      issue.stock_number, String(issue.vin_tail || '').slice(-6), issue.message,
+    ].map(csvSafeCell).join(','));
+  });
+  return lines.join('\n');
+}
+
+function downloadIssueReport() {
+  if (!lastBatch || !lastBatch.issues.length) return toast('Nothing to download', 'err');
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(new Blob([buildIssueReportCsv(lastBatch.issues)], { type: 'text/csv' }));
+  link.download = `import-issues${lastBatch.id ? '-' + Number(lastBatch.id) : ''}.csv`;
+  link.click();
+  URL.revokeObjectURL(link.href);
 }
 
 function escapeHtml(value) {

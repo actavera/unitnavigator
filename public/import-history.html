@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/site.webmanifest">
+  <title>Import History — Unit Navigator</title>
+  <script>(function(){var t=localStorage.getItem('un_theme')||'dark';document.documentElement.dataset.theme=t;})()</script>
+  <link rel="stylesheet" href="/css/main.css">
+  <style>
+    .history-shell { max-width: 1040px; margin: 0 auto; padding: 28px 18px 60px; }
+    .history-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+    .history-head h1 { font-size: 1.6rem; letter-spacing: -.03em; }
+    .history-note { color: var(--muted); font-size: .85rem; margin-bottom: 18px; }
+    .history-table { width: 100%; border-collapse: collapse; background: var(--s1); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+    .history-table th, .history-table td { text-align: left; padding: 10px 12px; font-size: .86rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+    .history-table th { color: var(--muted); font-weight: 700; font-size: .75rem; text-transform: uppercase; letter-spacing: .04em; }
+    .history-table tr.clickable { cursor: pointer; }
+    .history-table tr.clickable:hover { background: var(--s2); }
+    .pill { font-size: .72rem; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: var(--s2); color: var(--text-2); white-space: nowrap; }
+    .pill.ok { background: rgba(34,197,94,.16); color: #22c55e; }
+    .pill.warn { background: rgba(245,158,11,.16); color: #f59e0b; }
+    .pill.bad { background: rgba(239,68,68,.16); color: #ef4444; }
+    .detail { margin-top: 20px; background: var(--s1); border: 1px solid var(--border); border-radius: 14px; padding: 18px; }
+    .detail h2 { font-size: 1.1rem; margin-bottom: 6px; }
+    .detail .facts { color: var(--text-2); font-size: .88rem; line-height: 1.6; }
+    .empty { text-align: center; padding: 50px 16px; color: var(--muted); }
+  </style>
+</head>
+<body>
+<div id="nav-container"></div>
+<main class="history-shell">
+  <div class="history-head">
+    <h1>Import history</h1>
+    <a class="btn btn-ghost btn-sm" href="/inventory/import">Back to import</a>
+  </div>
+  <p class="history-note" id="retentionNote"></p>
+  <div id="batchList"></div>
+  <div id="batchDetail"></div>
+</main>
+
+<script src="/js/nav.js"></script>
+<script>
+if (UN.requireAuth()) {
+  UN.renderNav();
+  if (!UN.can('inventory_import')) {
+    document.getElementById('batchList').innerHTML = '<div class="empty">You do not have access to import history.</div>';
+  } else {
+    loadBatches();
+  }
+}
+
+function esc(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch]));
+}
+
+function statusPill(batch) {
+  if (batch.status === 'failed') return '<span class="pill bad">Failed</span>';
+  if (batch.status === 'completed_with_errors') return '<span class="pill warn">Completed with issues</span>';
+  return '<span class="pill ok">Completed</span>';
+}
+
+function kindLabel(batch) {
+  return batch.kind === 'dealercenter_sftp' ? 'DealerCenter feed' : 'CSV / sheet';
+}
+
+function when(value) {
+  const date = new Date(String(value || '').replace(' ', 'T') + 'Z');
+  return Number.isNaN(date.getTime()) ? String(value || '') : date.toLocaleString();
+}
+
+async function loadBatches() {
+  try {
+    const data = await UN.api('GET', '/api/inventory/import/batches?limit=50');
+    document.getElementById('retentionNote').textContent =
+      `Imports are kept for ${Number(data.retention_days) || 180} days. Only row numbers and a stock number or the last six VIN characters are stored, never prices or costs.`;
+    const batches = data.batches || [];
+    const list = document.getElementById('batchList');
+    if (!batches.length) {
+      list.innerHTML = '<div class="empty">No imports yet.</div>';
+      return;
+    }
+    list.innerHTML = `
+      <table class="history-table">
+        <thead><tr><th>#</th><th>When</th><th>Source</th><th>By</th><th>Status</th><th>Created</th><th>Updated</th><th>Skipped</th><th>Warnings</th></tr></thead>
+        <tbody>${batches.map(batch => `
+          <tr class="clickable" onclick="openBatch(${Number(batch.id)})">
+            <td>${Number(batch.id)}${batch.retry_of ? `<br><span class="pill">retry of #${Number(batch.retry_of)}</span>` : ''}</td>
+            <td>${esc(when(batch.created_at))}</td>
+            <td>${esc(kindLabel(batch))}${batch.file_name ? `<br><span class="text-muted">${esc(batch.file_name)}</span>` : ''}</td>
+            <td>${esc(batch.imported_by || '-')}</td>
+            <td>${statusPill(batch)}</td>
+            <td>${Number(batch.created) || 0}</td>
+            <td>${Number(batch.updated) || 0}</td>
+            <td>${Number(batch.skipped) || 0}</td>
+            <td>${Number(batch.warning_count) || 0}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+  } catch (err) {
+    toast(err.message, 'err');
+  }
+}
+
+async function openBatch(id) {
+  try {
+    const data = await UN.api('GET', `/api/inventory/import/batches/${Number(id)}`);
+    const batch = data.batch;
+    const issues = batch.issues || [];
+    document.getElementById('batchDetail').innerHTML = `
+      <section class="detail">
+        <h2>Import #${Number(batch.id)} ${statusPill(batch)}</h2>
+        <div class="facts">
+          ${esc(when(batch.created_at))} by ${esc(batch.imported_by || 'unknown')} · ${esc(kindLabel(batch))}${batch.file_name ? ` · ${esc(batch.file_name)}` : ''}<br>
+          ${Number(batch.total_rows) || 0} rows: ${Number(batch.created) || 0} created, ${Number(batch.updated) || 0} updated, ${Number(batch.skipped) || 0} skipped.
+          ${batch.retry_of ? `<br>Retry of import #${Number(batch.retry_of)}.` : ''}
+          ${batch.failure_message ? `<br>${esc(batch.failure_message)}` : ''}
+          ${batch.issues_truncated ? `<br>Only the first ${issues.length} of ${Number(batch.error_count) + Number(batch.warning_count)} issues are kept.` : ''}
+        </div>
+        ${issues.length ? `
+          <table class="history-table" style="margin-top:14px;">
+            <thead><tr><th>Row</th><th>Type</th><th>Vehicle</th><th>Stock #</th><th>VIN (last 6)</th><th>Details</th></tr></thead>
+            <tbody>${issues.map(issue => `
+              <tr>
+                <td>${Number(issue.row_number) || '-'}</td>
+                <td>${issue.severity === 'error' ? '<span class="pill bad">Skipped</span>' : '<span class="pill warn">Warning</span>'}</td>
+                <td>${esc(issue.vehicle || '-')}</td>
+                <td>${esc(issue.stock_number || '-')}</td>
+                <td>${esc(issue.vin_tail || '-')}</td>
+                <td>${esc(issue.message || issue.code || '')}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>` : '<p class="history-note" style="margin-top:12px;">No issues were reported for this import.</p>'}
+      </section>`;
+    document.getElementById('batchDetail').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (err) {
+    toast(err.message, 'err');
+  }
+}
+</script>
+</body>
+</html>

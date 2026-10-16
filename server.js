@@ -150,6 +150,7 @@ const staticPages = {
   '/inventory':     'inventory.html',
   '/inventory/list':'inventory.html',
   '/inventory/import':'inventory-import.html',
+  '/inventory/import/history':'import-history.html',
   '/inventory/new': 'inventory-new.html',
 };
 Object.entries(staticPages).forEach(([route, file]) => {

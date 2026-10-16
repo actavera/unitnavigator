@@ -9,6 +9,7 @@ const { requireAuth, requireRole, requirePermission, hasPermission } = require('
 const { suggestedRetailPrice } = require('../services/pricing');
 const { generateVehicleDescription } = require('../services/vehicleDescription');
 const { runBulkSuggestions, ListingSuiteError } = require('../services/listingSuite');
+const importHistory = require('../services/importHistory');
 const { safeFetch, readBodyWithLimit, releaseResponse } = require('../services/safeFetch');
 const { resolveUploadPath } = require('../services/uploads');
 const { finalizeUploadedImages } = require('../services/imageSignature');
@@ -89,29 +90,33 @@ function normalizePhotos(value) {
   return text.split(/[\n;,|]+/).map(cleanText).filter(Boolean);
 }
 
+const STAGE_MAP = {
+  acquired: 'acquired',
+  atauction: 'acquired',
+  auction: 'acquired',
+  transport: 'transport',
+  transported: 'transport',
+  beingtransported: 'transport',
+  screening: 'screening',
+  needsscreening: 'screening',
+  recon: 'recon',
+  reconditioning: 'recon',
+  ready: 'ready',
+  readytosell: 'ready',
+  available: 'ready',
+  active: 'ready',
+  pending: 'pending',
+  sold: 'sold',
+  archived: 'archived',
+};
+// '' when the status is blank or not one we recognize. Imports use this so an
+// unknown feed status never changes the stage of a unit that already exists.
+function recognizeStage(value) {
+  const compact = cleanText(value).toLowerCase().replace(/[^a-z0-9]/g, '');
+  return STAGE_MAP[compact] || '';
+}
 function normalizeStage(value) {
-  const key = cleanText(value).toLowerCase();
-  const compact = key.replace(/[^a-z0-9]/g, '');
-  const map = {
-    acquired: 'acquired',
-    atauction: 'acquired',
-    auction: 'acquired',
-    transport: 'transport',
-    transported: 'transport',
-    beingtransported: 'transport',
-    screening: 'screening',
-    needsscreening: 'screening',
-    recon: 'recon',
-    reconditioning: 'recon',
-    ready: 'ready',
-    readytosell: 'ready',
-    available: 'ready',
-    active: 'ready',
-    pending: 'pending',
-    sold: 'sold',
-    archived: 'archived',
-  };
-  return map[compact] || 'ready';
+  return recognizeStage(value) || 'ready';
 }
 
 function normalizeRepairItems(value) {
@@ -371,7 +376,9 @@ async function saveRemotePhoto(photoUrl, index) {
   }
 }
 
-async function localizePhotoUrls(photoUrls) {
+// `failures`, when given, receives one entry per photo that could not be
+// downloaded and so still points at the source site.
+async function localizePhotoUrls(photoUrls, failures = null) {
   const urls = normalizePhotos(photoUrls).slice(0, 30);
   const saved = [];
   for (let i = 0; i < urls.length; i += 1) {
@@ -382,8 +389,10 @@ async function localizePhotoUrls(photoUrls) {
     }
     try {
       const localUrl = await saveRemotePhoto(url, i);
+      if (!localUrl && failures) failures.push(i);
       saved.push(localUrl || url);
     } catch {
+      if (failures) failures.push(i);
       saved.push(url);
     }
   }
@@ -520,7 +529,7 @@ function mapDealerCenterRow(row) {
     body_style: firstValue(row, ['BodyStyle', 'Body Style', 'VehicleType']),
     color: firstValue(row, ['Color', 'ExteriorColor', 'Exterior Color']),
     mileage: firstValue(row, ['Mileage', 'Odometer', 'Miles']),
-    stage: normalizeStage(inventoryStatus),
+    stage: recognizeStage(inventoryStatus),
     asking_price: firstValue(row, ['SpecialPrice', 'Special Price', 'AskingPrice', 'Asking Price', 'VehiclePrice', 'Vehicle Price', 'Price']),
     acquisition_cost: firstValue(row, ['Cost', 'VehicleCost', 'Vehicle Cost', 'InventoryCost', 'Inventory Cost']),
     acquisition_source: 'DealerCenter SFTP',
@@ -563,8 +572,34 @@ function latestDealerCenterFile(username) {
   return entries[0] || null;
 }
 
+function rowIdentity(row, index) {
+  const vin = normalizeVin(row.vin || row.VIN || row.vehicle_vin);
+  const year = parseInteger(row.year || row.Year || row.model_year);
+  return {
+    row_number: index + 1,
+    stock_number: cleanText(row.stock_number || row.stock || row['Stock #'] || row.stock_no || row.unit_number),
+    vin_tail: importHistory.vinTail(vin),
+    vehicle: [year || '', cleanText(row.make || row.Make), cleanText(row.model || row.Model)].filter(Boolean).join(' '),
+  };
+}
+
+// Upserts import rows inside one transaction. Re-importing is deliberately
+// conservative about data a dealer may have edited since:
+//   - an existing, non-empty description (notes) is never overwritten;
+//   - an existing unit's stage only changes for a RECOGNIZED feed status;
+//   - a row without a VIN is matched on a unique stock number within the
+//     dealership (one match updates it, several are skipped as ambiguous);
+//   - a row with neither a VIN nor a stock number cannot be matched, so it is
+//     created and a warning explains that re-importing will duplicate it.
+// Everything reportable is returned in `errors` (existing shape) and in
+// `issues` (structured, with severity and a minimal row identifier).
 function persistImportRows(rows, req, dealershipId, source, options = {}) {
-  const results = { created: 0, updated: 0, skipped: 0, errors: [] };
+  const results = { created: 0, updated: 0, skipped: 0, errors: [], issues: [] };
+  const skip = (index, code, message) => {
+    results.skipped += 1;
+    results.errors.push({ row: index + 1, error: message });
+    results.issues.push({ ...rowIdentity(rows[index], index), severity: 'error', code, message });
+  };
   const tx = db.transaction(() => {
     rows.forEach((row, index) => {
       const vin = normalizeVin(row.vin || row.VIN || row.vehicle_vin);
@@ -575,11 +610,11 @@ function persistImportRows(rows, req, dealershipId, source, options = {}) {
       const stockNumber = cleanText(row.stock_number || row.stock || row['Stock #'] || row.stock_no || row.unit_number);
 
       if (!vin && (!year || !make || !model)) {
-        results.skipped += 1;
-        results.errors.push({ row: index + 1, error: 'Missing VIN or year/make/model' });
+        skip(index, 'missing_identity', 'Missing VIN or year/make/model');
         return;
       }
 
+      const feedStage = recognizeStage(row.stage || row.status || row.Status);
       const unit = {
         vin,
         stock_number: stockNumber,
@@ -590,7 +625,7 @@ function persistImportRows(rows, req, dealershipId, source, options = {}) {
         body_style: cleanText(row.body_style || row.body || row.Body || row.vehicle_type),
         color: cleanText(row.color || row.Color || row.exterior_color),
         mileage: parseInteger(row.mileage || row.miles || row.odometer || row.Odometer),
-        stage: VALID_STAGES.includes(normalizeStage(row.stage || row.status || row.Status)) ? normalizeStage(row.stage || row.status || row.Status) : 'ready',
+        stage: feedStage || 'ready',
         acquisition_cost: parseMoney(row.acquisition_cost || row.cost || row.Cost || row.inventory_cost || row.purchase_price),
         asking_price: parseMoney(row.asking_price || row.price || row.Price || row.retail_price || row.internet_price),
         minimum_price: parseMoney(row.minimum_price || row.min_price || row.floor_price),
@@ -600,21 +635,38 @@ function persistImportRows(rows, req, dealershipId, source, options = {}) {
         photos: normalizePhotos(row.photos || row.photo_urls || row.images || row.image_urls),
       };
 
-      const existing = vin ? db.prepare(`
-        SELECT id FROM units
-        WHERE dealership_id = ? AND vin = ? AND archived_at IS NULL
-      `).get(dealershipId, vin) : null;
+      let existing = null;
+      if (vin) {
+        existing = db.prepare(`
+          SELECT id FROM units
+          WHERE dealership_id = ? AND vin = ? AND archived_at IS NULL
+        `).get(dealershipId, vin);
+      } else if (stockNumber) {
+        const matches = db.prepare(`
+          SELECT id FROM units
+          WHERE dealership_id = ? AND archived_at IS NULL AND lower(trim(stock_number)) = lower(?)
+          LIMIT 2
+        `).all(dealershipId, stockNumber);
+        if (matches.length > 1) {
+          skip(index, 'ambiguous_stock_match', `More than one vehicle already has stock number ${stockNumber}. Add a VIN so this row can be matched.`);
+          return;
+        }
+        existing = matches[0] || null;
+      }
 
       if (existing) {
         db.prepare(`
           UPDATE units
           SET stock_number = ?, year = ?, make = ?, model = ?, trim = ?, body_style = ?, color = ?, mileage = ?,
-              stage = ?, acquisition_cost = ?, asking_price = ?, minimum_price = ?, acquisition_source = ?,
-              acquisition_date = ?, notes = ?, photos = CASE WHEN ? != '[]' THEN ? ELSE photos END
+              stage = COALESCE(NULLIF(?, ''), stage),
+              acquisition_cost = ?, asking_price = ?, minimum_price = ?, acquisition_source = ?,
+              acquisition_date = ?,
+              notes = CASE WHEN notes IS NULL OR TRIM(notes) = '' THEN ? ELSE notes END,
+              photos = CASE WHEN ? != '[]' THEN ? ELSE photos END
           WHERE id = ? AND dealership_id = ?
         `).run(
           unit.stock_number, unit.year, unit.make, unit.model, unit.trim, unit.body_style, unit.color, unit.mileage,
-          unit.stage, unit.acquisition_cost, unit.asking_price || null, unit.minimum_price || null, unit.acquisition_source,
+          feedStage, unit.acquisition_cost, unit.asking_price || null, unit.minimum_price || null, unit.acquisition_source,
           unit.acquisition_date || null, unit.notes || null, JSON.stringify(unit.photos), JSON.stringify(unit.photos),
           existing.id, dealershipId,
         );
@@ -632,6 +684,12 @@ function persistImportRows(rows, req, dealershipId, source, options = {}) {
         );
         logActivity(dealershipId, info.lastInsertRowid, 'Unit imported', `${unit.year || ''} ${unit.make} ${unit.model} imported from ${source}`.trim(), req.user.id);
         results.created += 1;
+        if (!vin && !stockNumber) {
+          results.issues.push({
+            ...rowIdentity(row, index), severity: 'warning', code: 'no_vin_no_stock',
+            message: 'Imported without a VIN or stock number, so it cannot be matched on a later import and will be duplicated if this file is imported again.',
+          });
+        }
       }
     });
   });
@@ -740,23 +798,97 @@ router.get('/export', requireAuth, (req, res) => {
   res.send(`\uFEFF${csv}`);
 });
 
-// ── Bulk import units from CSV/other systems ───────────────────────────────
-router.post('/import', ...requirePermission('inventory_import'), async (req, res) => {
-  const rows = Array.isArray(req.body.rows) ? req.body.rows : [];
-  if (!rows.length) return res.status(400).json({ error: 'No import rows received' });
-  if (rows.length > 500) return res.status(400).json({ error: 'Import is limited to 500 units at a time' });
+// ── Import history helpers ─────────────────────────────────────────────────
+const IMPORT_FAILURE_MESSAGE = 'The import could not be completed and no vehicles were changed. Please try again.';
 
-  const source = cleanText(req.body.source || 'Inventory import');
-  const rowsWithLocalPhotos = [];
-  for (const row of rows) {
-    rowsWithLocalPhotos.push({
-      ...row,
-      photos: await localizePhotoUrls(row.photos || row.photo_urls || row.images || row.image_urls),
-    });
+// Validates an optional `retry_of` batch id: it must be a batch of the SAME
+// dealership the rows are being imported into.
+function parseRetryOf(req, dealershipId) {
+  const raw = req.body && req.body.retry_of;
+  if (raw === undefined || raw === null || raw === '') return { retryOf: null };
+  if (!importHistory.batchExists(db, dealershipId, raw)) return { error: 'The import you are retrying was not found.' };
+  return { retryOf: Number(raw) };
+}
+
+// Persists the rows and records the batch. Never throws and always answers
+// with JSON. If the rows cannot be written the transaction has already rolled
+// back, so nothing changed; that is recorded as a failed batch.
+function runImport({ req, res, dealershipId, kind, source, fileName = '', rows, photoIssues = [], retryOf = null, extra = {} }) {
+  let results;
+  try {
+    results = persistImportRows(rows, req, dealershipId, source);
+  } catch (err) {
+    console.error('[import] persist failed:', err.message);
+    let batchId = null;
+    try {
+      batchId = importHistory.recordBatch(db, {
+        dealershipId, userId: req.user.id, kind, source, fileName, status: 'failed',
+        totalRows: rows.length, retryOf, failureMessage: IMPORT_FAILURE_MESSAGE,
+      });
+    } catch (recordErr) {
+      console.error('[import] could not record failed batch:', recordErr.message);
+    }
+    return res.status(500).json({ error: IMPORT_FAILURE_MESSAGE, batch_id: batchId });
   }
 
-  const results = persistImportRows(rowsWithLocalPhotos, req, req.user.dealership_id, source);
-  res.status(201).json(results);
+  const issues = [...results.issues, ...photoIssues];
+  const hasErrors = issues.some(issue => issue.severity === 'error');
+  let batchId = null;
+  try {
+    batchId = importHistory.recordBatch(db, {
+      dealershipId, userId: req.user.id, kind, source, fileName,
+      status: hasErrors ? 'completed_with_errors' : 'completed',
+      totalRows: rows.length, created: results.created, updated: results.updated, skipped: results.skipped,
+      issues, retryOf,
+    });
+  } catch (recordErr) {
+    // The vehicles are already saved; losing the history record must not
+    // turn a successful import into a failure.
+    console.error('[import] could not record batch:', recordErr.message);
+  }
+  const { issues: _structured, ...publicResults } = results;
+  return res.status(201).json({
+    ...publicResults,
+    ...extra,
+    batch_id: batchId,
+    issues: importHistory.capIssues(issues),
+    error_count: issues.filter(issue => issue.severity === 'error').length,
+    warning_count: issues.filter(issue => issue.severity === 'warning').length,
+  });
+}
+
+// ── Bulk import units from CSV/other systems ───────────────────────────────
+router.post('/import', ...requirePermission('inventory_import'), async (req, res) => {
+  try {
+    const rows = Array.isArray(req.body.rows) ? req.body.rows : [];
+    if (!rows.length) return res.status(400).json({ error: 'No import rows received' });
+    if (rows.length > 500) return res.status(400).json({ error: 'Import is limited to 500 units at a time' });
+
+    const dealershipId = req.user.dealership_id;
+    const retry = parseRetryOf(req, dealershipId);
+    if (retry.error) return res.status(400).json({ error: retry.error });
+
+    const source = cleanText(req.body.source || 'Inventory import');
+    const rowsWithLocalPhotos = [];
+    const photoIssues = [];
+    for (let index = 0; index < rows.length; index += 1) {
+      const row = rows[index];
+      const failures = [];
+      const photos = await localizePhotoUrls(row.photos || row.photo_urls || row.images || row.image_urls, failures);
+      rowsWithLocalPhotos.push({ ...row, photos });
+      if (failures.length) {
+        photoIssues.push({
+          ...rowIdentity(row, index), severity: 'warning', code: 'photo_not_localized',
+          message: `${failures.length} photo${failures.length === 1 ? '' : 's'} could not be downloaded and still point${failures.length === 1 ? 's' : ''} to the source site.`,
+        });
+      }
+    }
+
+    return runImport({ req, res, dealershipId, kind: 'csv', source, rows: rowsWithLocalPhotos, photoIssues, retryOf: retry.retryOf });
+  } catch (err) {
+    console.error('[import] unexpected error:', err.message);
+    if (!res.headersSent) res.status(500).json({ error: IMPORT_FAILURE_MESSAGE });
+  }
 });
 
 router.post('/import/dealercenter-sftp/preview', ...requirePermission('inventory_import'), (req, res) => {
@@ -781,27 +913,59 @@ router.post('/import/dealercenter-sftp/preview', ...requirePermission('inventory
 });
 
 router.post('/import/dealercenter-sftp/import', ...requirePermission('inventory_import'), (req, res) => {
-  const dealershipId = targetDealershipId(req);
-  const dealership = db.prepare('SELECT * FROM dealerships WHERE id = ?').get(dealershipId);
-  if (!dealership) return res.status(404).json({ error: 'Dealership not found' });
+  try {
+    const dealershipId = targetDealershipId(req);
+    const dealership = db.prepare('SELECT * FROM dealerships WHERE id = ?').get(dealershipId);
+    if (!dealership) return res.status(404).json({ error: 'Dealership not found' });
 
-  const username = dealerCenterSftpUsername(dealership);
-  const latest = latestDealerCenterFile(username);
-  if (!latest) {
-    return res.status(404).json({ error: `No DealerCenter CSV found in /incoming for ${username || 'this dealership'}` });
+    const retry = parseRetryOf(req, dealershipId);
+    if (retry.error) return res.status(400).json({ error: retry.error });
+
+    const username = dealerCenterSftpUsername(dealership);
+    const latest = latestDealerCenterFile(username);
+    if (!latest) {
+      return res.status(404).json({ error: `No DealerCenter CSV found in /incoming for ${username || 'this dealership'}` });
+    }
+
+    const rawRows = csvToObjects(fs.readFileSync(latest.path, 'utf8'));
+    const rows = rawRows.map(mapDealerCenterRow).filter(row => row.vin || (row.year && row.make && row.model));
+    if (!rows.length) return res.status(400).json({ error: 'DealerCenter feed did not contain importable vehicles' });
+    if (rows.length > 500) return res.status(400).json({ error: 'Import is limited to 500 units at a time' });
+
+    return runImport({
+      req, res, dealershipId, kind: 'dealercenter_sftp', source: `DealerCenter SFTP ${latest.name}`,
+      fileName: latest.name, rows, retryOf: retry.retryOf,
+      extra: {
+        file: { name: latest.name, size: latest.size, modified_at: latest.modified_at, sftp_username: username },
+        rows_with_photos: rows.filter(row => normalizePhotos(row.photos).length).length,
+      },
+    });
+  } catch (err) {
+    console.error('[import] sftp import error:', err.message);
+    if (!res.headersSent) res.status(500).json({ error: IMPORT_FAILURE_MESSAGE });
   }
+});
 
-  const rawRows = csvToObjects(fs.readFileSync(latest.path, 'utf8'));
-  const rows = rawRows.map(mapDealerCenterRow).filter(row => row.vin || (row.year && row.make && row.model));
-  if (!rows.length) return res.status(400).json({ error: 'DealerCenter feed did not contain importable vehicles' });
-  if (rows.length > 500) return res.status(400).json({ error: 'Import is limited to 500 units at a time' });
+// ── Import history (read-only) ─────────────────────────────────────────────
+function historyDealershipId(req) {
+  if (req.user.role === 'super_admin' && req.query.dealership_id) {
+    const id = parseInteger(req.query.dealership_id);
+    if (id) return id;
+  }
+  return req.user.dealership_id;
+}
 
-  const results = persistImportRows(rows, req, dealershipId, `DealerCenter SFTP ${latest.name}`);
-  res.status(201).json({
-    ...results,
-    file: { name: latest.name, size: latest.size, modified_at: latest.modified_at, sftp_username: username },
-    rows_with_photos: rows.filter(row => normalizePhotos(row.photos).length).length,
+router.get('/import/batches', ...requirePermission('inventory_import'), (req, res) => {
+  res.json({
+    batches: importHistory.listBatches(db, historyDealershipId(req), { limit: req.query.limit, before: req.query.before }),
+    retention_days: importHistory.RETENTION_DAYS,
   });
+});
+
+router.get('/import/batches/:id', ...requirePermission('inventory_import'), (req, res) => {
+  const batch = importHistory.getBatch(db, historyDealershipId(req), req.params.id);
+  if (!batch) return res.status(404).json({ error: 'Import not found' });
+  res.json({ batch, retention_days: importHistory.RETENTION_DAYS });
 });
 
 // ── Match public website photos to CSV/import rows ─────────────────────────

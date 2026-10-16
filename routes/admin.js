@@ -6,6 +6,7 @@ const fs = require('fs');
 const multer = require('multer');
 const crypto = require('crypto');
 const db = require('../database');
+const importHistory = require('../services/importHistory');
 const { requireAuth, requireRole, hasPermission, parsePermissions, ALL_PERMISSIONS } = require('../middleware/auth');
 const { finalizeUploadedImage } = require('../services/imageSignature');
 
@@ -400,6 +401,7 @@ router.delete('/dealerships/:id', (req, res) => {
   const tx = db.transaction(() => {
     db.prepare('DELETE FROM users WHERE dealership_id = ?').run(dealership.id);
     db.prepare('DELETE FROM activity_logs WHERE dealership_id = ?').run(dealership.id);
+    importHistory.deleteForDealership(db, dealership.id);
     db.prepare('DELETE FROM dealerships WHERE id = ?').run(dealership.id);
   });
   tx();

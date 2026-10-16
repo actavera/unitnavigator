@@ -2,6 +2,7 @@
 const Database = require('better-sqlite3');
 const path = require('path');
 const { ensurePrivateDataDir, ensurePrivateDbFiles, assertPrivate } = require('./services/dataDirSecurity');
+const { SCHEMA_SQL: IMPORT_HISTORY_SCHEMA } = require('./services/importHistory');
 
 const dataDir = process.env.UNITNAV_DATA_DIR
   ? path.resolve(process.env.UNITNAV_DATA_DIR)
@@ -382,6 +383,9 @@ db.prepare(`
       default_tax_rate = COALESCE(default_tax_rate, 7.25),
       public_apr_options = COALESCE(NULLIF(public_apr_options, ''), '9.99,7.99,12.99,18.99')
 `).run();
+
+// Import history (additive; CREATE ... IF NOT EXISTS, no existing data touched).
+db.exec(IMPORT_HISTORY_SCHEMA);
 
 function slugify(value) {
   return String(value || '')
