@@ -2,23 +2,26 @@
 
 This file holds current, durable state only. It replaces stale entries rather than accumulating a diary. **Never store credentials, customer data, signing links, or temporary tokens here.**
 
-- **Current workstream**: none active. Roadmap item 2 (AI Listing Suite) is merged (PR #5, `9d3e8421`), passed the live-provider validation (23/23), and is deployed to production. Next, in order: Import Retry and Import History, AI Follow-Up Drafts, Premium Feature Packaging (entitlements, usage limits, metering).
-- **What it does**: select up to 10 units on the inventory page, then `POST /api/inventory/description-suggestions/bulk` (requires `inventory_edit`) returns suggestions in one batched provider call. Two variants: standard and a shorter Facebook-style one. Missing price, mileage, photos, year, make or model produce non-blocking warnings. Units that already have a description are identified and skipped by default (not sent to the provider); replacement suggestions need an explicit opt-in. Nothing is saved by generation. The dealer reviews, edits, and saves each unit through the existing `PUT /api/inventory/:id`, with a confirmation before replacing a description. Without `OPENAI_API_KEY` the page shows the warnings and a clear not-configured message. The existing single-vehicle routes, buttons, and confirmations are unchanged.
-- **Safeguards**: units are loaded by id and the authenticated dealership only (foreign ids are silently dropped); only year, make, model, trim, body style, color, mileage and price are sent, under opaque `v1..vN` refs (no VIN, notes, costs, minimum price, or ids); provider refs that were not requested are ignored; output is length-capped per variant and escaped in the UI; the cache is keyed by dealership, variant and a fingerprint of the exact facts sent, expires after 5 minutes, and holds at most 500 entries. Identical requests that arrive while a provider call is still running share that one call (in-flight coalescing, same key); the in-flight entry is removed on success or failure and failures are never cached. Units with identical facts inside one request are sent once.
-- **Files**: `services/listingQuality.js`, `services/listingSuite.js` (new); `services/vehicleDescription.js`, `routes/inventory.js`, `public/inventory.html` (changed); tests `listing-quality`, `listing-suite`, `listing-suite-route`, `inventory-page-listing`.
-- **Branch**: `claude/listing-live-validation` holds the live-validation script (pushed). Start the next workstream from updated `main`.
-- **Closed workstreams** (merged to `main` and deployed to production):
-  - DocuSeal e-sign migration, integration-test scaffolding, and the single-document archival fix (PR #1)
+- **Current workstream**: none active. The contacts-export hardening (below) is awaiting review; no product workstream has started.
+- **Next product workstreams, in order**: (1) AI Follow-Up Drafts (roadmap item 4), then (2) Premium Feature Packaging (roadmap item 7: entitlements, usage limits, metering, and upcharges for every AI route). Live Market Pricing (item 5) and the Meta Inventory Feed (item 6) stay deferred in `PRODUCT_ROADMAP.md`.
+- **Production**: `main` at `96a967f5` is deployed and online under root's PM2 (one restart, no restart loop, no log errors). `data/` and the database files are private to root. `OPENAI_API_KEY` and `OPENAI_DESCRIPTION_MODEL` are set in root's PM2 environment.
+- **Closed workstreams** (merged to `main` and deployed):
+  - DocuSeal e-sign migration, integration-test scaffolding, single-document archival fix (PR #1)
   - Today's Priorities, roadmap item 1 (PR #2)
-  - Public showroom hardening: explicit field allowlist, no dealership or non-ready-inventory fallback, showrooms off by default for new dealerships (PR #3)
-  - Private data directory and database file permissions, enforced on every start and checked before the server accepts traffic (PR #4)
-- **Production**: running `main` at `9d3e8421` (PR #5), online under root's PM2. `data/` and the database files are private to root. `OPENAI_API_KEY` and `OPENAI_DESCRIPTION_MODEL` are set in root's PM2 environment.
+  - Public showroom hardening: field allowlist, no dealership or non-ready-inventory fallback, showrooms off by default for new dealerships (PR #3)
+  - Private data directory and database file permissions, enforced on every start (PR #4)
+  - **AI Listing Suite, roadmap item 2** (PR #5, validated live 23/23 on the real provider before deploy via the script from PR #6). Up to 10 units per batched request, Standard and Facebook variants, non-blocking warnings, suggestions only with an explicit per-unit save, in-flight coalescing, tenant-scoped, no VIN/notes/costs/minimum price sent to the provider.
+  - **Import Retry and Import History, roadmap item 3** (PR #7). Every import is recorded (counts, status, issues, file name, retry link; no prices, costs, notes, or full VINs; 180-day retention; 100-issue cap), visible at `/inventory/import/history` for users with `inventory_import`. Re-imports never overwrite an existing description and never change stage on an unrecognized feed status; VIN-less rows match a unique stock number. Database failures return JSON and roll back.
+  - Inventory CSV export formula-injection hardening (PR #8)
+- **Production verification after the final deploy**: pages (`/home`, `/priorities`, `/inventory`, `/inventory/import`, `/inventory/import/history`) return 200; bad login and unauthenticated history return 401; non-root access to `data/` is denied; on a throwaway demo dealership an import recorded a history batch, a retry linked to its original, a dealer-edited description survived a re-import, a VIN-less row matched by stock number, and a hostile make exported as `'=HYPERLINK(...)`; showrooms returned 151, 4, and 0 units with no private fields. Demo data was cleaned up. No real import was run.
+- **Contacts export**: formula-injection hardening for `GET /api/deals/export/contacts.csv` is approved and implemented on its own branch (`claude/contacts-export-hardening`), pending review, merge, and deploy. Not yet in production.
 - **Operational notes**: the app runs as `unitnavigator` in root's PM2 on the droplet. Deploy with the runbook in `DEPLOY_DIGITALOCEAN.md`: JWT_SECRET pre-check, `git pull`, `npm ci --omit=dev` when dependencies change, `pm2 restart unitnavigator`, then check logs and smoke-test.
-- **Open items (not part of item 2)**:
+- **Open items**:
   - Root's PM2 has no systemd boot unit (`pm2-root` not found), so the app may not return after a reboot.
   - No database backups exist on the droplet; a private backup procedure is documented but not scheduled.
-  - Password rotation is an open owner decision because the database was readable by other local accounts before the fix.
-  - Unit ids and numeric `?dealer=<id>` lookup are still sequential and enumerable; numeric lookup is kept temporarily.
-- **Deliberately not built**: any per-route AI rate limiter. Authenticated AI usage limits, entitlements, and metering are recorded as requirements in `PRODUCT_ROADMAP.md` item 7 (Premium Feature Packaging) to be designed once for all AI routes.
-- **Next action**: scope Import Retry and Import History (roadmap item 3) under `/workstream`.
+  - Password rotation is an open owner decision because the database was readable by other local accounts before the permissions fix.
+  - Unit ids and numeric `?dealer=<id>` lookup are sequential and enumerable; numeric lookup is kept temporarily.
+  - Two rows with the same VIN in one import count as an update; VIN-less rows with no stock number duplicate on re-import (now warned).
+- **Security-control requirements recorded for Premium Feature Packaging**: a dedicated bulk-contact-export permission (the contacts export needs only `reports_view`, which every default staff role has) and an export audit trail (who exported what, when). Deliberately not changed in the export-hardening PR.
+- **Deliberately not built**: per-route AI rate limiters. Authenticated AI usage limits, entitlements, and metering are requirements for Premium Feature Packaging (`PRODUCT_ROADMAP.md` item 7), to be designed once for all AI routes.
 - **Known manual dependency**: a human must complete both test signatures for any future live e-sign test run.
