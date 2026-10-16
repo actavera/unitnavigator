@@ -7,6 +7,7 @@ const fs = require('fs');
 const db = require('../database');
 const { JWT_SECRET, parsePermissions } = require('../middleware/auth');
 const { resolveUploadPath } = require('../services/uploads');
+const importHistory = require('../services/importHistory');
 
 function signUser(user, dealership, extra = {}) {
   const permissions = parsePermissions(user.permissions, user.role);
@@ -48,6 +49,7 @@ function cleanupDemoDealership(dealershipId) {
   const tx = db.transaction(() => {
     db.prepare('DELETE FROM documents WHERE dealership_id = ?').run(dealershipId);
     db.prepare('DELETE FROM activity_logs WHERE dealership_id = ?').run(dealershipId);
+    importHistory.deleteForDealership(db, dealershipId);
     db.prepare('DELETE FROM deals WHERE dealership_id = ?').run(dealershipId);
     db.prepare('DELETE FROM credit_pulls WHERE dealership_id = ?').run(dealershipId);
     db.prepare('DELETE FROM units WHERE dealership_id = ?').run(dealershipId);
