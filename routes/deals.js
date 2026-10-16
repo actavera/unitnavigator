@@ -1,6 +1,7 @@
 'use strict';
 const router = require('express').Router();
 const db = require('../database');
+const { safeText, safePhone } = require('../services/csv');
 const { requireAuth, requirePermission } = require('../middleware/auth');
 
 const VALID_STATUSES = new Set(['pending', 'closed', 'dead', 'vehicle_changed']);
@@ -164,15 +165,21 @@ router.get('/export/contacts.csv', ...requirePermission('reports_view'), (req, r
     ORDER BY c.last_name, c.first_name
   `).all(req.user.dealership_id);
 
-  const escape = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
+  // Every cell is always quoted (unchanged), and text that a spreadsheet would
+  // run as a formula is neutralized first. Phone numbers keep a legitimate
+  // leading "+" (see safePhone).
+  const quote = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
   const csv = [
-    ['First Name', 'Last Name', 'Email', 'Phone', 'Deal Status', 'Deal Type'].map(escape).join(','),
-    ...rows.map(row => [row.first_name, row.last_name, row.email, row.phone, row.deal_status, row.deal_type].map(escape).join(',')),
+    ['First Name', 'Last Name', 'Email', 'Phone', 'Deal Status', 'Deal Type'].map(quote).join(','),
+    ...rows.map(row => [
+      safeText(row.first_name), safeText(row.last_name), safeText(row.email),
+      safePhone(row.phone), safeText(row.deal_status), safeText(row.deal_type),
+    ].map(quote).join(',')),
   ].join('\n');
 
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', 'attachment; filename="unit-navigator-contacts.csv"');
-  res.send(csv);
+  res.send(`\uFEFF${csv}`);
 });
 
 router.post('/:id/email-reminder', ...requirePermission('deals_manage'), (req, res) => {
