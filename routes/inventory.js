@@ -10,6 +10,7 @@ const { suggestedRetailPrice } = require('../services/pricing');
 const { generateVehicleDescription } = require('../services/vehicleDescription');
 const { runBulkSuggestions, ListingSuiteError } = require('../services/listingSuite');
 const importHistory = require('../services/importHistory');
+const { csvCell } = require('../services/csv');
 const { safeFetch, readBodyWithLimit, releaseResponse } = require('../services/safeFetch');
 const { resolveUploadPath } = require('../services/uploads');
 const { finalizeUploadedImages } = require('../services/imageSignature');
@@ -696,11 +697,6 @@ function persistImportRows(rows, req, dealershipId, source, options = {}) {
 
   tx();
   return options.includeRows ? { ...results, rows } : results;
-}
-
-function csvCell(value) {
-  const text = Array.isArray(value) ? value.join('\n') : String(value ?? '');
-  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
 function exportFilename(dealershipId) {
