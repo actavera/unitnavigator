@@ -1,7 +1,32 @@
 'use strict';
 const router = require('express').Router();
 const db = require('../database');
-const { requireAuth, requirePermission } = require('../middleware/auth');
+const { requireAuth, requirePermission, hasPermission } = require('../middleware/auth');
+
+// Client records hold personal and financial data, so access is tiered by the
+// permissions a person already has for the work that needs it:
+//   basic    (deals_view, deals_manage, paperwork_manage, credit_pull):
+//            name, phone, email, and deal/vehicle history;
+//   identity (paperwork_manage, credit_pull): also address, ID number,
+//            employer, and monthly income;
+//   credit   (credit_pull): also credit pulls, scores, and credit status.
+// Anything outside a person's tier is never selected, returned, searched, or
+// filtered on, so it can neither be read nor probed through search results.
+const BASIC_PERMISSIONS = ['deals_view', 'deals_manage', 'paperwork_manage', 'credit_pull'];
+
+function customerAccess(user) {
+  return {
+    basic: BASIC_PERMISSIONS.some(permission => hasPermission(user, permission)),
+    identity: hasPermission(user, 'paperwork_manage') || hasPermission(user, 'credit_pull'),
+    credit: hasPermission(user, 'credit_pull'),
+  };
+}
+
+function requireCustomerAccess(req, res, next) {
+  req.customerAccess = customerAccess(req.user);
+  if (!req.customerAccess.basic) return res.status(403).json({ error: 'You do not have access to client records' });
+  next();
+}
 
 function safeLimit(value) {
   const n = Number(value);
@@ -14,19 +39,9 @@ function searchTerm(q) {
   return cleaned ? `%${cleaned}%` : null;
 }
 
-function customerSelect() {
-  return `
-    SELECT
-      c.id,
-      c.first_name,
-      c.last_name,
-      c.phone,
-      c.email,
-      c.address,
-      c.id_number,
-      c.employer,
-      c.monthly_income,
-      c.created_at,
+function customerSelect(access) {
+  const identityColumns = access.identity ? 'c.address, c.id_number, c.employer, c.monthly_income,' : '';
+  const creditColumns = access.credit ? `
       MAX(cp.pulled_at) AS last_credit_at,
       (
         SELECT cp2.provider_status
@@ -42,7 +57,17 @@ function customerSelect() {
         ORDER BY cp3.pulled_at DESC
         LIMIT 1
       ) AS last_score,
-      COUNT(DISTINCT cp.id) AS credit_count,
+      COUNT(DISTINCT cp.id) AS credit_count,` : '';
+  const creditJoin = access.credit ? 'LEFT JOIN credit_pulls cp ON cp.customer_id = c.id AND cp.dealership_id = c.dealership_id' : '';
+  return `
+    SELECT
+      c.id,
+      c.first_name,
+      c.last_name,
+      c.phone,
+      c.email,
+      ${identityColumns}
+      c.created_at,${creditColumns}
       COUNT(DISTINCT d.id) AS deal_count,
       MAX(d.created_at) AS last_deal_at,
       (
@@ -62,7 +87,7 @@ function customerSelect() {
       (
         SELECT TRIM(COALESCE(u.year, '') || ' ' || COALESCE(u.make, '') || ' ' || COALESCE(u.model, ''))
         FROM deals d4
-        LEFT JOIN units u ON u.id = d4.unit_id
+        LEFT JOIN units u ON u.id = d4.unit_id AND u.dealership_id = d4.dealership_id
         WHERE d4.customer_id = c.id AND d4.dealership_id = c.dealership_id
         ORDER BY COALESCE(d4.closed_at, d4.created_at) DESC
         LIMIT 1
@@ -70,13 +95,13 @@ function customerSelect() {
       (
         SELECT u2.vin
         FROM deals d5
-        LEFT JOIN units u2 ON u2.id = d5.unit_id
+        LEFT JOIN units u2 ON u2.id = d5.unit_id AND u2.dealership_id = d5.dealership_id
         WHERE d5.customer_id = c.id AND d5.dealership_id = c.dealership_id
         ORDER BY COALESCE(d5.closed_at, d5.created_at) DESC
         LIMIT 1
       ) AS last_vin
     FROM customers c
-    LEFT JOIN credit_pulls cp ON cp.customer_id = c.id AND cp.dealership_id = c.dealership_id
+    ${creditJoin}
     LEFT JOIN deals d ON d.customer_id = c.id AND d.dealership_id = c.dealership_id
     LEFT JOIN units u_search ON u_search.id = d.unit_id AND u_search.dealership_id = c.dealership_id
     WHERE c.dealership_id = ?
@@ -85,34 +110,40 @@ function customerSelect() {
 
 function enrich(row) {
   const name = [row.first_name, row.last_name].filter(Boolean).join(' ') || 'Unnamed Client';
-  return {
+  const out = {
     ...row,
     name,
-    credit_count: Number(row.credit_count || 0),
     deal_count: Number(row.deal_count || 0),
     last_vehicle: row.last_vehicle && row.last_vehicle.trim() ? row.last_vehicle.trim() : null,
   };
+  // Only present for people allowed to see credit data; never defaulted to 0.
+  if ('credit_count' in row) out.credit_count = Number(row.credit_count || 0);
+  return out;
 }
 
-router.get('/', requireAuth, (req, res) => {
+router.get('/', requireAuth, requireCustomerAccess, (req, res) => {
+  const access = req.customerAccess;
   const { q, credit, deal, sort } = req.query;
   const limit = safeLimit(req.query.limit);
-  let sql = customerSelect();
+  let sql = customerSelect(access);
   const params = [req.user.dealership_id];
   const term = searchTerm(q);
 
   if (term) {
-    sql += ` AND (
-      c.first_name LIKE ? OR c.last_name LIKE ? OR
-      (c.first_name || ' ' || c.last_name) LIKE ? OR
-      c.phone LIKE ? OR c.email LIKE ? OR c.address LIKE ? OR
-      c.id_number LIKE ? OR c.employer LIKE ? OR cp.vehicle_interest LIKE ? OR cp.result_summary LIKE ? OR
-      u_search.make LIKE ? OR u_search.model LIKE ? OR u_search.vin LIKE ?
-    )`;
-    params.push(term, term, term, term, term, term, term, term, term, term, term, term, term);
+    // Search only the columns this person is allowed to see.
+    const columns = [
+      'c.first_name', 'c.last_name', "(c.first_name || ' ' || c.last_name)", 'c.phone', 'c.email',
+      'u_search.make', 'u_search.model', 'u_search.vin',
+    ];
+    if (access.identity) columns.push('c.address', 'c.id_number', 'c.employer');
+    if (access.credit) columns.push('cp.vehicle_interest', 'cp.result_summary');
+    sql += ` AND (${columns.map(column => `${column} LIKE ?`).join(' OR ')})`;
+    columns.forEach(() => params.push(term));
   }
 
-  if (credit && credit !== 'all') {
+  // Filtering or sorting on credit data would reveal it, so both apply only
+  // to people with credit access and are ignored for everyone else.
+  if (access.credit && credit && credit !== 'all') {
     if (credit === 'none') {
       sql += ' AND cp.id IS NULL';
     } else {
@@ -134,12 +165,14 @@ router.get('/', requireAuth, (req, res) => {
 
   if (sort === 'name') {
     sql += ' ORDER BY c.last_name COLLATE NOCASE, c.first_name COLLATE NOCASE';
-  } else if (sort === 'credit') {
+  } else if (sort === 'credit' && access.credit) {
     sql += ' ORDER BY CASE WHEN last_credit_at IS NULL THEN 1 ELSE 0 END, last_credit_at DESC, c.created_at DESC';
   } else if (sort === 'deal') {
     sql += ' ORDER BY CASE WHEN last_deal_at IS NULL THEN 1 ELSE 0 END, last_deal_at DESC, c.created_at DESC';
-  } else {
+  } else if (access.credit) {
     sql += ' ORDER BY MAX(COALESCE(cp.pulled_at, d.created_at, c.created_at)) DESC, c.created_at DESC';
+  } else {
+    sql += ' ORDER BY MAX(COALESCE(d.created_at, c.created_at)) DESC, c.created_at DESC';
   }
 
   sql += ' LIMIT ?';
@@ -149,22 +182,20 @@ router.get('/', requireAuth, (req, res) => {
   res.json({ customers });
 });
 
-router.get('/:id', requireAuth, (req, res) => {
+router.get('/:id', requireAuth, requireCustomerAccess, (req, res) => {
+  const access = req.customerAccess;
+  const identityColumns = access.identity ? ', address, id_number, employer, monthly_income' : '';
   const customer = db.prepare(`
-    SELECT * FROM customers WHERE id = ? AND dealership_id = ?
+    SELECT id, first_name, last_name, phone, email, created_at${identityColumns}
+    FROM customers WHERE id = ? AND dealership_id = ?
   `).get(req.params.id, req.user.dealership_id);
   if (!customer) return res.status(404).json({ error: 'Client not found' });
 
-  const credit_pulls = db.prepare(`
-    SELECT * FROM credit_pulls
-    WHERE customer_id = ? AND dealership_id = ?
-    ORDER BY pulled_at DESC
-  `).all(req.params.id, req.user.dealership_id);
-
   const deals = db.prepare(`
-    SELECT d.*, u.year, u.make, u.model, u.vin
+    SELECT d.id, d.status, d.deal_type, d.next_follow_up_at, d.created_at, d.closed_at,
+           u.year, u.make, u.model, u.vin
     FROM deals d
-    LEFT JOIN units u ON u.id = d.unit_id
+    LEFT JOIN units u ON u.id = d.unit_id AND u.dealership_id = d.dealership_id
     WHERE d.customer_id = ? AND d.dealership_id = ?
     ORDER BY d.created_at DESC
   `).all(req.params.id, req.user.dealership_id).map(row => ({
@@ -172,7 +203,16 @@ router.get('/:id', requireAuth, (req, res) => {
     vehicle: [row.year, row.make, row.model].filter(Boolean).join(' ') || null,
   }));
 
-  res.json({ customer: enrich(customer), credit_pulls, deals });
+  const payload = { customer: enrich(customer), deals };
+  if (access.credit) {
+    payload.credit_pulls = db.prepare(`
+      SELECT id, provider_status, score_placeholder, vehicle_interest, result_summary, notes, pulled_at
+      FROM credit_pulls
+      WHERE customer_id = ? AND dealership_id = ?
+      ORDER BY pulled_at DESC
+    `).all(req.params.id, req.user.dealership_id);
+  }
+  res.json(payload);
 });
 
 router.delete('/:id', ...requirePermission('deals_manage'), (req, res) => {

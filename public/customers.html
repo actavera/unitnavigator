@@ -232,12 +232,13 @@ async function loadClients() {
 }
 
 function renderStats() {
+  const creditVisible = clients.some(c => c.credit_count !== undefined);
   const withCredit = clients.filter(c => c.credit_count > 0).length;
   const activeDeals = clients.filter(c => c.last_deal_status === 'pending').length;
   const closedDeals = clients.filter(c => c.last_deal_status === 'closed').length;
   document.getElementById('clientStats').innerHTML = `
     <div class="client-stat"><div class="client-stat-icon">#</div><div><span>Results</span><strong>${clients.length}</strong></div></div>
-    <div class="client-stat"><div class="client-stat-icon">✓</div><div><span>With Credit Pulls</span><strong>${withCredit}</strong></div></div>
+    <div class="client-stat"><div class="client-stat-icon">✓</div><div><span>With Credit Pulls</span><strong>${creditVisible ? withCredit : '-'}</strong></div></div>
     <div class="client-stat"><div class="client-stat-icon">$</div><div><span>Active Deals</span><strong>${activeDeals}</strong></div></div>
     <div class="client-stat"><div class="client-stat-icon">★</div><div><span>Closed Deals</span><strong>${closedDeals}</strong></div></div>
   `;
@@ -257,8 +258,8 @@ function renderResults() {
         <div class="client-sub">${highlight(client.phone || 'No phone')} · ${highlight(client.email || 'No email')}</div>
       </div>
       <div class="client-meta">
-        <strong>${badge(client.last_credit_status)}</strong>
-        <span>${client.credit_count} credit pull${client.credit_count === 1 ? '' : 's'} · ${fmtDate(client.last_credit_at)}</span>
+        ${client.credit_count === undefined ? '<strong>Credit</strong><span>Restricted</span>' : `<strong>${badge(client.last_credit_status)}</strong>
+        <span>${client.credit_count} credit pull${client.credit_count === 1 ? '' : 's'} · ${fmtDate(client.last_credit_at)}</span>`}
       </div>
       <div class="client-meta">
         <strong>${highlight(client.last_vehicle || 'No vehicle yet')}</strong>
@@ -280,7 +281,7 @@ async function loadDetail(id) {
   el.innerHTML = '<div class="client-empty">Loading client history...</div>';
   try {
     const data = await UN.api('GET', `/api/customers/${id}`);
-    renderDetail(data.customer, data.credit_pulls || [], data.deals || []);
+    renderDetail(data.customer, data.credit_pulls, data.deals || []);
   } catch (err) {
     el.innerHTML = `<div class="client-empty">${esc(err.message || 'Could not load client.')}</div>`;
   }
@@ -301,15 +302,15 @@ function renderDetail(customer, creditPulls, deals) {
     <div class="client-detail-body">
       <div class="detail-block">
         <h3>Client Info</h3>
-        ${detailLine('Address', customer.address)}
+        ${'id_number' in customer ? `${detailLine('Address', customer.address)}
         ${detailLine('ID Number', customer.id_number)}
         ${detailLine('Employer', customer.employer)}
-        ${detailLine('Monthly Income', customer.monthly_income ? UN.fmt.money(customer.monthly_income) : null)}
+        ${detailLine('Monthly Income', customer.monthly_income ? UN.fmt.money(customer.monthly_income) : null)}` : '<p class="text-muted text-sm">Address, ID, employer, and income are restricted.</p>'}
         ${detailLine('Created', fmtDate(customer.created_at))}
       </div>
       <div class="detail-block">
         <h3>Credit History</h3>
-        ${creditPulls.length ? creditPulls.map(pull => `
+        ${!creditPulls ? '<p class="text-muted text-sm">Credit history is restricted.</p>' : creditPulls.length ? creditPulls.map(pull => `
           <div class="history-item">
             <strong>${badge(pull.provider_status)} ${pull.score_placeholder ? 'Score ' + esc(pull.score_placeholder) : ''}</strong>
             <span>${fmtDate(pull.pulled_at)} · ${esc(pull.vehicle_interest || 'No vehicle interest')}</span>
@@ -361,6 +362,13 @@ function initials(name) {
 
 function renderEmptyDetail() {
   document.getElementById('clientDetail').innerHTML = '<div class="client-empty">Select a client to see credit pulls, deals, vehicles, and contact info.</div>';
+}
+
+// Credit filtering applies only to people with credit access (the server ignores it otherwise).
+if (!UN.can('credit_pull')) {
+  const creditFilter = document.getElementById('creditFilter');
+  creditFilter.disabled = true;
+  creditFilter.title = 'Credit filters require credit access';
 }
 
 ['q','creditFilter','dealFilter','sort'].forEach(id => {

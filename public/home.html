@@ -160,7 +160,8 @@ async function loadDashboard() {
   try {
     const [dashboard, customers] = await Promise.all([
       UN.api('GET', '/api/dashboard'),
-      UN.api('GET', '/api/customers?limit=100'),
+      // Client records are permission-gated; a person without access still gets the dashboard.
+      UN.api('GET', '/api/customers?limit=100').catch(() => ({ customers: [] })),
     ]);
     dashboardCustomers = customers.customers || [];
     renderMetrics(dashboard.metrics || {});

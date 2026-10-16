@@ -446,15 +446,17 @@ async function openClient(id) {
   try {
     const data = await UN.api('GET', `/api/customers/${id}`);
     const customer = data.customer;
-    const credit = data.credit_pulls || [];
+    const credit = data.credit_pulls;
     const clientDeals = data.deals || [];
     alert([
       customer.name,
       customer.phone || 'No phone',
       customer.email || 'No email',
       '',
-      `Credit pulls: ${credit.length}`,
-      credit[0] ? `Last credit: ${credit[0].provider_status || 'Pending'} ${credit[0].score_placeholder ? 'Score ' + credit[0].score_placeholder : ''}` : 'Last credit: none',
+      ...(credit ? [
+        `Credit pulls: ${credit.length}`,
+        credit[0] ? `Last credit: ${credit[0].provider_status || 'Pending'} ${credit[0].score_placeholder ? 'Score ' + credit[0].score_placeholder : ''}` : 'Last credit: none',
+      ] : []),
       `Deals: ${clientDeals.length}`,
       clientDeals[0] ? `Last deal: ${statusLabel(clientDeals[0].status)} · ${clientDeals[0].vehicle || 'No vehicle'}` : 'Last deal: none',
     ].join('\\n'));
