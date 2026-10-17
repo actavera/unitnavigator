@@ -1,55 +1,61 @@
 # Unit Navigator — Product Roadmap
 
-Durable backlog of genuinely unfinished product features, audited against the current codebase. This file replaces stale entries as items ship — it is a decision tool, not a historical log. Completed features (dealer showroom, roles/permissions, paperwork, DocuSeal e-sign, single-vehicle description writer, internal pricing engine, CSV/SFTP import, VIN decode) are intentionally excluded.
+Durable backlog of genuinely unfinished work, in priority order. Shipped features are removed, not kept as history; see `CURRENT_WORK.md` for current state. Entries describe intent and scope, not committed delivery dates.
 
-## 1. AI Assistant — "Today's Priorities"
-**Problem**: The alerts system (`routes/dashboard.js`) already detects stalled deals, aging units, and stale logins, but presents them as unranked counts with no summary or recommended action.
-**Smallest first release**: A "Today's Priorities" view built entirely on the existing alert queries and dealership data — no new detection logic. Priorities are ranked deterministically (urgency, age, missing documents, deal status), not by an LLM. AI is used only to summarize each item's situation and suggest a next step in plain language. AI must never invent an alert, alter a record, contact a customer, change a price, or execute any action. Each recommendation links to an existing action already in the app (e.g., dismiss the alert, open the deal) — nothing new is added to act on it. No chatbot or free-form Q&A in this release.
-**Dependencies**: None beyond existing alert data; an LLM call for the summary/recommendation text only.
-**Risk/complexity**: Medium.
-**Completion criteria**: Dealer can load one view showing every open alert deterministically ranked, each with an AI-written summary/next-step and a working link to the existing action for it. No AI-originated actions execute automatically.
+## Commercial model
 
-## 2. AI Listing Suite Enhancements
-**Problem**: The description writer (`services/vehicleDescription.js`) only generates one vehicle at a time, with a fixed tone/length and no channel targeting, and there is no check for listings missing required fields.
-**Smallest first release**: Bulk generation across a selected set of vehicles, one channel-specific variant (e.g., shorter for Facebook), and a missing-info warning that flags a listing lacking price/mileage/photos before generation.
-**Dependencies**: None new — extends the existing service.
-**Risk/complexity**: Low for bulk generation and quality checks; Medium for channel-specific tone variants.
-**Completion criteria**: Dealer can select multiple vehicles and generate descriptions in one action; at least one channel-specific variant exists; listings missing required fields are flagged before generation.
+- **Base product: $500 per dealership per month.** Includes the normal 700Credit subscription, all existing AI features (Today's Priorities, AI Listing Suite, AI Follow-Up Drafts), the simple dealer showroom, contracts and e-sign, and base operational automation.
+- **Custom dealer websites** are referred to Adz Solutions; Unit Navigator does not build them.
+- **Potential paid add-ons**: social publishing, additional 700Credit products, live market pricing, and BHPH servicing.
+- **General inventory syndication** is deferred until demand is proven.
+- Billing is manual until a separate billing decision is made; nothing here implies automated charging.
 
-## 3. Import Retry and Import History
-**Problem**: CSV/SFTP import already does VIN-based dedup and returns per-row errors, but a partially-failed import must be re-uploaded in full, and there's no persisted, re-visitable record of past import batches beyond per-unit activity-log entries.
-**Smallest first release**: A retry endpoint/UI that re-submits only the previously-errored rows from the last import response, plus a minimal persisted import-batch record (timestamp, source, counts, error list).
-**Dependencies**: None new — extends the existing import handlers in `routes/inventory.js`.
-**Risk/complexity**: Low.
-**Completion criteria**: After a partially-failed import, the dealer can retry just the failed rows without re-uploading the whole file, and can open a history view of past import batches with their outcomes.
+## 1. Base Operations Completion
+Finish the operational core that the $500 base product promises.
+- **Inventory verification**: extend the existing aging alerts (recurring 30-day milestones with stage update/dismiss) with assignments to a responsible person, structured disposition reasons, configurable check intervals, and manager escalation of unresolved items.
+- **Deal document checklist**: turn the existing `documents` records and incomplete-paperwork reporting into a usable per-deal checklist.
+- **Communications foundation**: a shared email/SMS layer for the product, with consent tracking (opt-in and opt-out records) and compliance review required before any automated customer email or SMS is sent. Follow-up drafts stay manual until this exists.
+- **Operational reminders**: connect automated reminders to the existing inventory, pending-deal, and document-status alerts, using the communications foundation.
 
-## 4. AI Lead and Deal Follow-Up Drafts
-**Problem**: Stalled deals are already detected, but nothing drafts outreach or summarizes the deal's history/missing information — the dealer must do both manually.
-**Smallest first release**: For each stalled-deal alert, generate a text/email draft and a deal-history/missing-info summary for the dealer to copy or act on. Allowed actions: copy the draft, open the related customer/deal. No automated sending and no messaging integration in this release.
-**Dependencies**: Item 1 (natural surface for these drafts).
-**Risk/complexity**: Medium.
-**Completion criteria**: Every stalled-deal alert can produce a draft message and a deal summary; the dealer must manually copy or send it — nothing is sent automatically.
+Start with structured inventory disposition and assignment.
 
-## 5. Live Market Pricing and VIN Intelligence
-**Problem**: Pricing suggestions only use the dealer's own sold history or a generic depreciation model; there is no local/regional market comparison, and no legitimate ZIP-based adjustment.
-**Smallest first release**: A short evaluation of candidate data providers (coverage, licensing, cost, API limits, allowed display/storage terms) — no ZIP or local adjustment is built until a legitimate source is selected. No invented or coarse ZIP multiplier is used in the meantime. The existing internal comparable/fallback pricing remains unchanged and clearly labeled as its own source.
-**Dependencies**: Provider evaluation outcome; a licensing/cost decision.
-**Risk/complexity**: High.
-**Completion criteria**: A documented provider evaluation exists with a go/no-go recommendation; if approved, a ZIP/local-adjusted estimate is added as a separately labeled figure alongside (not replacing) the existing internal estimate.
+## 2. Title, Plate, and Registration Tracking
+Post-sale obligations tracking, intended for the $500 base product.
+- Title status: received, needed, submitted, completed.
+- Temporary-tag and registration deadlines.
+- Plate status.
+- Required-item checklist.
+- Assigned employee, due dates, overdue alerts, and manager escalation.
+- Post-sale obligations dashboard.
 
-## 6. Meta Inventory Feed
-**Problem**: No path to any external listing channel exists today — only a manual CSV export.
-**Smallest first release**: A dealer-specific inventory feed formatted for Meta/Facebook Marketplace's official commerce feed spec, plus dealership footer/branding settings for listings. Direct Facebook Marketplace posting is deferred unless Meta provides a documented, supportable official API route.
-**Dependencies**: Meta's published commerce feed spec; confirmation of whether an official direct-posting route exists before considering that separately.
-**Risk/complexity**: Medium for the feed; direct posting is out of scope unless an official route is confirmed.
-**Completion criteria**: A dealer can point Meta Commerce Manager at a generated feed URL and see their live inventory populate correctly, with dealer-configured footer/branding applied.
+## 3. Add-On Entitlements and Usage Controls
+Control which dealerships can use which paid features, without automated billing.
+- Current AI features, the simple showroom, and basic operations stay in the $500 base product; entitlements gate the paid add-ons listed above.
+- Internal usage visibility for AI and messaging (counted per provider request; no prompt, output, or customer content stored), designed once and applied to every AI route.
+- Entitlements by dealership and feature, checked before any provider call, with per-user permissions still applying inside an entitled dealership.
+- A dedicated bulk-contact-export permission (the contacts export currently needs only `reports_view`, which default staff roles have) and an export audit history covering the contacts export, the inventory export, and future exports.
+- No automated purchasing, charging, or invoicing.
 
-## 7. Premium Feature Packaging
-**Problem**: No plan/tier/entitlement/usage-limit/billing code exists anywhere — every feature is available to every dealer today.
-**Smallest first release**: A plan/tier table and entitlement checks (reusing the existing permission-check pattern in `middleware/auth.js`) distinguishing a base plan from an AI-features tier, plus usage/cost visibility. No billing automation in this release.
-**Requirements carried from shipped AI features**: authenticated AI usage limits, entitlements, and metering must be designed once here and applied to every AI route, not added as per-route ad-hoc limiters. Today those routes are Today's Priorities AI guidance, single-vehicle description generation, and bulk listing-description suggestions. The design needs per-dealership and per-user limits, an entitlement check before any provider call, and metering of provider calls (counted per request, and per cache or in-flight reuse) so usage and cost are visible before billing exists. The present safeguards, the 10-unit batch cap, one provider call per request, a short cache, and in-flight request coalescing, bound cost per request but do not limit total usage.
-**Security-control requirements carried from the exports audit**: a dedicated bulk-contact-export permission (the contacts export currently needs only `reports_view`, which every default `staff` role has, so any staff member can export every customer's name, email, and phone), and an export audit trail recording who exported what and when for the contacts export, the inventory export, and any future export. These belong with entitlements and usage metering so access and usage controls are designed together, not as one-off patches.
-**Requirements carried from AI Follow-Up Drafts**: the draft route (`POST /api/deals/:id/follow-up-draft`) and its optional AI rewrite have no usage limits, entitlement check, or metering by design; these belong in the shared AI entitlement and metering design alongside the other AI routes, with per-user and per-dealership caps. A draft-generated audit trail was deliberately not created (it would also alter a deal's "last activity"); if wanted, it belongs with the export audit trail. Actually sending email or SMS is out of scope and would first require consent tracking (opt-in and opt-out records) and compliance review.
-**Dependencies**: A decision on which features (likely items 1, 2, 4, 5) are gated; no payment processor needed yet.
-**Risk/complexity**: Medium.
-**Completion criteria**: Dealers can be assigned a plan/tier; gated features return a clear "upgrade required" response when not entitled; usage counters are visible to the dealer and to admin, with no automated charge yet.
+## 4. 700Credit Product Add-Ons
+Begin with an audit of 700Credit's provider documentation and authorization requirements before any implementation. Then add products incrementally, each separately authorized and tested: identity/fraud, compliance, DL/DMV verification, income, prescreen/prequalification, and monthly products.
+
+## 5. Social Selling Suite
+Facebook Page and Instagram publishing first. Direct Marketplace posting only if an official, supported route is confirmed.
+
+## 6. Live Market Pricing Intelligence
+Provider evaluation first (coverage, licensing, cost, API limits, allowed display and storage terms). No ZIP or local adjustment is built until a legitimate source is selected; the existing internal pricing estimate stays separately labeled.
+
+## 7. BHPH Servicing
+Buy-here-pay-here account servicing (potential paid add-on).
+- Account balance and payment schedule.
+- Payment history and receipts.
+- Delinquency and promise-to-pay tracking.
+- Customer reminders with consent controls.
+- Payoff quotes, fees, adjustments, notes, permissions, reporting, and complete audit history.
+- Payment processing, provider selection, detailed compliance requirements, and pricing are decisions for this workstream.
+- BHPH financial data must pass the final security audit (item 8) before launch.
+
+## 8. Final Security and Production-Readiness Audit
+Covers: auth/session security, tenant isolation, permissions, PII and credit data, messaging consent, BHPH financial data, XSS/CSRF, uploads, SSRF, rate limiting, headers/CSP, secrets, database and document permissions, sensitive logging, dependencies, backups and restore, PM2 boot recovery, monitoring, and security regression tests.
+
+Deliverable: a final report ranking findings Critical, High, Medium, and Low. Critical and High findings must be resolved before the roadmap is considered complete.
