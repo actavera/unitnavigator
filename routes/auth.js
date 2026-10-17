@@ -47,6 +47,11 @@ function cleanupDemoDealership(dealershipId) {
   });
 
   const tx = db.transaction(() => {
+    // Inventory truth history and pricing comparables reference this
+    // dealership's units; remove them before the units themselves.
+    db.prepare('DELETE FROM unit_assignments WHERE dealership_id = ?').run(dealershipId);
+    db.prepare('DELETE FROM unit_dispositions WHERE dealership_id = ?').run(dealershipId);
+    db.prepare('DELETE FROM platform_sold_units WHERE dealership_id = ?').run(dealershipId);
     db.prepare('DELETE FROM documents WHERE dealership_id = ?').run(dealershipId);
     db.prepare('DELETE FROM activity_logs WHERE dealership_id = ?').run(dealershipId);
     importHistory.deleteForDealership(db, dealershipId);
