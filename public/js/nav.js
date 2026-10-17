@@ -197,9 +197,16 @@ const UN = {
       if (!s) return '—';
       return new Date(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     },
+    // SQLite datetime('now') values ("YYYY-MM-DD HH:MM:SS") are UTC but carry
+    // no zone marker, so a browser would read them as local time. Values that
+    // already include a zone (ISO with Z or an offset) are parsed as-is.
+    parseTime(s) {
+      const text = String(s || '');
+      return new Date(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(text) ? `${text.replace(' ', 'T')}Z` : text).getTime();
+    },
     ago(s) {
       if (!s) return '—';
-      const diff = Date.now() - new Date(s).getTime();
+      const diff = Math.max(0, Date.now() - UN.fmt.parseTime(s));
       const m = Math.floor(diff / 60000);
       if (m < 60) return `${m}m ago`;
       const h = Math.floor(m / 60);

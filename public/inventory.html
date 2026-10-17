@@ -651,6 +651,11 @@ async function onDrop(e, stage) {
   const id = Number(e.dataTransfer.getData('text/plain'));
   const unit = allUnits.find(u => u.id === id);
   if (!unit || unit.stage === stage) return;
+  if (stage === 'sold' || stage === 'archived') {
+    if (confirm('Record what happened to this vehicle? You will be taken to its disposition form.')) location.href = `/inventory/${id}#disposition`;
+    return;
+  }
+  if (['sold', 'archived'].includes(unit.stage) && !confirm('Return this vehicle to active inventory? Its recorded disposition will be marked reversed.')) return;
   await moveUnitToStage(id, stage);
 }
 
@@ -680,9 +685,14 @@ function setView(view) {
 async function quickStage(e, id, current) {
   e.stopPropagation();
   if (!UN.can('inventory_edit')) return toast('You do not have access to move inventory stages', 'err');
-  const stages = ['acquired','transport','screening','recon','ready','pending','sold','archived'];
+  // Sold and archived are recorded as a disposition on the vehicle page.
+  const stages = ['acquired','transport','screening','recon','ready','pending'];
   const idx = stages.indexOf(current);
-  const next = stages[(idx + 1) % stages.length];
+  if (idx === -1 || idx === stages.length - 1) {
+    if (confirm(idx === -1 ? 'This vehicle is sold or archived. Open it to review or correct its disposition?' : 'Sold or otherwise gone? Open the vehicle to record its disposition?')) location.href = `/inventory/${Number(id)}#disposition`;
+    return;
+  }
+  const next = stages[idx + 1];
   if (!confirm(`Move to "${STAGE_LABELS[next]}"?`)) return;
   await moveUnitToStage(id, next);
 }
@@ -703,16 +713,6 @@ async function moveUnitToStage(id, next) {
           repair_items: [...repairItems, ...newRepairs],
         });
       }
-    }
-    if (next === 'sold') {
-      const unit = allUnits.find(u => u.id === id);
-      const saleType = prompt('Sale type? Retail, wholesale, trade, or other. Optional.') || '';
-      const priceRaw = prompt('Sold/trade value? Optional — leave blank if unknown.') || '';
-      const price = priceRaw.trim() ? Number(priceRaw) || 0 : 0;
-      const updates = {};
-      if (price) updates.sold_price = price;
-      if (saleType) updates.notes = [unit?.notes || '', `Sold type: ${saleType}`].filter(Boolean).join('\n');
-      if (Object.keys(updates).length) await UN.api('PUT', `/api/inventory/${id}`, updates);
     }
     await UN.api('PATCH', `/api/inventory/${id}/stage`, { stage: next });
     toast(`Moved to ${STAGE_LABELS[next]}`);

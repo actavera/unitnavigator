@@ -142,7 +142,7 @@ router.post('/', ...requirePermission('deals_manage'), (req, res) => {
     db.prepare(`
       UPDATE units
       SET stage = 'pending'
-      WHERE id = ? AND dealership_id = ? AND stage != 'sold'
+      WHERE id = ? AND dealership_id = ? AND stage NOT IN ('sold','archived')
     `).run(unitId, req.user.dealership_id);
   }
 

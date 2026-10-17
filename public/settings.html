@@ -221,6 +221,15 @@
         </div>
       </div>
     </article>
+    <article class="settings-card full">
+      <div class="settings-card-head"><h2>Inventory Review</h2></div>
+      <div class="settings-card-body">
+        <p class="settings-note">How often each active vehicle should be reviewed. A review that is ignored for another full interval is escalated for manager attention.</p>
+        <div class="settings-form-grid">
+          <div class="form-group"><label class="form-label">Review every (days, 7–90)</label><input class="form-input" id="inventory_review_interval_days" type="number" min="7" max="90" step="1"></div>
+        </div>
+      </div>
+    </article>
   </section>
 
   <div class="settings-actions">
@@ -243,6 +252,7 @@ const SETTING_FIELDS = [
   'representative_name', 'representative_title', 'representative_email',
   'default_doc_fee', 'default_filing_fee', 'default_lender_fee', 'default_license_fee', 'default_plate_fee',
   'default_age_property_tax', 'default_title_fee', 'default_emissions_fee', 'default_tax_rate',
+  'inventory_review_interval_days',
 ];
 
 async function initSettings() {

@@ -3,6 +3,7 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const { ensurePrivateDataDir, ensurePrivateDbFiles, assertPrivate } = require('./services/dataDirSecurity');
 const { SCHEMA_SQL: IMPORT_HISTORY_SCHEMA } = require('./services/importHistory');
+const { SCHEMA_SQL: INVENTORY_TRUTH_SCHEMA } = require('./services/inventoryTruth');
 
 const dataDir = process.env.UNITNAV_DATA_DIR
   ? path.resolve(process.env.UNITNAV_DATA_DIR)
@@ -312,6 +313,11 @@ if (!unitColumns.includes('stock_number')) {
 if (!unitColumns.includes('last_age_check_at')) {
   db.exec("ALTER TABLE units ADD COLUMN last_age_check_at TEXT");
 }
+// Responsible employee for an active unit (nullable: existing units stay
+// unassigned). History lives in unit_assignments.
+if (!unitColumns.includes('assigned_user_id')) {
+  db.exec("ALTER TABLE units ADD COLUMN assigned_user_id INTEGER");
+}
 
 const dealColumns = db.prepare("PRAGMA table_info(deals)").all().map(col => col.name);
 if (!dealColumns.includes('last_status_check_at')) {
@@ -367,6 +373,9 @@ addDealershipColumn('public_share_title', 'public_share_title TEXT');
 addDealershipColumn('public_share_description', 'public_share_description TEXT');
 addDealershipColumn('public_share_image_url', 'public_share_image_url TEXT');
 addDealershipColumn('dealercenter_sftp_username', 'dealercenter_sftp_username TEXT');
+// Inventory review interval (7-90 days). Existing dealerships get 30, the
+// interval the aging alerts have always used.
+addDealershipColumn('inventory_review_interval_days', 'inventory_review_interval_days INTEGER DEFAULT 30');
 
 db.prepare(`
   UPDATE dealerships
@@ -386,6 +395,9 @@ db.prepare(`
 
 // Import history (additive; CREATE ... IF NOT EXISTS, no existing data touched).
 db.exec(IMPORT_HISTORY_SCHEMA);
+
+// Inventory assignment and disposition history (additive, append-only).
+db.exec(INVENTORY_TRUTH_SCHEMA);
 
 function slugify(value) {
   return String(value || '')
