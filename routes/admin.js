@@ -7,6 +7,7 @@ const multer = require('multer');
 const crypto = require('crypto');
 const db = require('../database');
 const importHistory = require('../services/importHistory');
+const { validInterval: validReviewInterval, MIN_REVIEW_INTERVAL_DAYS, MAX_REVIEW_INTERVAL_DAYS } = require('../services/inventoryTruth');
 const { requireAuth, requireRole, hasPermission, parsePermissions, ALL_PERMISSIONS } = require('../middleware/auth');
 const { finalizeUploadedImage } = require('../services/imageSignature');
 
@@ -99,7 +100,7 @@ function canViewDealerSettings(req, dealershipId) {
 }
 
 function settingsRow(id) {
-  return db.prepare(`SELECT ${DEALER_SETTING_FIELDS.join(', ')}, id, status, created_at FROM dealerships WHERE id = ?`).get(id);
+  return db.prepare(`SELECT ${DEALER_SETTING_FIELDS.join(', ')}, inventory_review_interval_days, id, status, created_at FROM dealerships WHERE id = ?`).get(id);
 }
 
 function normalizeEmail(email) {
@@ -167,6 +168,16 @@ router.put('/dealership-settings', requireAuth, (req, res) => {
     }
   });
   if (!values.name) return res.status(400).json({ error: 'Dealership name is required' });
+  // Inventory review interval: whole days, 7-90. Validated on its own so an
+  // out-of-range value is rejected instead of silently coerced.
+  let reviewInterval = existing.inventory_review_interval_days;
+  const rawInterval = req.body.inventory_review_interval_days;
+  if (rawInterval !== undefined && rawInterval !== null && rawInterval !== '') {
+    if (!validReviewInterval(rawInterval)) {
+      return res.status(400).json({ error: `Inventory review interval must be a whole number of days from ${MIN_REVIEW_INTERVAL_DAYS} to ${MAX_REVIEW_INTERVAL_DAYS}.` });
+    }
+    reviewInterval = Number(rawInterval);
+  }
   if (!values.legal_name) values.legal_name = values.name;
   if (!values.state) values.state = 'UT';
   values.public_site_enabled = values.public_site_enabled ? 1 : 0;
@@ -181,8 +192,8 @@ router.put('/dealership-settings', requireAuth, (req, res) => {
   if (!values.public_apr_options) values.public_apr_options = '9.99,7.99,12.99,18.99';
 
   const assignments = DEALER_SETTING_FIELDS.map(field => `${field} = ?`).join(', ');
-  db.prepare(`UPDATE dealerships SET ${assignments} WHERE id = ?`)
-    .run(...DEALER_SETTING_FIELDS.map(field => values[field]), dealershipId);
+  db.prepare(`UPDATE dealerships SET ${assignments}, inventory_review_interval_days = ? WHERE id = ?`)
+    .run(...DEALER_SETTING_FIELDS.map(field => values[field]), reviewInterval, dealershipId);
   res.json({ dealership: settingsRow(dealershipId) });
 });
 

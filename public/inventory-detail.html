@@ -312,12 +312,44 @@
       </div>
     </div>
 
+    <!-- Responsibility and review -->
+    <div class="section-card" id="reviewCard">
+      <div class="section-header"><span class="section-title">Responsibility &amp; Review</span></div>
+      <div class="section-body" id="reviewPanel"></div>
+    </div>
+
+    <!-- Disposition -->
+    <div class="section-card" id="disposition" data-requires="inventory_edit">
+      <div class="section-header"><span class="section-title">Disposition</span></div>
+      <div class="section-body">
+        <div class="form-group">
+          <label class="form-label" for="dispOutcome">What happened to this vehicle?</label>
+          <select class="form-select" id="dispOutcome" onchange="toggleDispositionFields()">
+            <option value="">Choose an outcome</option>
+            <option value="retail_sold">Retail sold</option>
+            <option value="wholesale">Wholesale</option>
+            <option value="traded_to_dealer">Traded to another dealer</option>
+            <option value="auction">Sent to auction</option>
+            <option value="junked_salvaged">Junked or salvaged</option>
+            <option value="returned_to_seller">Returned to seller</option>
+            <option value="duplicate_error">Duplicate or entered in error</option>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label" for="dispDate">Date</label><input class="form-input" id="dispDate" type="date"></div>
+        <div class="form-group" id="dispAmountGroup"><label class="form-label" for="dispAmount">Amount / value (optional)</label><input class="form-input" id="dispAmount" type="number" step="0.01" min="0"></div>
+        <div class="form-group" id="dispDestinationGroup"><label class="form-label" for="dispDestination">Destination or recipient (optional)</label><input class="form-input" id="dispDestination" maxlength="120"></div>
+        <div class="form-group"><label class="form-label" for="dispNote">Internal note (optional)</label><input class="form-input" id="dispNote" maxlength="500"></div>
+        <button class="btn btn-primary w-full" onclick="saveDisposition()" style="justify-content:center;">Record Disposition</button>
+        <div id="dispositionHistory" style="margin-top:12px;"></div>
+      </div>
+    </div>
+
     <!-- Quick Actions -->
     <div class="section-card">
       <div class="section-header"><span class="section-title">Actions</span></div>
       <div class="section-body" style="display:flex;flex-direction:column;gap:10px;">
         <a href="/paperwork/start" id="startDealBtn" class="btn btn-primary w-full" data-requires="deals_manage" style="justify-content:center;">Start a Deal</a>
-        <button class="btn btn-ghost w-full" data-requires="inventory_edit" onclick="archiveUnit()" style="justify-content:center;">Archive Unit</button>
+        <button class="btn btn-ghost w-full" data-requires="inventory_edit" onclick="goToDisposition()" style="justify-content:center;">Record Disposition</button>
         <button class="btn btn-danger w-full" data-requires="inventory_delete" onclick="deleteUnit()" style="justify-content:center;">Delete Unit</button>
       </div>
     </div>
@@ -347,7 +379,6 @@ const STAGES = [
   { key:'recon', label:'Recon' },
   { key:'ready', label:'Ready' },
   { key:'pending', label:'Pending' },
-  { key:'sold', label:'Sold' },
 ];
 const REPAIR_STATUSES = [
   { value:'searching', label:'Searching for Part' },
@@ -357,6 +388,8 @@ const REPAIR_STATUSES = [
 ];
 
 let unit = null;
+let truth = { assignment: null, review: null, dispositions: [], assignment_history: [] };
+let assignees = null;
 let editMode = false;
 let editCostMode = false;
 let photoIndex = 0;
@@ -395,6 +428,7 @@ async function load() {
     document.getElementById('detailLayout').style.display = '';
     document.getElementById('breadcrumb').textContent = `${unit.year} ${unit.make} ${unit.model}`;
     document.title = `${unit.year} ${unit.make} ${unit.model} — Unit Navigator`;
+    truth = { assignment: data.assignment, review: data.review, dispositions: data.dispositions || [], assignment_history: data.assignment_history || [] };
     render(data.activity);
   } catch {
     document.getElementById('loadError').style.display = 'block';
@@ -411,6 +445,8 @@ function render(activity) {
   renderCosts();
   renderProfit();
   renderStages();
+  renderReview();
+  renderDispositions();
   renderActivity(activity);
 }
 
@@ -815,7 +851,7 @@ function renderProfit() {
       <input class="form-input" id="pAskEdit" type="number" placeholder="Asking price" value="${unit.asking_price || ''}" style="flex:1;">
       <input class="form-input" id="pMinEdit" type="number" placeholder="Minimum" value="${unit.minimum_price || ''}" style="flex:1;">
     </div>
-    ${unit.stage === 'sold' ? `<div style="margin-top:8px;"><input class="form-input" id="pSoldEdit" type="number" placeholder="Sold price" value="${unit.sold_price || ''}"></div>` : ''}
+    ${unit.stage === 'sold' && !hasActiveDisposition() ? `<div style="margin-top:8px;"><input class="form-input" id="pSoldEdit" type="number" placeholder="Sold price" value="${unit.sold_price || ''}"></div>` : ''}
     <button class="btn btn-ghost btn-sm w-full" style="margin-top:10px;justify-content:center;" onclick="savePricing()">Update Pricing</button>
   `;
 }
@@ -843,14 +879,14 @@ function renderStages() {
     <button class="stage-btn ${s.key === unit.stage ? 'current' : ''}" onclick="setStage('${s.key}')">
       <span class="stage-dot dot-${s.key}" style="margin-right:6px;"></span>${s.label}
     </button>`).join('') +
-    `<button class="stage-btn archived ${unit.stage === 'archived' ? 'current' : ''}" onclick="setStage('archived')" style="grid-column:span 2;">Archive</button>`;
+    `<button class="stage-btn ${isTerminal() ? 'current' : ''}" onclick="goToDisposition()" style="grid-column:span 2;">${isTerminal() ? (unit.stage === 'sold' ? 'Sold' : 'Archived') + ' · Review Disposition' : 'Sold or Gone · Record Disposition'}</button>`;
 }
 
 async function setStage(stage) {
   if (!UN.can('inventory_edit')) return toast('You do not have access to move inventory stages', 'err');
-  if (stage === 'sold' && !UN.can('inventory_pricing')) return toast('You do not have access to mark inventory sold', 'err');
   if (stage === unit.stage) return;
-  if (stage === 'archived' && !confirm('Archive this unit?')) return;
+  if (unit.stage === 'sold' && !UN.can('inventory_pricing')) return toast('You do not have access to change a sale', 'err');
+  if (isTerminal() && !confirm('Return this vehicle to active inventory? Its recorded disposition will be marked reversed.')) return;
   const body = { stage };
   if (stage === 'transport') {
     const costRaw = prompt('Transport cost? Optional — leave blank if unknown.') || '';
@@ -869,17 +905,6 @@ async function setStage(stage) {
       unit = updated.unit;
     }
   }
-  if (stage === 'sold') {
-    const saleType = prompt('Sale type? Retail, wholesale, trade, or other. Optional.') || '';
-    const price = prompt('Sold/trade value? Optional — leave blank if unknown.') || '';
-    const updates = {};
-    if (price) updates.sold_price = Number(price);
-    if (saleType) updates.notes = [unit.notes || '', `Sold type: ${saleType}`].filter(Boolean).join('\n');
-    if (Object.keys(updates).length) {
-      const updated = await UN.api('PUT', `/api/inventory/${unitId}`, updates);
-      unit = updated.unit;
-    }
-  }
   try {
     const data = await UN.api('PATCH', `/api/inventory/${unitId}/stage`, body);
     unit = data.unit;
@@ -889,14 +914,16 @@ async function setStage(stage) {
     renderCosts();
     renderProfit();
     toast(`Stage → ${stage}`);
+    await load();
   } catch(e) { toast(e.message, 'err'); }
 }
 
 // ── Archive ─────────────────────────────────────────────────────────────────
-async function archiveUnit() {
-  if (!confirm('Archive this unit? It will be hidden from the main board.')) return;
-  await setStage('archived');
-  setTimeout(() => location.href = '/inventory', 800);
+// Sold and archived are recorded as a structured disposition.
+function goToDisposition() {
+  const card = document.getElementById('disposition');
+  if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  document.getElementById('dispOutcome')?.focus();
 }
 
 async function deleteUnit() {
@@ -918,11 +945,115 @@ function renderActivity(activity) {
     <div class="activity-item">
       <div class="activity-dot"></div>
       <div>
-        <div class="activity-action">${a.action}</div>
-        ${a.note ? `<div class="activity-note">${a.note}</div>` : ''}
-        <div class="activity-time">${UN.fmt.ago(a.created_at)} ${a.user_name ? '· ' + a.user_name : ''}</div>
+        <div class="activity-action">${esc(a.action)}</div>
+        ${a.note ? `<div class="activity-note">${esc(a.note)}</div>` : ''}
+        <div class="activity-time">${UN.fmt.ago(a.created_at)} ${a.user_name ? '· ' + esc(a.user_name) : ''}</div>
       </div>
     </div>`).join('');
+}
+
+// ── Responsibility, review, and disposition ─────────────────────────────────
+function isTerminal() { return unit.stage === 'sold' || unit.stage === 'archived'; }
+function hasActiveDisposition() { return truth.dispositions.some(d => !d.superseded_at); }
+
+function renderReview() {
+  const el = document.getElementById('reviewPanel');
+  const a = truth.assignment;
+  const r = truth.review || {};
+  const who = a ? `${esc(a.name)}${a.active ? '' : ' (inactive)'}` : 'Unassigned';
+  let state = 'Not in active review (sold or archived)';
+  if (!isTerminal()) {
+    state = r.due
+      ? `${r.escalated ? '<strong style="color:var(--red);">Escalated</strong> · ' : ''}Review due${r.overdue_days ? ` · ${r.overdue_days} day${r.overdue_days === 1 ? '' : 's'} overdue` : ''}`
+      : `Next review ${r.next_review_at ? esc(UN.fmt.date ? UN.fmt.date(r.next_review_at) : r.next_review_at.slice(0, 10)) : 'not scheduled'}`;
+  }
+  const canEdit = UN.can('inventory_edit') && !isTerminal();
+  el.innerHTML = `
+    <div class="text-sm" style="margin-bottom:8px;"><strong>Responsible:</strong> ${who}</div>
+    <div class="text-sm" style="margin-bottom:12px;"><strong>Review:</strong> ${state} ${isTerminal() ? '' : `<span class="text-muted">(every ${Number(r.review_interval_days) || 30} days)</span>`}</div>
+    ${canEdit ? `
+      <div class="form-group">
+        <label class="form-label" for="assigneeSelect">Assign to</label>
+        <select class="form-select" id="assigneeSelect" onfocus="loadAssignees()"><option value="${a ? Number(a.user_id) : ''}">${who}</option></select>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-ghost btn-sm" onclick="saveAssignment()">Save Assignment</button>
+        <button class="btn btn-primary btn-sm" onclick="confirmStatus()">Confirm Current Status</button>
+      </div>` : ''}
+    ${truth.assignment_history.length ? `<div class="text-muted text-sm" style="margin-top:10px;">${truth.assignment_history.slice(0, 5).map(h =>
+      `<div>${esc(h.previous_name || 'Unassigned')} → ${esc(h.new_name || 'Unassigned')} · ${UN.fmt.ago(h.created_at)}${h.actor_name ? ' · ' + esc(h.actor_name) : ''}</div>`).join('')}</div>` : ''}
+  `;
+}
+
+async function loadAssignees() {
+  if (assignees) return;
+  try {
+    assignees = (await UN.api('GET', '/api/inventory/assignees')).users || [];
+    const current = truth.assignment ? Number(truth.assignment.user_id) : '';
+    document.getElementById('assigneeSelect').innerHTML = '<option value="">Unassigned</option>' +
+      assignees.map(u => `<option value="${Number(u.id)}" ${Number(u.id) === current ? 'selected' : ''}>${esc(u.name)}</option>`).join('');
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function saveAssignment() {
+  const value = document.getElementById('assigneeSelect').value;
+  try {
+    await UN.api('PUT', `/api/inventory/${unitId}/assignment`, { user_id: value ? Number(value) : null });
+    toast('Assignment saved');
+    assignees = null;
+    await load();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function confirmStatus() {
+  try {
+    await UN.api('POST', `/api/inventory/${unitId}/verify`, {});
+    toast('Status confirmed; review clock reset');
+    await load();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+function toggleDispositionFields() {
+  const outcome = document.getElementById('dispOutcome').value;
+  document.getElementById('dispAmountGroup').style.display = outcome === 'duplicate_error' ? 'none' : '';
+  document.getElementById('dispDestinationGroup').style.display = outcome === 'duplicate_error' ? 'none' : '';
+}
+
+function renderDispositions() {
+  const el = document.getElementById('dispositionHistory');
+  if (!el) return;
+  if (!document.getElementById('dispDate').value) document.getElementById('dispDate').value = new Date().toISOString().slice(0, 10);
+  el.innerHTML = truth.dispositions.map(d => `
+    <div class="activity-item">
+      <div class="activity-dot"></div>
+      <div>
+        <div class="activity-action">${esc(d.outcome_label)}${d.superseded_at ? ' <span class="text-muted">(corrected)</span>' : ''}</div>
+        <div class="activity-note">${esc(d.disposition_date)}${d.destination ? ' · ' + esc(d.destination) : ''}${d.amount != null ? ' · ' + esc(UN.fmt.money ? UN.fmt.money(d.amount) : d.amount) : ''}${d.note ? ' · ' + esc(d.note) : ''}</div>
+        <div class="activity-time">${UN.fmt.ago(d.created_at)}${d.actor_name ? ' · ' + esc(d.actor_name) : ''}</div>
+      </div>
+    </div>`).join('');
+}
+
+async function saveDisposition() {
+  const outcome = document.getElementById('dispOutcome').value;
+  if (!outcome) return toast('Choose an outcome', 'err');
+  if ((outcome === 'retail_sold' || unit.stage === 'sold') && !UN.can('inventory_pricing')) return toast('You do not have access to mark inventory sold or change a sale', 'err');
+  const label = document.getElementById('dispOutcome').selectedOptions[0].textContent;
+  if (!confirm(`Record "${label}" for this vehicle? It will leave active inventory. The unit is not deleted.`)) return;
+  const body = {
+    outcome,
+    disposition_date: document.getElementById('dispDate').value || undefined,
+    destination: document.getElementById('dispDestination').value || undefined,
+    note: document.getElementById('dispNote').value || undefined,
+  };
+  const amount = document.getElementById('dispAmount').value;
+  if (amount && outcome !== 'duplicate_error') body.amount = Number(amount);
+  try {
+    await UN.api('POST', `/api/inventory/${unitId}/disposition`, body);
+    toast('Disposition recorded');
+    ['dispOutcome', 'dispAmount', 'dispDestination', 'dispNote'].forEach(id => { document.getElementById(id).value = ''; });
+    await load();
+  } catch (e) { toast(e.message, 'err'); }
 }
 
 load();

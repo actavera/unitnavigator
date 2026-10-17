@@ -214,7 +214,7 @@ function unitAlertsHtml(alerts) {
     <section class="attention-card wide">
       <div class="attention-head">
         <h2>${alerts.length} inventory ${alerts.length === 1 ? 'unit needs' : 'units need'} a quick age check.</h2>
-        <p>These are active units that hit a 30-day inventory milestone. Review them together, or update one vehicle at a time.</p>
+        <p>These active units are due for their inventory review. Confirm each status, move it forward, or record what happened to it.</p>
       </div>
       <div class="attention-body">
         <div class="attention-fact">
@@ -240,6 +240,7 @@ function unitAlertRowHtml(alert) {
       <div>
         <strong>${esc(alert.vehicle)}</strong>
         <span>${esc(alert.vin || 'No VIN')} · ${alert.age_days} days · ${stageLabel(alert.stage)}</span>
+        ${unitReviewLine(alert)}
       </div>
       <select class="form-select" id="unitStageChoice${alert.id}">
         <option value="${esc(alert.stage)}">Still ${stageLabel(alert.stage)}</option>
@@ -248,12 +249,18 @@ function unitAlertRowHtml(alert) {
         <option value="recon">Recon</option>
         <option value="ready">Ready</option>
         <option value="pending">Pending</option>
-        <option value="sold">Sold</option>
-        <option value="archived">Archived</option>
       </select>
       <button class="btn btn-primary" onclick="resolveUnitAlertRow(${alert.id})">Update</button>
     </div>
   `;
+}
+
+// Assignee, due/overdue state, escalation, and a link to record the final
+// disposition on the unit page. Choosing "Still <stage>" and Update confirms
+// the current status and resets the review clock.
+function unitReviewLine(alert) {
+  const overdue = alert.overdue_days ? `${alert.overdue_days} day${alert.overdue_days === 1 ? '' : 's'} overdue` : 'Review due';
+  return `<span>${alert.escalated ? '<strong style="display:inline;color:var(--red);">Escalated</strong> · ' : ''}${esc(overdue)} · ${alert.assignee_name ? 'Assigned to ' + esc(alert.assignee_name) : 'Unassigned'} · <a href="/inventory/${Number(alert.id)}#disposition">Record disposition</a></span>`;
 }
 
 function dealAlertHtml(alert) {
@@ -289,31 +296,20 @@ function unitAlertHtml(alert) {
       <div class="attention-body">
         <div class="attention-fact">
           <div class="attention-icon">▣</div>
-          <div><strong>${esc(alert.vehicle)}</strong><span>${esc(alert.vin || 'No VIN')} · ${stageLabel(alert.stage)}</span></div>
+          <div><strong>${esc(alert.vehicle)}</strong><span>${esc(alert.vin || 'No VIN')} · ${stageLabel(alert.stage)}</span>${unitReviewLine(alert)}</div>
         </div>
         <div class="form-group">
           <label class="form-label">Move vehicle to</label>
-          <select class="form-select" id="unitStageChoice" onchange="toggleSoldFields()">
+          <select class="form-select" id="unitStageChoice">
             <option value="${esc(alert.stage)}">Still ${stageLabel(alert.stage)}</option>
             <option value="transport">Being Transported</option>
             <option value="screening">Needs Screening</option>
             <option value="recon">Recon</option>
             <option value="ready">Ready</option>
             <option value="pending">Pending</option>
-            <option value="sold">Sold</option>
-            <option value="archived">Archived</option>
           </select>
         </div>
-        <div class="sold-fields" id="soldFields">
-          <div class="form-group">
-            <label class="form-label">Sold to customer</label>
-            <select class="form-select" id="soldCustomer">${customerOptions()}</select>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Sold price</label>
-            <input class="form-input" id="soldPrice" type="number" placeholder="Optional">
-          </div>
-        </div>
+        <p class="settings-note" style="margin:0;">Sold, wholesaled, or otherwise gone? <a href="/inventory/${Number(alert.id)}#disposition">Record its disposition</a>.</p>
         <div class="attention-actions">
           <button class="btn btn-ghost" onclick="showNextAlert()">Skip</button>
           <button class="btn btn-primary" onclick="resolveUnitAlert()">Update Vehicle</button>
@@ -350,11 +346,6 @@ function customerOptions() {
   return dashboardCustomers.map(c => `<option value="${c.id}">${esc(c.name)}${c.phone ? ' - ' + esc(c.phone) : ''}</option>`).join('');
 }
 
-function toggleSoldFields() {
-  const stage = document.getElementById('unitStageChoice')?.value;
-  document.getElementById('soldFields')?.classList.toggle('show', stage === 'sold');
-}
-
 async function resolveDealAlert(action) {
   try {
     await UN.api('POST', `/api/dashboard/deal-alert/${activeAlert.id}/action`, { action });
@@ -367,11 +358,7 @@ async function resolveDealAlert(action) {
 async function resolveUnitAlert() {
   try {
     const stage = document.getElementById('unitStageChoice').value;
-    await UN.api('POST', `/api/dashboard/unit-alert/${activeAlert.id}/action`, {
-      stage,
-      customer_id: document.getElementById('soldCustomer')?.value || null,
-      sold_price: document.getElementById('soldPrice')?.value || null,
-    });
+    await UN.api('POST', `/api/dashboard/unit-alert/${activeAlert.id}/action`, { stage });
     await refreshAfterAlert();
   } catch (err) {
     toast(err.message, 'err');

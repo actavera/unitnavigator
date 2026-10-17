@@ -10,6 +10,7 @@ const { suggestedRetailPrice } = require('../services/pricing');
 const { generateVehicleDescription } = require('../services/vehicleDescription');
 const { runBulkSuggestions, ListingSuiteError } = require('../services/listingSuite');
 const importHistory = require('../services/importHistory');
+const inventoryTruth = require('../services/inventoryTruth');
 const { csvCell } = require('../services/csv');
 const { safeFetch, readBodyWithLimit, releaseResponse } = require('../services/safeFetch');
 const { resolveUploadPath } = require('../services/uploads');
@@ -161,39 +162,16 @@ function logActivity(dealership_id, entity_id, action, note, user_id) {
 }
 
 function capturePlatformSoldUnit(unit) {
-  if (!unit || unit.stage !== 'sold' || !parseMoney(unit.sold_price)) return;
-  const dealer = db.prepare('SELECT zip FROM dealerships WHERE id = ?').get(unit.dealership_id) || {};
-  const daysInInventory = unit.created_at && unit.sold_at
-    ? Math.max(0, Math.round((new Date(unit.sold_at).getTime() - new Date(unit.created_at).getTime()) / 86400000))
-    : null;
-  db.prepare(`
-    INSERT INTO platform_sold_units (
-      dealership_id, unit_id, year, make, model, trim, mileage, recon_cost,
-      final_listing_price, sold_price, market_zip, sold_at, days_in_inventory, updated_at
-    )
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
-    ON CONFLICT(unit_id) DO UPDATE SET
-      dealership_id = excluded.dealership_id,
-      year = excluded.year,
-      make = excluded.make,
-      model = excluded.model,
-      trim = excluded.trim,
-      mileage = excluded.mileage,
-      recon_cost = excluded.recon_cost,
-      final_listing_price = excluded.final_listing_price,
-      sold_price = excluded.sold_price,
-      market_zip = excluded.market_zip,
-      sold_at = excluded.sold_at,
-      days_in_inventory = excluded.days_in_inventory,
-      updated_at = datetime('now')
-  `).run(
-    unit.dealership_id, unit.id, unit.year, unit.make, unit.model, unit.trim, unit.mileage || 0,
-    unit.repair_cost || 0, unit.asking_price || null, unit.sold_price || null, dealer.zip || null,
-    unit.sold_at || new Date().toISOString(), daysInInventory,
-  );
+  inventoryTruth.capturePlatformSoldUnit(db, unit);
 }
 
 const VALID_STAGES = ['acquired','transport','screening','recon','ready','pending','sold','archived'];
+// Sold and archived are reached only by recording a structured disposition
+// (POST /api/inventory/:id/disposition), never by setting the stage directly.
+const DISPOSITION_REQUIRED = {
+  error: 'Record a disposition to mark a vehicle sold or remove it from inventory.',
+  code: 'disposition_required',
+};
 const STAGE_LABELS = {
   acquired: 'At Auction',
   transport: 'Being Transported',
@@ -639,12 +617,12 @@ function persistImportRows(rows, req, dealershipId, source, options = {}) {
       let existing = null;
       if (vin) {
         existing = db.prepare(`
-          SELECT id FROM units
+          SELECT id, stage FROM units
           WHERE dealership_id = ? AND vin = ? AND archived_at IS NULL
         `).get(dealershipId, vin);
       } else if (stockNumber) {
         const matches = db.prepare(`
-          SELECT id FROM units
+          SELECT id, stage FROM units
           WHERE dealership_id = ? AND archived_at IS NULL AND lower(trim(stock_number)) = lower(?)
           LIMIT 2
         `).all(dealershipId, stockNumber);
@@ -655,7 +633,22 @@ function persistImportRows(rows, req, dealershipId, source, options = {}) {
         existing = matches[0] || null;
       }
 
+      // Imports never move a vehicle into or out of sold/archived: those
+      // transitions belong to the structured disposition workflow.
+      const terminalFeed = inventoryTruth.TERMINAL_STAGES.has(feedStage);
+      if (!existing && terminalFeed) {
+        skip(index, 'terminal_status_not_imported', `Status "${feedStage}" was not imported as a new vehicle. Add it, then record its disposition in Unit Navigator.`);
+        return;
+      }
+
       if (existing) {
+        const keepStage = terminalFeed || inventoryTruth.TERMINAL_STAGES.has(existing.stage);
+        if (keepStage && feedStage && feedStage !== existing.stage) {
+          results.issues.push({
+            ...rowIdentity(row, index), severity: 'warning', code: 'terminal_stage_unchanged',
+            message: 'The feed status was not applied because sold and archived changes are recorded as a disposition in Unit Navigator.',
+          });
+        }
         db.prepare(`
           UPDATE units
           SET stock_number = ?, year = ?, make = ?, model = ?, trim = ?, body_style = ?, color = ?, mileage = ?,
@@ -667,7 +660,7 @@ function persistImportRows(rows, req, dealershipId, source, options = {}) {
           WHERE id = ? AND dealership_id = ?
         `).run(
           unit.stock_number, unit.year, unit.make, unit.model, unit.trim, unit.body_style, unit.color, unit.mileage,
-          feedStage, unit.acquisition_cost, unit.asking_price || null, unit.minimum_price || null, unit.acquisition_source,
+          keepStage ? '' : feedStage, unit.acquisition_cost, unit.asking_price || null, unit.minimum_price || null, unit.acquisition_source,
           unit.acquisition_date || null, unit.notes || null, JSON.stringify(unit.photos), JSON.stringify(unit.photos),
           existing.id, dealershipId,
         );
@@ -1089,6 +1082,11 @@ router.post('/:id/description-suggestion', ...requirePermission('inventory_edit'
 });
 
 // ── Get single unit ─────────────────────────────────────────────────────────
+// Active employees of this dealership who can be made responsible for a unit.
+router.get('/assignees', ...requirePermission('inventory_edit'), (req, res) => {
+  res.json({ users: inventoryTruth.assignableUsers(db, req.user.dealership_id) });
+});
+
 router.get('/:id', ...requirePermission('inventory_view'), (req, res) => {
   const unit = db.prepare('SELECT * FROM units WHERE id = ? AND dealership_id = ?')
     .get(req.params.id, req.user.dealership_id);
@@ -1097,17 +1095,86 @@ router.get('/:id', ...requirePermission('inventory_view'), (req, res) => {
   const activity = db.prepare(
     `SELECT a.*, u.name as user_name FROM activity_logs a
      LEFT JOIN users u ON u.id = a.user_id
-     WHERE a.entity_type = 'unit' AND a.entity_id = ?
-     ORDER BY a.created_at DESC LIMIT 50`
-  ).all(req.params.id);
+     WHERE a.entity_type = 'unit' AND a.entity_id = ? AND a.dealership_id = ?
+     ORDER BY a.created_at DESC, a.id DESC LIMIT 50`
+  ).all(unit.id, req.user.dealership_id);
 
   const deal = db.prepare(
     `SELECT d.*, c.first_name, c.last_name FROM deals d
      LEFT JOIN customers c ON c.id = d.customer_id
-     WHERE d.unit_id = ? AND d.status NOT IN ('dead') ORDER BY d.created_at DESC LIMIT 1`
-  ).get(req.params.id);
+     WHERE d.unit_id = ? AND d.dealership_id = ? AND d.status NOT IN ('dead') ORDER BY d.created_at DESC LIMIT 1`
+  ).get(unit.id, req.user.dealership_id);
 
-  res.json({ unit: enrichUnit(unit), activity, deal });
+  const assignee = unit.assigned_user_id
+    ? db.prepare('SELECT id, name, status FROM users WHERE id = ? AND dealership_id = ?').get(unit.assigned_user_id, req.user.dealership_id)
+    : null;
+  const history = inventoryTruth.unitHistory(db, {
+    dealershipId: req.user.dealership_id,
+    unitId: unit.id,
+    canPrice: hasPermission(req.user, 'inventory_pricing'),
+  });
+
+  res.json({
+    unit: enrichUnit(unit),
+    activity,
+    deal,
+    assignment: assignee ? { user_id: assignee.id, name: assignee.name, active: assignee.status === 'active' } : null,
+    review: inventoryTruth.reviewState(unit, inventoryTruth.reviewInterval(db, req.user.dealership_id)),
+    dispositions: history.dispositions,
+    assignment_history: history.assignments,
+  });
+});
+
+function sendTruthError(res, err, fallback) {
+  if (err instanceof inventoryTruth.InventoryTruthError) return res.status(err.statusCode).json({ error: err.message });
+  console.error(fallback, err);
+  return res.status(500).json({ error: fallback });
+}
+
+// Assign (or with user_id null, unassign) the responsible employee.
+router.put('/:id/assignment', ...requirePermission('inventory_edit'), (req, res) => {
+  try {
+    const result = inventoryTruth.assignUnit(db, {
+      dealershipId: req.user.dealership_id,
+      unitId: req.params.id,
+      userId: req.body ? req.body.user_id : undefined,
+      actorId: req.user.id,
+    });
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    sendTruthError(res, err, 'Could not update the assignment');
+  }
+});
+
+// Confirm the unit's current status; resets the review clock.
+router.post('/:id/verify', ...requirePermission('inventory_edit'), (req, res) => {
+  try {
+    res.json({ ok: true, ...inventoryTruth.verifyUnit(db, {
+      dealershipId: req.user.dealership_id,
+      unitId: req.params.id,
+      actorId: req.user.id,
+      stageLabel: stage => STAGE_LABELS[stage] || stage,
+    }) });
+  } catch (err) {
+    sendTruthError(res, err, 'Could not record the review');
+  }
+});
+
+// Record (or correct) what ultimately happened to the unit. Never deletes it.
+router.post('/:id/disposition', ...requirePermission('inventory_edit'), (req, res) => {
+  try {
+    const result = inventoryTruth.recordDisposition(db, {
+      dealershipId: req.user.dealership_id,
+      unitId: req.params.id,
+      actorId: req.user.id,
+      body: req.body || {},
+      canPrice: hasPermission(req.user, 'inventory_pricing'),
+    });
+    const updated = db.prepare('SELECT * FROM units WHERE id = ? AND dealership_id = ?').get(req.params.id, req.user.dealership_id);
+    res.status(201).json({ ok: true, ...result, unit: enrichUnit(updated) });
+  } catch (err) {
+    sendTruthError(res, err, 'Could not record the disposition');
+  }
 });
 
 // ── Create unit ─────────────────────────────────────────────────────────────
@@ -1133,6 +1200,7 @@ router.post('/', ...requirePermission('inventory_add'), (req, res) => {
   }
   const initialStage = stage || 'acquired';
   if (!VALID_STAGES.includes(initialStage)) return res.status(400).json({ error: 'Invalid stage' });
+  if (inventoryTruth.TERMINAL_STAGES.has(initialStage)) return res.status(409).json(DISPOSITION_REQUIRED);
 
   if (vinClean) {
     const existing = db.prepare('SELECT id FROM units WHERE vin = ? AND dealership_id = ? AND archived_at IS NULL')
@@ -1177,6 +1245,11 @@ router.put('/:id', requireAuth, (req, res) => {
     .get(req.params.id, req.user.dealership_id);
   if (!unit) return res.status(404).json({ error: 'Unit not found' });
 
+  // Once a structured disposition exists, the sale price comes only from it.
+  if ('sold_price' in (req.body || {}) && inventoryTruth.activeDisposition(db, req.user.dealership_id, unit.id)) {
+    return res.status(409).json({ error: 'Correct the disposition to change the sale price.', code: 'disposition_required' });
+  }
+
   const fields = [
     'stock_number','year','make','model','trim','body_style','color','mileage',
     'acquisition_cost','transport_cost','repair_cost','detail_cost','other_cost',
@@ -1209,29 +1282,27 @@ router.patch('/:id/stage', requireAuth, (req, res) => {
   if (!hasPermission(req.user, 'inventory_edit')) {
     return res.status(403).json({ error: 'You do not have access to move inventory stages' });
   }
-  if (req.body?.stage === 'sold' && !hasPermission(req.user, 'inventory_pricing')) {
-    return res.status(403).json({ error: 'You do not have access to mark inventory sold' });
-  }
 
-  const { stage } = req.body;
+  const { stage } = req.body || {};
   if (!VALID_STAGES.includes(stage)) return res.status(400).json({ error: 'Invalid stage' });
 
   const unit = db.prepare('SELECT * FROM units WHERE id = ? AND dealership_id = ?')
     .get(req.params.id, req.user.dealership_id);
   if (!unit) return res.status(404).json({ error: 'Unit not found' });
+  if (inventoryTruth.TERMINAL_STAGES.has(stage)) return res.status(409).json(DISPOSITION_REQUIRED);
+  // Reopening a sold vehicle undoes a sale, which stays behind the pricing permission.
+  if (unit.stage === 'sold' && !hasPermission(req.user, 'inventory_pricing')) {
+    return res.status(403).json({ error: 'You do not have access to change a sale' });
+  }
 
-  const extra = {};
-  if (stage === 'sold') extra.sold_at = new Date().toISOString();
-  if (stage === 'archived') extra.archived_at = new Date().toISOString();
-
-  const extraSql = Object.keys(extra).map(k => `${k} = ?`).join(', ');
-  const extraVals = Object.values(extra);
-  db.prepare(`UPDATE units SET stage = ?${extraSql ? ', ' + extraSql : ''} WHERE id = ?`)
-    .run(stage, ...extraVals, req.params.id);
-
-  logActivity(req.user.dealership_id, req.params.id, 'Stage changed', `${STAGE_LABELS[unit.stage] || unit.stage} → ${STAGE_LABELS[stage] || stage}`, req.user.id);
-  const updated = db.prepare('SELECT * FROM units WHERE id = ?').get(req.params.id);
-  capturePlatformSoldUnit(updated);
+  db.transaction(() => {
+    if (inventoryTruth.TERMINAL_STAGES.has(unit.stage)) {
+      inventoryTruth.reverseDisposition(db, { dealershipId: req.user.dealership_id, unitId: unit.id, actorId: req.user.id });
+    }
+    db.prepare('UPDATE units SET stage = ? WHERE id = ? AND dealership_id = ?').run(stage, unit.id, req.user.dealership_id);
+    logActivity(req.user.dealership_id, unit.id, 'Stage changed', `${STAGE_LABELS[unit.stage] || unit.stage} → ${STAGE_LABELS[stage] || stage}`, req.user.id);
+  })();
+  const updated = db.prepare('SELECT * FROM units WHERE id = ? AND dealership_id = ?').get(unit.id, req.user.dealership_id);
   res.json({ unit: enrichUnit(updated) });
 });
 
@@ -1240,6 +1311,14 @@ router.delete('/:id', ...requirePermission('inventory_delete'), (req, res) => {
   const unit = db.prepare('SELECT * FROM units WHERE id = ? AND dealership_id = ?')
     .get(req.params.id, req.user.dealership_id);
   if (!unit) return res.status(404).json({ error: 'Unit not found' });
+  // Assignment and disposition history is an audit record; a unit that has
+  // any is kept. Record or correct its disposition instead.
+  if (inventoryTruth.hasTruthHistory(db, req.user.dealership_id, unit.id)) {
+    return res.status(409).json({
+      error: 'This vehicle has assignment or disposition history, so it cannot be permanently deleted. Record or correct its disposition instead.',
+      code: 'truth_history_exists',
+    });
+  }
 
   const photos = JSON.parse(unit.photos || '[]');
   photos.forEach(url => {

@@ -99,7 +99,7 @@ function priorityCardHtml(p) {
         <span class="priority-title">${esc(p.title)}</span>
         <span class="priority-level-badge">${esc(p.priority_level)}</span>
       </div>
-      <div class="priority-meta">${p.age_days} day${p.age_days === 1 ? '' : 's'} · ${esc(p.status || '')}</div>
+      <div class="priority-meta">${p.age_days} day${p.age_days === 1 ? '' : 's'} · ${esc(p.status || '')}${p.type === 'unit' ? ` · ${p.assignee_name ? 'Assigned to ' + esc(p.assignee_name) : 'Unassigned'}${p.escalated ? ' · Escalated' : ''}` : ''}</div>
       <div class="priority-reason" id="priorityReason-${esc(cssId(p.id))}">${esc(p.reason)}</div>
       <div class="priority-next-step" id="priorityNextStep-${esc(cssId(p.id))}"><strong>Next step:</strong> ${esc(p.next_step)}</div>
       <div class="priority-actions">

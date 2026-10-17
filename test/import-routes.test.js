@@ -139,18 +139,24 @@ test('an existing non-empty description is never overwritten by a re-import; an 
   assert.equal((await unitByVin(dealerA, 'NOTEVIN000000001')).notes, 'Hand-written dealer description.', 'a feed with no notes does not clear it either');
 });
 
-test('stage only changes for a recognized feed status; blank or unknown statuses keep the current stage', async () => {
+test('stage only changes for a recognized, non-terminal feed status; sold/archived are never applied by import', async () => {
   const vin = 'STAGEVIN00000001';
   const base = { vin, year: 2017, make: 'Nissan', model: 'Altima' };
-  await importRows(dealerA, [{ ...base, status: 'Sold' }]);
-  assert.equal((await unitByVin(dealerA, vin)).stage, 'sold');
+  const newSold = await importRows(dealerA, [{ ...base, status: 'Sold' }]);
+  assert.deepEqual([newSold.body.created, newSold.body.skipped], [0, 1], 'a new row with a terminal status is not imported');
+  assert.equal(newSold.body.issues[0].code, 'terminal_status_not_imported');
 
-  await importRows(dealerA, [{ ...base }]);
-  assert.equal((await unitByVin(dealerA, vin)).stage, 'sold', 'no status keeps the stage');
-  await importRows(dealerA, [{ ...base, status: 'Mystery Status' }]);
-  assert.equal((await unitByVin(dealerA, vin)).stage, 'sold', 'an unrecognized status keeps the stage');
   await importRows(dealerA, [{ ...base, status: 'Recon' }]);
-  assert.equal((await unitByVin(dealerA, vin)).stage, 'recon', 'a recognized status is applied');
+  assert.equal((await unitByVin(dealerA, vin)).stage, 'recon');
+  await importRows(dealerA, [{ ...base }]);
+  assert.equal((await unitByVin(dealerA, vin)).stage, 'recon', 'no status keeps the stage');
+  await importRows(dealerA, [{ ...base, status: 'Mystery Status' }]);
+  assert.equal((await unitByVin(dealerA, vin)).stage, 'recon', 'an unrecognized status keeps the stage');
+  const toSold = await importRows(dealerA, [{ ...base, status: 'Sold' }]);
+  assert.equal((await unitByVin(dealerA, vin)).stage, 'recon', 'a terminal feed status does not move an existing vehicle');
+  assert.ok(toSold.body.issues.some(i => i.code === 'terminal_stage_unchanged'));
+  await importRows(dealerA, [{ ...base, status: 'Ready' }]);
+  assert.equal((await unitByVin(dealerA, vin)).stage, 'ready', 'a recognized status is applied');
 
   await importRows(dealerA, [{ vin: 'STAGEVIN00000002', year: 2017, make: 'Nissan', model: 'Rogue' }]);
   assert.equal((await unitByVin(dealerA, 'STAGEVIN00000002')).stage, 'ready', 'a brand-new unit still defaults to ready');

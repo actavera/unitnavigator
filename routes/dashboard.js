@@ -3,6 +3,7 @@ const router = require('express').Router();
 const db = require('../database');
 const { requireAuth, requirePermission, hasPermission } = require('../middleware/auth');
 const { generateBatchGuidance } = require('../services/priorityGuidance');
+const inventoryTruth = require('../services/inventoryTruth');
 
 const UNIT_STAGES = new Set(['acquired','transport','screening','recon','ready','pending','sold','archived']);
 const DEAL_ACTIONS = new Set(['still_pending','dead','vehicle_changed','closed']);
@@ -30,15 +31,6 @@ function dueDeal(row) {
   return daysOld(row.last_status_check_at) >= 3;
 }
 
-function unitMilestone(row) {
-  const age = daysOld(row.created_at);
-  if (age < 30) return 0;
-  const milestone = Math.floor(age / 30) * 30;
-  if (!row.last_age_check_at) return milestone;
-  const checkedMilestone = Math.floor(daysOld(row.last_age_check_at) / 30) * 30;
-  return milestone > checkedMilestone ? milestone : 0;
-}
-
 function getDealAlerts(dealershipId) {
   return db.prepare(`
     SELECT d.*, c.first_name, c.last_name, c.phone, c.email, u.year, u.make, u.model, u.vin
@@ -62,24 +54,42 @@ function getDealAlerts(dealershipId) {
     }));
 }
 
-function getUnitAlerts(dealershipId) {
+// Inventory review alerts. Due and escalated states come from the
+// dealership's review interval (default 30 days) and each unit's most recent
+// verification, or its creation date when never verified. Deterministic: no
+// scheduler and no AI decide what is overdue. Sold and archived units never
+// alert.
+function getUnitAlerts(dealershipId, now = Date.now()) {
+  const interval = inventoryTruth.reviewInterval(db, dealershipId);
   return db.prepare(`
-    SELECT * FROM units
-    WHERE dealership_id = ? AND stage NOT IN ('sold','archived')
-    ORDER BY created_at ASC
+    SELECT u.*, a.name AS assignee_name
+    FROM units u
+    LEFT JOIN users a ON a.id = u.assigned_user_id AND a.dealership_id = u.dealership_id AND a.status = 'active'
+    WHERE u.dealership_id = ? AND u.stage NOT IN ('sold','archived')
+    ORDER BY u.created_at ASC
   `).all(dealershipId)
-    .map(row => ({ row, milestone: unitMilestone(row) }))
-    .filter(item => item.milestone > 0)
-    .map(({ row, milestone }) => ({
-      id: row.id,
-      type: 'unit',
-      age_days: daysOld(row.created_at),
-      milestone,
-      vehicle: vehicleName(row),
-      vin: row.vin,
-      stage: row.stage,
-      created_at: row.created_at,
-    }));
+    .map(row => ({ row, review: inventoryTruth.reviewState(row, interval, now) }))
+    .filter(item => item.review.due)
+    .map(({ row, review }) => {
+      const age = daysOld(row.created_at);
+      return {
+        id: row.id,
+        type: 'unit',
+        age_days: age,
+        milestone: Math.floor(age / review.review_interval_days) * review.review_interval_days,
+        vehicle: vehicleName(row),
+        vin: row.vin,
+        stage: row.stage,
+        created_at: row.created_at,
+        review_interval_days: review.review_interval_days,
+        days_since_review: review.days_since_review,
+        overdue_days: review.overdue_days,
+        escalated: review.escalated,
+        // An assignee who has since been revoked counts as unassigned.
+        assigned_user_id: row.assignee_name ? row.assigned_user_id : null,
+        assignee_name: row.assignee_name || null,
+      };
+    });
 }
 
 function getStaleUserAlerts(req) {
@@ -167,17 +177,25 @@ function toPriority(type, row) {
   }
 
   if (type === 'unit') {
-    const reason = `In inventory for ${plural(ageDays, 'day')}, crossing the ${row.milestone}-day review milestone.`;
+    // Name-free reason (it is also the AI context); the assignee is a
+    // separate display field and is never sent to the AI-guidance service.
+    const reason = row.review_interval_days
+      ? `Not reviewed in ${plural(row.days_since_review, 'day')} (reviewed every ${plural(row.review_interval_days, 'day')})${row.escalated ? '; escalated for manager attention' : ''}.`
+      : `In inventory for ${plural(ageDays, 'day')}, crossing the ${row.milestone}-day review milestone.`;
     return {
       ...base,
-      title: `Check in on ${row.vehicle}`,
+      title: `${row.escalated ? 'Escalated: ' : ''}Check in on ${row.vehicle}`,
       reason,
-      next_step: `Confirm ${row.vehicle}'s current stage, or move it forward.`,
+      next_step: row.escalated
+        ? `A manager should confirm ${row.vehicle}'s current status, reassign it, or record its disposition.`
+        : `Confirm ${row.vehicle}'s current stage, or move it forward.`,
       // Vehicle year/make/model (row.vehicle) is not personal data and is
       // safe to send as-is — no VIN is ever included here.
       ai_context: reason,
       status: row.stage,
       vehicle: row.vehicle,
+      escalated: Boolean(row.escalated),
+      assignee_name: row.assignee_name || null,
       link: `/inventory/${row.id}`,
       actions: { endpoint: `/api/dashboard/unit-alert/${row.id}/action`, options: ['update_stage'] },
     };
@@ -306,6 +324,8 @@ router.get('/', ...requirePermission('reports_view'), (req, res) => {
       missing_acquisition_cost: missingAcquisitionCost,
       paperwork_incomplete: paperworkIncomplete,
       stale_user_logins: staleUserAlerts.length,
+      inventory_reviews_due: unitAlerts.length,
+      inventory_reviews_escalated: unitAlerts.filter(alert => alert.escalated).length,
     },
     alerts: [...dealAlerts, ...unitAlerts, ...staleUserAlerts],
   });
@@ -350,23 +370,41 @@ router.post('/deal-alert/:id/action', ...requirePermission('deals_manage'), (req
   let closedAt = deal.closed_at;
   if (action === 'dead') status = 'dead';
   if (action === 'vehicle_changed') status = 'vehicle_changed';
+  // Closing a deal records a retail-sold disposition (no amount, so
+  // sold_price stays null) for its linked active vehicle, through the same
+  // disposition service. The deal update and the disposition commit together
+  // or not at all. Entering or correcting a sale price later still needs the
+  // inventory pricing permission.
   if (action === 'closed') {
     status = 'closed';
     closedAt = now;
-    if (deal.unit_id) {
-      db.prepare("UPDATE units SET stage = 'sold', sold_at = COALESCE(sold_at, ?) WHERE id = ? AND dealership_id = ?")
-        .run(now, deal.unit_id, req.user.dealership_id);
-    }
   }
 
-  db.prepare(`
-    UPDATE deals SET status = ?, closed_at = ?, last_status_check_at = ?
-    WHERE id = ? AND dealership_id = ?
-  `).run(status, closedAt, now, req.params.id, req.user.dealership_id);
+  try {
+    db.transaction(() => {
+      if (action === 'closed' && deal.unit_id) {
+        const unit = db.prepare('SELECT id, stage FROM units WHERE id = ? AND dealership_id = ?').get(deal.unit_id, req.user.dealership_id);
+        if (unit && !inventoryTruth.TERMINAL_STAGES.has(unit.stage)) {
+          inventoryTruth.recordDisposition(db, {
+            dealershipId: req.user.dealership_id, unitId: unit.id, actorId: req.user.id,
+            body: { outcome: 'retail_sold', note: 'Recorded when the deal was closed' }, canPrice: true,
+          });
+        }
+      }
 
-  db.prepare(`INSERT INTO activity_logs (dealership_id, entity_type, entity_id, action, note, user_id)
-    VALUES (?, 'deal', ?, ?, ?, ?)`)
-    .run(req.user.dealership_id, req.params.id, 'Deal alert resolved', action, req.user.id);
+      db.prepare(`
+        UPDATE deals SET status = ?, closed_at = ?, last_status_check_at = ?
+        WHERE id = ? AND dealership_id = ?
+      `).run(status, closedAt, now, req.params.id, req.user.dealership_id);
+
+      db.prepare(`INSERT INTO activity_logs (dealership_id, entity_type, entity_id, action, note, user_id)
+        VALUES (?, 'deal', ?, ?, ?, ?)`)
+        .run(req.user.dealership_id, req.params.id, 'Deal alert resolved', action, req.user.id);
+    })();
+  } catch (err) {
+    console.error('Deal alert action failed', err);
+    return res.status(500).json({ error: 'Could not update the deal. Nothing was changed.' });
+  }
 
   res.json({ ok: true });
 });
@@ -375,50 +413,38 @@ router.post('/unit-alert/:id/action', requireAuth, (req, res) => {
   if (!hasPermission(req.user, 'inventory_edit')) {
     return res.status(403).json({ error: 'You do not have access to update inventory alerts' });
   }
-  if ((req.body?.stage === 'sold' || req.body?.sold_price) && !hasPermission(req.user, 'inventory_pricing')) {
-    return res.status(403).json({ error: 'You do not have access to mark inventory sold' });
-  }
 
-  const { stage, customer_id, sold_price } = req.body;
+  const { stage } = req.body || {};
   if (stage && !UNIT_STAGES.has(stage)) return res.status(400).json({ error: 'Invalid inventory stage' });
 
   const unit = db.prepare('SELECT * FROM units WHERE id = ? AND dealership_id = ?')
     .get(req.params.id, req.user.dealership_id);
   if (!unit) return res.status(404).json({ error: 'Unit not found' });
+  // Sold and archived come only from a structured disposition.
+  if (inventoryTruth.TERMINAL_STAGES.has(stage)) {
+    return res.status(409).json({ error: 'Record a disposition to mark a vehicle sold or remove it from inventory.', code: 'disposition_required' });
+  }
+  if (inventoryTruth.TERMINAL_STAGES.has(unit.stage)) {
+    return res.status(409).json({ error: 'This vehicle is already sold or archived. Correct its disposition from the vehicle page.', code: 'disposition_required' });
+  }
 
   const now = new Date().toISOString();
   const targetStage = stage || unit.stage;
-  const soldAt = targetStage === 'sold' ? now : unit.sold_at;
+  const wasEscalated = inventoryTruth.reviewState(unit, inventoryTruth.reviewInterval(db, req.user.dealership_id)).escalated;
 
   db.prepare(`
-    UPDATE units SET stage = ?, sold_at = ?, sold_price = COALESCE(?, sold_price), last_age_check_at = ?
+    UPDATE units SET stage = ?, last_age_check_at = ?
     WHERE id = ? AND dealership_id = ?
-  `).run(targetStage, soldAt, sold_price || null, now, req.params.id, req.user.dealership_id);
-
-  if (targetStage === 'sold' && customer_id) {
-    const customer = db.prepare('SELECT id FROM customers WHERE id = ? AND dealership_id = ?')
-      .get(customer_id, req.user.dealership_id);
-    if (customer) {
-      const existing = db.prepare(`
-        SELECT id FROM deals
-        WHERE unit_id = ? AND customer_id = ? AND dealership_id = ? AND status != 'dead'
-        LIMIT 1
-      `).get(req.params.id, customer_id, req.user.dealership_id);
-      if (existing) {
-        db.prepare("UPDATE deals SET status = 'closed', closed_at = COALESCE(closed_at, ?), last_status_check_at = ? WHERE id = ?")
-          .run(now, now, existing.id);
-      } else {
-        db.prepare(`
-          INSERT INTO deals (dealership_id, customer_id, unit_id, deal_type, status, last_status_check_at, closed_at)
-          VALUES (?, ?, ?, 'cash', 'closed', ?, ?)
-        `).run(req.user.dealership_id, customer_id, req.params.id, now, now);
-      }
-    }
-  }
+  `).run(targetStage, now, req.params.id, req.user.dealership_id);
 
   db.prepare(`INSERT INTO activity_logs (dealership_id, entity_type, entity_id, action, note, user_id)
     VALUES (?, 'unit', ?, ?, ?, ?)`)
     .run(req.user.dealership_id, req.params.id, 'Inventory age alert resolved', targetStage, req.user.id);
+  if (wasEscalated) {
+    db.prepare(`INSERT INTO activity_logs (dealership_id, entity_type, entity_id, action, note, user_id)
+      VALUES (?, 'unit', ?, 'Escalation resolved', ?, ?)`)
+      .run(req.user.dealership_id, req.params.id, `Resolved from the inventory alert (${targetStage})`, req.user.id);
+  }
 
   res.json({ ok: true });
 });
@@ -441,7 +467,7 @@ router.post('/unit-alerts/dismiss', requireAuth, (req, res) => {
     `);
     alerts.forEach(alert => {
       update.run(now, alert.id, req.user.dealership_id);
-      log.run(req.user.dealership_id, alert.id, `Reviewed at ${alert.milestone} day milestone`, req.user.id);
+      log.run(req.user.dealership_id, alert.id, `Reviewed after ${alert.days_since_review} days${alert.escalated ? ' (escalation resolved)' : ''}`, req.user.id);
     });
   });
   dismiss(unitAlerts);
@@ -456,5 +482,6 @@ router.rankPriorities = rankPriorities;
 router.priorityScore = priorityScore;
 router.buildAiGuidanceResponse = buildAiGuidanceResponse;
 router.toPriority = toPriority;
+router.getUnitAlerts = getUnitAlerts;
 
 module.exports = router;
