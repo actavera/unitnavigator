@@ -88,6 +88,23 @@
     .audience-card h3, .benefit-card h3 { font-size: 1.1rem; margin-bottom: 8px; }
     .audience-card p, .benefit-card p { color: var(--text-2); line-height: 1.5; font-size: .95rem; }
     .benefit-grid { grid-template-columns: repeat(3, minmax(0,1fr)); }
+    .price-band {
+      display: grid; grid-template-columns: minmax(250px, .58fr) minmax(0, 1.42fr);
+      gap: clamp(26px, 5vw, 64px); align-items: center;
+      padding: clamp(28px, 5vw, 48px);
+      border: 1px solid var(--blue-border); border-radius: 24px;
+      background: linear-gradient(135deg, rgba(37,99,235,.14), rgba(17,17,24,.72));
+      box-shadow: 0 28px 90px rgba(37,99,235,.1);
+    }
+    :root[data-theme="light"] .price-band {
+      background: linear-gradient(135deg, rgba(18,104,232,.1), rgba(255,255,255,.88));
+    }
+    .price-lockup { display: flex; align-items: flex-end; gap: 12px; margin-top: 10px; }
+    .price-lockup strong { font-size: clamp(3.6rem, 7vw, 6rem); line-height: .82; letter-spacing: -.06em; }
+    .price-lockup span { color: var(--text-2); font-weight: 800; line-height: 1.25; padding-bottom: 4px; }
+    .price-copy h2 { font-size: clamp(2rem, 4vw, 3.35rem); line-height: 1; letter-spacing: -.045em; margin-bottom: 14px; }
+    .price-copy p { color: var(--text-2); font-size: 1.04rem; line-height: 1.6; max-width: 700px; }
+    .price-copy .price-includes { margin-top: 14px; color: var(--text); font-weight: 700; }
     .signup-band {
       display: grid; grid-template-columns: minmax(0, .9fr) minmax(360px, .7fr); gap: 28px;
       align-items: start; padding: clamp(28px, 5vw, 44px);
@@ -113,7 +130,7 @@
       border-top: 1px solid var(--border); color: var(--muted); flex-wrap: wrap;
     }
     @media(max-width: 980px) {
-      .hero, .signup-band { grid-template-columns: 1fr; }
+      .hero, .signup-band, .price-band { grid-template-columns: 1fr; }
       .audience-grid, .benefit-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
     }
     @media(max-width: 640px) {
@@ -200,6 +217,23 @@
         <article class="benefit-card"><div class="icon">04</div><h3>Credit and Paperwork Flow</h3><p>Start with lightweight workflows now, then connect deeper credit, packet, and customer-facing tools as the store grows.</p></article>
         <article class="benefit-card"><div class="icon">05</div><h3>Cleaner Manager View</h3><p>Know what is ready to sell, what is stuck, what is pending, and where the money is tied up.</p></article>
         <article class="benefit-card"><div class="icon">06</div><h3>Multi-Dealer Ready</h3><p>Designed to become a shared platform where each dealer has separate users, inventory, customers, and settings.</p></article>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="pricing-title">
+      <div class="price-band">
+        <div>
+          <div class="eyebrow">Straightforward pricing</div>
+          <div class="price-lockup">
+            <strong>$500</strong>
+            <span>per dealership<br>per month</span>
+          </div>
+        </div>
+        <div class="price-copy">
+          <h2 id="pricing-title">Built to save more than it costs.</h2>
+          <p>Unit Navigator helps owners and managers spend less time chasing salespeople for updates, prevents good deals from going cold, and makes it easier to see which vehicles are actually available to sell. Cleaner information means fewer avoidable mistakes, faster paperwork, and more time focused on customers and revenue.</p>
+          <p class="price-includes">Includes the core Unit Navigator platform, built-in AI assistance, and the dealership's 700Credit subscription.</p>
+        </div>
       </div>
     </section>
 
