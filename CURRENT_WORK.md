@@ -13,10 +13,10 @@ This file holds current, durable state only. It replaces stale entries rather th
 - **Shipped and deployed**: Today's Priorities; AI Listing Suite (bulk and Facebook-format suggestions); Import Retry and Import History; AI Follow-Up Drafts; inventory aging alerts at recurring 30-day milestones; pending-deal follow-up alerts; inventory activity history and stage-change logging; basic `documents` records and incomplete-paperwork reporting; contracts and DocuSeal e-sign; public dealer showroom (hardened field allowlist, off by default for new dealerships); customer permission tiers; import and CSV export hardening; private data-directory permissions enforced on every start.
 - **AI Follow-Up Drafts** (PR #12, deployed): template draft first, optional "Rewrite with AI" (one provider call, names kept local via placeholders), draft only (nothing sent, saved, or logged; email opens only via a user-pressed `mailto:`). Live provider validation passed 36/36 on throwaway data; production smoke test after deploy passed 18/18 with no AI request.
 - **Operational notes**: deploy with `DEPLOY_DIGITALOCEAN.md` (JWT_SECRET pre-check, `git pull`, `npm ci --omit=dev` only when dependencies change, `pm2 restart unitnavigator`, check logs, smoke-test). Live provider validations run as root on the droplet from a `/tmp` clone with `--key-from-pm2`.
-- **Open items** (manual, root on the droplet; see `DEPLOY_DIGITALOCEAN.md` → Production readiness):
-  - Run `npm ci --omit=dev` and restart so the patched dependencies are installed.
-  - Register root's PM2 for boot (`pm2 startup systemd -u root --hp /root && pm2 save`).
-  - Install the nightly backup cron and set up off-droplet copies; point an uptime monitor at `/healthz`.
+- **Production operations** (done 2026-10-19): patched dependencies installed (`npm audit`: 0), root PM2 enabled at boot (`pm2-root` enabled, process list saved), nightly backup at 03:15 to `/var/backups/unitnavigator` (0700 dir, 0600 files, 14 kept, integrity-checked), isolated restore test passed. `actavera` currently has full passwordless sudo (`/etc/sudoers.d/actavera-full`); remove it when broad access is no longer wanted.
+- **Open items**:
+  - Off-droplet backup destination not chosen (DigitalOcean droplet backups or Spaces/S3); on-box copies do not survive losing the droplet.
+  - No uptime monitor on `/healthz` yet.
   - Password rotation is an open owner decision (the database was readable by other local accounts before the permissions fix).
   - Unit ids and numeric `?dealer=<id>` lookup are sequential and enumerable.
   - AI usage is metered but not limited (by design for the base plan).
