@@ -1,6 +1,11 @@
 'use strict';
 const router = require('express').Router();
 const db = require('../database');
+const reminders = require('../services/reminders');
+const messaging = require('../services/messaging');
+const { JWT_SECRET } = require('../middleware/auth');
+
+const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || 'https://unitnavigator.com').replace(/\/$/, '');
 
 function parsePhotos(value) {
   try {
@@ -155,6 +160,37 @@ router.get('/inventory/:id', (req, res) => {
 });
 
 router.mapUnit = mapUnit;
+// ── Communications webhooks (no login; verified individually) ─────────────
+
+function xml(text) {
+  return String(text).replace(/[<>&'"]/g, ch => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[ch]));
+}
+
+// Inbound SMS from Twilio. Only requests carrying a valid Twilio signature
+// are processed; STOP-type keywords record an opt-out, START restores a prior
+// opt-in. Nothing else is acted on.
+router.post('/sms/inbound', (req, res) => {
+  const params = req.body || {};
+  const valid = messaging.validTwilioSignature({ url: `${PUBLIC_BASE_URL}${req.originalUrl}`, params, signature: req.headers['x-twilio-signature'] });
+  if (!valid) return res.status(403).type('text/plain').send('Forbidden');
+  const reply = reminders.handleInboundSms(db, { from: params.From, body: params.Body });
+  res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response>${reply ? `<Message>${xml(reply)}</Message>` : ''}</Response>`);
+});
+
+// One-click email unsubscribe from a reminder's signed link.
+function unsubscribe(req, res) {
+  const dealershipId = Number(req.query.d);
+  const customerId = Number(req.query.c);
+  const ok = Number.isInteger(dealershipId) && Number.isInteger(customerId)
+    && reminders.validUnsubscribeToken(JWT_SECRET, dealershipId, customerId, req.query.t)
+    && db.prepare('SELECT 1 FROM customers WHERE id = ? AND dealership_id = ?').get(customerId, dealershipId);
+  if (!ok) return res.status(400).type('html').send('<!doctype html><meta charset="utf-8"><title>Unsubscribe</title><p>This unsubscribe link is not valid.</p>');
+  reminders.recordConsent(db, { dealershipId, customerId, channel: 'email', status: 'opted_out', source: 'email_unsubscribe' });
+  res.type('html').send('<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Unsubscribed</title><p style="font-family:sans-serif;padding:24px;">You have been unsubscribed from these reminder emails.</p>');
+}
+router.get('/unsubscribe', unsubscribe);
+router.post('/unsubscribe', unsubscribe);
+
 router.PUBLIC_UNIT_COLUMNS = PUBLIC_UNIT_COLUMNS;
 
 module.exports = router;

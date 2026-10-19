@@ -177,3 +177,26 @@ app.get('/:dealerSlug', (req, res, next) => {
 assertPrivate(db.dataDir, db.dbFilePath);
 
 app.listen(PORT, () => console.log(`Unit Navigator → http://localhost:${PORT}`));
+
+// Missing-document reminders. Runs in this process every 15 minutes; it sends
+// nothing unless a dealership has enabled a channel AND that channel's
+// provider credentials are configured. Disabled in tests.
+if (process.env.NODE_ENV !== 'test' && process.env.UNITNAV_REMINDERS_DISABLED !== '1') {
+  const { runReminders } = require('./services/reminders');
+  const { JWT_SECRET } = require('./middleware/auth');
+  let running = false;
+  const tick = async () => {
+    if (running) return;
+    running = true;
+    try {
+      const summary = await runReminders(db, { secret: JWT_SECRET, baseUrl: (process.env.PUBLIC_BASE_URL || 'https://unitnavigator.com').replace(/\/$/, '') });
+      if (summary.sent || summary.failed || summary.escalated) console.log('Reminders run', JSON.stringify(summary));
+    } catch (err) {
+      console.error('Reminders run failed', err.message);
+    } finally {
+      running = false;
+    }
+  };
+  setInterval(tick, 15 * 60 * 1000).unref();
+  setTimeout(tick, 60 * 1000).unref();
+}

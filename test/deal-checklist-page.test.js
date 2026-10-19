@@ -83,3 +83,26 @@ test('a status change sends one PATCH with a prompted reason when required', asy
   const patches = h.calls.filter(([m]) => m === 'PATCH');
   assert.equal(JSON.stringify(patches), JSON.stringify([['PATCH', '/api/deals/7/checklist/2', { status: 'rejected', reason: 'reason' }]]));
 });
+
+test('reminder panel escapes provider errors, shows blockers, and opting in requires confirmation', async () => {
+  const h = harness(() => true);
+  await tick();
+  const data = {
+    channels: [
+      { channel: 'email', dealership_enabled: false, provider_configured: false, has_address: true, consent: 'none', consent_source: null },
+      { channel: 'sms', dealership_enabled: true, provider_configured: true, has_address: true, consent: 'opted_out', consent_source: 'sms_stop' },
+    ],
+    state: { attempts: 3, escalated_at: '2026-10-19T00:00:00Z' },
+    messages: [{ channel: 'sms', status: 'failed', to_address: '•••0177', error: HOSTILE, created_at: '2026-10-19T00:00:00Z' }],
+  };
+  vm.runInContext(`checklistDealId = 7; renderReminders(${JSON.stringify(data)})`, h.context);
+  const out = h.elements.reminderPanel.innerHTML;
+  assert.ok(!out.includes('<img'));
+  assert.match(out, /turned off in dealership settings, sending not set up yet/);
+  assert.match(out, /replied STOP/);
+  assert.match(out, /Reminders exhausted/);
+  vm.runInContext("setReminderConsent('sms', 'opted_in')", h.context);
+  await tick();
+  const post = h.calls.find(([m, u]) => m === 'POST' && u.endsWith('/communications/consent'));
+  assert.equal(JSON.stringify(post[2]), JSON.stringify({ channel: 'sms', status: 'opted_in', attested: true }));
+});

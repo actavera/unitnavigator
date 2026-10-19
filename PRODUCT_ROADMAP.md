@@ -12,11 +12,10 @@ Durable backlog of genuinely unfinished work, in priority order. Shipped feature
 
 ## 1. Base Operations Completion
 Finish the operational core that the $500 base product promises.
-- **Deal document checklist**: turn the existing `documents` records and incomplete-paperwork reporting into a usable per-deal checklist.
 - **Communications foundation**: a shared email/SMS layer for the product, with consent tracking (opt-in and opt-out records) and compliance review required before any automated customer email or SMS is sent. Follow-up drafts stay manual until this exists.
 - **Operational reminders**: connect automated reminders to the existing inventory, pending-deal, and document-status alerts, using the communications foundation.
 
-Start with the deal document checklist.
+Communications foundation and missing-document reminders are built; they start sending once provider credentials are configured.
 
 ## 2. Title, Plate, and Registration Tracking
 Post-sale obligations tracking, intended for the $500 base product.
