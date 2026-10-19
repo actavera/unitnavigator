@@ -129,6 +129,7 @@
       <a href="/inventory" class="metric blue"><span>▣</span><div><p>Units Missing Photos</p><strong id="mMissingPhotos">0</strong><small>Ready to clean up</small></div></a>
       <a href="/inventory" class="metric purple"><span>✓</span><div><p>Missing Acquisition Cost</p><strong id="mMissingCost">0</strong><small>Profit needs cost stack</small></div></a>
       <a href="/paperwork/start" class="metric orange"><span>!</span><div><p>Paperwork Incomplete</p><strong id="mPaperwork">0</strong><small>Finish started packets</small></div></a>
+      <a href="/titles?filter=due" class="metric purple" data-requires="deals_view"><span>T</span><div><p>Titles &amp; Tags Due</p><strong id="mTitlesDue">0</strong><small id="mTitlesOverdue">Temp tags and blocked titles</small></div></a>
       <a href="/settings/users" class="metric blue" id="staleUsersMetric" style="display:none;"><span>U</span><div><p>Stale User Logins</p><strong id="mStaleUsers">0</strong><small>Review old access</small></div></a>
     </section>
   </section>
@@ -177,6 +178,8 @@ function renderMetrics(metrics) {
   document.getElementById('mMissingPhotos').textContent = metrics.units_missing_photos || 0;
   document.getElementById('mMissingCost').textContent = metrics.missing_acquisition_cost || 0;
   document.getElementById('mPaperwork').textContent = metrics.paperwork_incomplete || 0;
+  document.getElementById('mTitlesDue').textContent = metrics.title_cases_due || 0;
+  document.getElementById('mTitlesOverdue').textContent = metrics.title_cases_overdue ? `${metrics.title_cases_overdue} with expired temp tags` : 'Temp tags and blocked titles';
   const staleCount = metrics.stale_user_logins || 0;
   document.getElementById('mStaleUsers').textContent = staleCount;
   document.getElementById('staleUsersMetric').style.display = UN.can('users_manage') && staleCount ? '' : 'none';

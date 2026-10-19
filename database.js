@@ -6,6 +6,7 @@ const { SCHEMA_SQL: IMPORT_HISTORY_SCHEMA } = require('./services/importHistory'
 const { SCHEMA_SQL: INVENTORY_TRUTH_SCHEMA } = require('./services/inventoryTruth');
 const { SCHEMA_SQL: DEAL_CHECKLIST_SCHEMA } = require('./services/dealChecklist');
 const { SCHEMA_SQL: REMINDERS_SCHEMA } = require('./services/reminders');
+const { SCHEMA_SQL: TITLE_CASES_SCHEMA } = require('./services/titleCases');
 
 const dataDir = process.env.UNITNAV_DATA_DIR
   ? path.resolve(process.env.UNITNAV_DATA_DIR)
@@ -413,6 +414,9 @@ db.exec(DEAL_CHECKLIST_SCHEMA);
 
 // Communications: consent history, message attempts, per-deal reminder state.
 db.exec(REMINDERS_SCHEMA);
+
+// Title, plate, and registration cases and their history (additive; no backfill).
+db.exec(TITLE_CASES_SCHEMA);
 
 function slugify(value) {
   return String(value || '')

@@ -27,6 +27,7 @@ app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/paperwork', require('./routes/paperwork'));
 app.use('/api/public',    require('./routes/public'));
 app.use('/api/admin',     require('./routes/admin'));
+app.use('/api/titles',    require('./routes/titles'));
 
 function normalizedHost(req) {
   return String(req.headers['x-forwarded-host'] || req.headers.host || '')
@@ -141,6 +142,7 @@ const staticPages = {
   '/priorities':    'priorities.html',
   '/credit/new':    'credit-new.html',
   '/deals':         'deals.html',
+  '/titles':        'titles.html',
   '/customers':     'customers.html',
   '/admin':         'admin.html',
   '/admin/sold-vehicle-data': 'admin-sold-data.html',

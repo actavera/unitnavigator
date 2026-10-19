@@ -17,15 +17,6 @@ Finish the operational core that the $500 base product promises.
 
 Communications foundation and missing-document reminders are built; they start sending once provider credentials are configured.
 
-## 2. Title, Plate, and Registration Tracking
-Post-sale obligations tracking, intended for the $500 base product.
-- Title status: received, needed, submitted, completed.
-- Temporary-tag and registration deadlines.
-- Plate status.
-- Required-item checklist.
-- Assigned employee, due dates, overdue alerts, and manager escalation.
-- Post-sale obligations dashboard.
-
 ## 3. Add-On Entitlements and Usage Controls
 Control which dealerships can use which paid features, without automated billing.
 - Current AI features, the simple showroom, and basic operations stay in the $500 base product; entitlements gate the paid add-ons listed above.

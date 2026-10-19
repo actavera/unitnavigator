@@ -10,6 +10,7 @@ const { resolveUploadPath } = require('../services/uploads');
 const importHistory = require('../services/importHistory');
 const dealChecklist = require('../services/dealChecklist');
 const reminders = require('../services/reminders');
+const titleCases = require('../services/titleCases');
 
 function signUser(user, dealership, extra = {}) {
   const permissions = parsePermissions(user.permissions, user.role);
@@ -53,6 +54,7 @@ function cleanupDemoDealership(dealershipId) {
     // dealership's units; remove them before the units themselves.
     dealChecklist.deleteForDealership(db, dealershipId);
     reminders.deleteForDealership(db, dealershipId);
+    titleCases.deleteForDealership(db, dealershipId);
     db.prepare('DELETE FROM unit_assignments WHERE dealership_id = ?').run(dealershipId);
     db.prepare('DELETE FROM unit_dispositions WHERE dealership_id = ?').run(dealershipId);
     db.prepare('DELETE FROM platform_sold_units WHERE dealership_id = ?').run(dealershipId);

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/site.webmanifest">
+  <title>Titles &amp; Registration - Unit Navigator</title>
+  <script>(function(){var t=localStorage.getItem('un_theme')||'dark';document.documentElement.dataset.theme=t;})()</script>
+  <link rel="stylesheet" href="/css/main.css">
+  <style>
+    .titles-shell { width: min(100% - 32px, 1200px); margin: 0 auto; padding: 32px 0 64px; }
+    .titles-filters { display: flex; gap: 8px; flex-wrap: wrap; margin: 16px 0; }
+    .titles-filters .active { border-color: var(--border-hi); }
+    .titles-table { width: 100%; border-collapse: collapse; }
+    .titles-table th, .titles-table td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); font-size: .9rem; vertical-align: top; }
+    .titles-table th { color: var(--muted); font-weight: 600; }
+    .flag-overdue { color: var(--red); font-weight: 600; }
+    @media (max-width: 760px) { .titles-table .optional { display: none; } }
+  </style>
+</head>
+<body>
+<div id="nav-container"></div>
+<main class="titles-shell">
+  <h1>Titles &amp; Registration</h1>
+  <p class="text-muted">Post-sale title, registration, plate, and temporary-tag work for sold deals. Due dates come only from the dates you enter; Unit Navigator does not track state DMV deadlines.</p>
+  <div class="titles-filters" id="filters">
+    <button class="btn btn-ghost btn-sm" type="button" data-filter="open" onclick="setFilter('open')">Open</button>
+    <button class="btn btn-ghost btn-sm" type="button" data-filter="due" onclick="setFilter('due')">Due / overdue</button>
+    <button class="btn btn-ghost btn-sm" type="button" data-filter="overdue" onclick="setFilter('overdue')">Expired temp tags</button>
+    <button class="btn btn-ghost btn-sm" type="button" data-filter="completed" onclick="setFilter('completed')">Completed</button>
+    <button class="btn btn-ghost btn-sm" type="button" data-filter="all" onclick="setFilter('all')">All</button>
+  </div>
+  <div id="titlesBody"><p class="text-muted">Loading…</p></div>
+</main>
+<script src="/js/nav.js"></script>
+<script>
+if (UN.requireAuth()) UN.renderNav();
+
+let currentFilter = ['open', 'due', 'overdue', 'completed', 'all'].includes(new URLSearchParams(location.search).get('filter'))
+  ? new URLSearchParams(location.search).get('filter') : 'open';
+
+function esc(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+const label = s => String(s || '').replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
+
+function tagCell(c) {
+  if (!c.temp_tag_expires_on) return '—';
+  const d = c.days_to_tag_expiry;
+  const when = d < 0 ? `expired ${-d}d ago` : d === 0 ? 'expires today' : `in ${d}d`;
+  return `<span class="${c.level === 'overdue' ? 'flag-overdue' : ''}">${esc(c.temp_tag_expires_on)} (${esc(when)})</span>`;
+}
+
+function render(cases) {
+  document.querySelectorAll('#filters [data-filter]').forEach(b => b.classList.toggle('active', b.dataset.filter === currentFilter));
+  const el = document.getElementById('titlesBody');
+  if (!cases.length) { el.innerHTML = '<p class="text-muted">No cases in this view.</p>'; return; }
+  el.innerHTML = `<table class="titles-table">
+    <thead><tr><th>Vehicle / customer</th><th>Status</th><th class="optional">Title · Registration · Plate</th><th>Temp tag</th><th class="optional">Responsible</th><th>Blocking issue</th><th></th></tr></thead>
+    <tbody>${cases.map(c => `<tr>
+      <td><strong>${esc(c.vehicle)}</strong><br><span class="text-muted">${esc(c.customer_name)}${c.stock_number ? ' · #' + esc(c.stock_number) : ''}</span></td>
+      <td>${esc(label(c.status))}</td>
+      <td class="optional">${esc(label(c.title_status))} · ${esc(label(c.registration_status))} · ${esc(label(c.plate_status))}</td>
+      <td>${tagCell(c)}</td>
+      <td class="optional">${esc(c.assignee_name || 'Unassigned')}</td>
+      <td>${esc(c.blocking_issue || '')}</td>
+      <td><a class="btn btn-ghost btn-sm" href="/deals?deal=${Number(c.deal_id)}">Open</a></td>
+    </tr>`).join('')}</tbody></table>`;
+}
+
+async function load() {
+  try { render((await UN.api('GET', `/api/titles?filter=${encodeURIComponent(currentFilter)}`)).cases || []); }
+  catch (e) { document.getElementById('titlesBody').textContent = e.message; }
+}
+
+function setFilter(filter) {
+  currentFilter = filter;
+  history.replaceState(null, '', `/titles?filter=${filter}`);
+  load();
+}
+
+load();
+</script>
+</body>
+</html>
