@@ -3,10 +3,12 @@
 // and PATCH /api/deals/:id/status so both behave identically: the deal is
 // closed and, when it is linked to an active vehicle, that vehicle gets a
 // retail-sold disposition with no amount (sold_price stays null), all in one
-// transaction. Outstanding checklist items never block closing; the count is
+// transaction, which also opens the deal's title and registration case.
+// Outstanding checklist items never block closing; the count is
 // returned so the caller can warn.
 const inventoryTruth = require('./inventoryTruth');
 const dealChecklist = require('./dealChecklist');
+const titleCases = require('./titleCases');
 
 function closeDeal(db, { dealershipId, dealId, actorId, now = Date.now(), markStatusChecked = false }) {
   const stamp = new Date(now).toISOString();
@@ -25,7 +27,14 @@ function closeDeal(db, { dealershipId, dealId, actorId, now = Date.now(), markSt
     }
     db.prepare(`UPDATE deals SET status = 'closed', closed_at = ?${markStatusChecked ? ', last_status_check_at = ?' : ''}
       WHERE id = ? AND dealership_id = ?`).run(stamp, ...(markStatusChecked ? [stamp] : []), deal.id, dealershipId);
-    return { deal_id: deal.id, disposition_id: disposition ? disposition.id : null, outstanding_checklist_items: dealChecklist.outstandingCount(db, dealershipId, deal.id) };
+    // A retail sale opens its title and registration case in the same transaction.
+    const titleCase = disposition ? titleCases.createForDeal(db, { dealershipId, dealId: deal.id, actorId, now }) : null;
+    return {
+      deal_id: deal.id,
+      disposition_id: disposition ? disposition.id : null,
+      title_case_id: titleCase ? titleCase.id : null,
+      outstanding_checklist_items: dealChecklist.outstandingCount(db, dealershipId, deal.id),
+    };
   })();
 }
 

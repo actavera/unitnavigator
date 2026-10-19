@@ -27,6 +27,7 @@ function freshDb() {
   `);
   db.exec(truth.SCHEMA_SQL);
   db.exec(checklist.SCHEMA_SQL);
+  db.exec(require('../services/titleCases').SCHEMA_SQL);
   db.prepare("INSERT INTO dealerships (id, name) VALUES (1, 'A'), (2, 'B')").run();
   db.prepare("INSERT INTO users (id, dealership_id, name) VALUES (10, 1, 'Ann'), (20, 2, 'Bob')").run();
   db.prepare("INSERT INTO deals (id, dealership_id, deal_type) VALUES (1, 1, 'cash'), (2, 1, 'we_finance'), (3, 1, 'bhph'), (4, 1, 'they_finance'), (9, 2, 'cash')").run();

@@ -164,6 +164,7 @@
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end;">
       <a class="btn btn-ghost" href="/paperwork/start">Start Paperwork</a>
+      <a class="btn btn-ghost" href="/titles">Titles &amp; Registration</a>
       <button class="btn btn-primary" onclick="exportContacts()">Export Contacts</button>
     </div>
   </header>
@@ -242,6 +243,8 @@
       </select>
       <button class="btn btn-ghost btn-sm" type="button" onclick="addChecklistItem()">Add</button>
     </div>
+    <h3 style="margin:14px 0 6px;font-size:1rem;">Title &amp; Registration</h3>
+    <div id="titlePanel"></div>
     <h3 style="margin:14px 0 6px;font-size:1rem;">Customer reminders</h3>
     <p class="hint">Automatic reminders list only the outstanding item names. They go out only with the customer's consent, when the dealership has turned the channel on.</p>
     <div id="reminderPanel"></div>
@@ -274,6 +277,8 @@ async function loadDeals() {
     renderClientMatches();
     renderDeals();
     renderFollowUpAlert();
+    const requestedDeal = Number(new URLSearchParams(location.search || '').get('deal'));
+    if (requestedDeal && deals.some(d => d.id === requestedDeal)) openDeal(requestedDeal);
   } catch (e) {
     toast(e.message, 'err');
   }
@@ -510,8 +515,10 @@ function openDeal(id) {
   document.getElementById('checklistSummary').textContent = 'Loading checklist…';
   document.getElementById('dealModal').classList.add('show');
   document.getElementById('reminderPanel').innerHTML = '';
+  document.getElementById('titlePanel').innerHTML = '';
   loadChecklist();
   loadReminders();
+  loadTitleCase();
 }
 
 function closeDealModal() {
@@ -562,6 +569,72 @@ function renderChecklist(data) {
         <div class="draft-actions" style="margin-top:6px;">${buttons}</div>
       </div>`;
   }).join('');
+}
+
+const TITLE_STATES = ['not_started', 'documents_needed', 'ready_to_submit', 'submitted', 'processing', 'received', 'delivered', 'completed', 'on_hold'];
+const titleLabel = s => String(s || '').replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
+let titleCase = null;
+let titleAssignees = null;
+
+async function loadTitleCase() {
+  try { renderTitleCase(await UN.api('GET', `/api/titles/deal/${checklistDealId}`)); }
+  catch (e) { document.getElementById('titlePanel').textContent = e.message; }
+}
+
+function renderTitleCase(data) {
+  const panel = document.getElementById('titlePanel');
+  titleCase = data.case;
+  const canManage = UN.can('deals_manage');
+  if (!titleCase) {
+    panel.innerHTML = data.deal_status === 'closed'
+      ? `<p class="hint">No title and registration case yet.</p>${canManage ? '<button class="btn btn-ghost btn-sm" type="button" onclick="openTitleCase()">Open title case</button>' : ''}`
+      : '<p class="hint">A case opens automatically when this deal is closed as a retail sale.</p>';
+    return;
+  }
+  const c = titleCase;
+  const flag = c.level === 'overdue' ? ' · <strong style="color:var(--red);">Temp tag expired</strong>' : c.level === 'due' ? ' · Needs attention' : '';
+  const select = (field) => `<label class="hint" style="display:block;">${esc(titleLabel(field))}
+    <select class="form-select" id="tc_${field}" ${canManage ? '' : 'disabled'}>${TITLE_STATES.map(s => `<option value="${s}" ${c[field] === s ? 'selected' : ''}>${esc(titleLabel(s))}</option>`).join('')}</select></label>`;
+  const input = (field, label, type = 'text', max = 200) => `<label class="hint" style="display:block;">${esc(label)}
+    <input class="form-input" id="tc_${field}" type="${type}" maxlength="${max}" value="${esc(c[field] || '')}" ${canManage ? '' : 'disabled'}></label>`;
+  panel.innerHTML = `
+    <div class="hint">${esc(titleLabel(c.status))}${flag} · ${c.assignee_name ? 'Assigned to ' + esc(c.assignee_name) : 'Unassigned'}</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-top:8px;">
+      ${select('status')}${select('title_status')}${select('registration_status')}${select('plate_status')}
+      <label class="hint" style="display:block;">Responsible
+        <select class="form-select" id="tc_assigned_user_id" ${canManage ? 'onfocus="loadTitleAssignees()"' : 'disabled'}><option value="${c.assigned_user_id ? Number(c.assigned_user_id) : ''}">${esc(c.assignee_name || 'Unassigned')}</option></select></label>
+      ${input('temp_tag_number', 'Temp tag number', 'text', 30)}${input('temp_tag_expires_on', 'Temp tag expires', 'date')}
+      ${input('submitted_on', 'Submitted', 'date')}${input('received_on', 'Received', 'date')}${input('delivered_on', 'Delivered', 'date')}${input('completed_on', 'Completed', 'date')}
+    </div>
+    ${input('blocking_issue', 'Blocking issue', 'text', 200)}
+    ${input('note', 'Internal note', 'text', 500)}
+    ${canManage ? '<div class="draft-actions"><button class="btn btn-primary btn-sm" type="button" onclick="saveTitleCase()">Save title case</button></div>' : ''}
+    ${(c.history || []).slice(0, 5).map(h => `<div class="hint">${esc(titleLabel(h.field))}: ${esc(h.from_value ?? '—')} → ${esc(h.to_value ?? '—')} · ${esc(UN.fmt && UN.fmt.ago ? UN.fmt.ago(h.created_at) : h.created_at)}${h.actor_name ? ' · ' + esc(h.actor_name) : ''}</div>`).join('')}`;
+}
+
+async function loadTitleAssignees() {
+  if (titleAssignees) return;
+  try {
+    titleAssignees = (await UN.api('GET', '/api/titles/assignees')).users || [];
+    const current = titleCase && titleCase.assigned_user_id ? Number(titleCase.assigned_user_id) : '';
+    document.getElementById('tc_assigned_user_id').innerHTML = '<option value="">Unassigned</option>' +
+      titleAssignees.map(u => `<option value="${Number(u.id)}" ${Number(u.id) === current ? 'selected' : ''}>${esc(u.name)}</option>`).join('');
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function openTitleCase() {
+  try { renderTitleCase(await UN.api('POST', '/api/titles', { deal_id: checklistDealId })); toast('Title case opened'); }
+  catch (e) { toast(e.message, 'err'); }
+}
+
+async function saveTitleCase() {
+  const body = {};
+  ['status', 'title_status', 'registration_status', 'plate_status', 'temp_tag_number', 'temp_tag_expires_on', 'submitted_on', 'received_on', 'delivered_on', 'completed_on', 'blocking_issue', 'note']
+    .forEach(f => { body[f] = document.getElementById(`tc_${f}`).value; });
+  const assignee = document.getElementById('tc_assigned_user_id').value;
+  body.assigned_user_id = assignee ? Number(assignee) : null;
+  try { renderTitleCase(await UN.api('PATCH', `/api/titles/${Number(titleCase.id)}`, body)); toast('Title case saved'); }
+  catch (e) { toast(e.message, 'err'); }
 }
 
 const CHANNEL_LABELS = { email: 'Email', sms: 'Text' };

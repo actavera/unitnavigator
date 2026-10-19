@@ -106,3 +106,18 @@ test('reminder panel escapes provider errors, shows blockers, and opting in requ
   const post = h.calls.find(([m, u]) => m === 'POST' && u.endsWith('/communications/consent'));
   assert.equal(JSON.stringify(post[2]), JSON.stringify({ channel: 'sms', status: 'opted_in', attested: true }));
 });
+
+test('title panel escapes values, offers creation only on closed deals, and disables fields without deals_manage', async () => {
+  const h = harness(p => p !== 'deals_manage');
+  await tick();
+  vm.runInContext("checklistDealId = 7; renderTitleCase({ deal_status: 'pending', case: null })", h.context);
+  assert.match(h.elements.titlePanel.innerHTML, /opens automatically/);
+  const c = { id: 3, status: 'on_hold', title_status: 'submitted', registration_status: 'not_started', plate_status: 'not_started', level: 'overdue',
+    blocking_issue: HOSTILE, note: HOSTILE, temp_tag_number: 'T1', assignee_name: HOSTILE, assigned_user_id: 4, history: [{ field: 'note', from_value: HOSTILE, to_value: null, created_at: '2026-10-19T00:00:00Z' }] };
+  vm.runInContext(`renderTitleCase(${JSON.stringify({ deal_status: 'closed', case: c })})`, h.context);
+  const out = h.elements.titlePanel.innerHTML;
+  assert.ok(!out.includes('<img'));
+  assert.match(out, /Temp tag expired/);
+  assert.match(out, /disabled/);
+  assert.ok(!/Save title case/.test(out), 'no save without deals_manage');
+});

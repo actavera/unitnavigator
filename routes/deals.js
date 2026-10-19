@@ -7,6 +7,7 @@ const { requireAuth, requirePermission, hasPermission } = require('../middleware
 const dealChecklist = require('../services/dealChecklist');
 const { closeDeal, checklistWarning } = require('../services/dealClose');
 const reminders = require('../services/reminders');
+const titleCases = require('../services/titleCases');
 
 const VALID_STATUSES = new Set(['pending', 'closed', 'dead', 'vehicle_changed']);
 const VALID_DEAL_TYPES = new Set(['we_finance', 'bhph', 'they_finance', 'cash']);
@@ -354,6 +355,7 @@ router.delete('/:id', ...requirePermission('deals_manage'), (req, res) => {
   db.transaction(() => {
     dealChecklist.deleteForDeals(db, req.user.dealership_id, [deal.id]);
     reminders.deleteForDeals(db, req.user.dealership_id, [deal.id]);
+    titleCases.deleteForDeals(db, req.user.dealership_id, [deal.id]);
     db.prepare('DELETE FROM documents WHERE deal_id = ? AND dealership_id = ?').run(deal.id, req.user.dealership_id);
     db.prepare('DELETE FROM activity_logs WHERE entity_type = ? AND entity_id = ? AND dealership_id = ?')
       .run('deal', deal.id, req.user.dealership_id);

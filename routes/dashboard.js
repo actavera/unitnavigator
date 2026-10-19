@@ -6,6 +6,7 @@ const { generateBatchGuidance } = require('../services/priorityGuidance');
 const inventoryTruth = require('../services/inventoryTruth');
 const dealChecklist = require('../services/dealChecklist');
 const { closeDeal, checklistWarning } = require('../services/dealClose');
+const titleCases = require('../services/titleCases');
 
 const UNIT_STAGES = new Set(['acquired','transport','screening','recon','ready','pending','sold','archived']);
 const DEAL_ACTIONS = new Set(['still_pending','dead','vehicle_changed','closed']);
@@ -127,12 +128,14 @@ function getStaleUserAlerts(req) {
 // truth for what counts as an alert; this section only reshapes and ranks
 // their output.
 
-const PRIORITY_CATEGORY_ORDER = { deal: 0, unit: 1, user: 2 };
+// Title cases sit between deals and units: an expired or expiring temporary
+// tag outranks aging inventory but not a stalled deal.
+const PRIORITY_CATEGORY_ORDER = { deal: 0, title: 0.5, unit: 1, user: 2 };
 // Priority level follows directly from category — pending/stalled deals are
 // always High, aging inventory Medium, stale access Low — matching the
 // required category ranking (deals > units > users) rather than a separate,
 // independently-tunable scale.
-const PRIORITY_LEVEL_BY_TYPE = { deal: 'high', unit: 'medium', user: 'low' };
+const PRIORITY_LEVEL_BY_TYPE = { deal: 'high', title: 'medium', unit: 'medium', user: 'low' };
 
 function plural(n, word) {
   return `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -190,6 +193,32 @@ function toPriority(type, row) {
     };
   }
 
+  if (type === 'title') {
+    const days = row.days_to_tag_expiry;
+    const reason = row.level === 'overdue'
+      ? `Temporary tag expired ${plural(-days, 'day')} ago and the title/registration case is not complete.`
+      : days !== null && days <= titleCases.DUE_SOON_DAYS
+        ? `Temporary tag expires in ${plural(days, 'day')}; title/registration case is ${row.status.replace(/_/g, ' ')}.`
+        : `Title/registration case is ${row.status === 'on_hold' ? 'on hold' : 'blocked'}.`;
+    return {
+      ...base,
+      // Overdue uses days past the dealer-entered tag date for ranking.
+      age_days: Math.max(0, -(days ?? 0)),
+      score: priorityScore(type, Math.max(0, -(days ?? 0)) + (row.level === 'overdue' ? 1000 : 0), row.id),
+      priority_level: row.level === 'overdue' ? 'high' : 'medium',
+      title: `Title & registration: ${row.vehicle}`,
+      reason,
+      next_step: row.blocking_issue ? 'Resolve the blocking issue and update the case.' : 'Update the title, registration, and plate status, or the temporary tag.',
+      // Name-free and note-free: only dates and statuses reach the AI context.
+      ai_context: reason,
+      status: row.status,
+      vehicle: row.vehicle,
+      assignee_name: row.assignee_name || null,
+      link: `/deals?deal=${Number(row.deal_id)}`,
+      actions: { endpoint: null, options: [] },
+    };
+  }
+
   if (type === 'unit') {
     // Name-free reason (it is also the AI context); the assignee is a
     // separate display field and is never sent to the AI-guidance service.
@@ -232,9 +261,10 @@ function toPriority(type, row) {
 
 // Exported and unit-tested directly (see test/dashboard-priorities.test.js)
 // so ranking correctness never depends on spinning up the HTTP layer.
-function rankPriorities(dealAlerts, unitAlerts, staleUserAlerts) {
+function rankPriorities(dealAlerts, unitAlerts, staleUserAlerts, titleAlerts = []) {
   const priorities = [
     ...dealAlerts.map(row => toPriority('deal', row)),
+    ...titleAlerts.map(row => toPriority('title', row)),
     ...(unitAlerts || []).map(row => toPriority('unit', row)),
     ...(staleUserAlerts || []).map(row => toPriority('user', row)),
   ];
@@ -243,7 +273,7 @@ function rankPriorities(dealAlerts, unitAlerts, staleUserAlerts) {
 
 function currentPriorities(req) {
   const dealershipId = req.user.dealership_id;
-  return rankPriorities(getDealAlerts(dealershipId), getUnitAlerts(dealershipId), getStaleUserAlerts(req));
+  return rankPriorities(getDealAlerts(dealershipId), getUnitAlerts(dealershipId), getStaleUserAlerts(req), titleCases.listCases(db, { dealershipId, filter: 'due' }));
 }
 
 router.get('/priorities', ...requirePermission('reports_view'), (req, res) => {
@@ -328,6 +358,8 @@ router.get('/', ...requirePermission('reports_view'), (req, res) => {
       AND ${dealChecklist.OUTSTANDING_COUNT_SQL} > 0
   `).get(dealershipId).count || 0;
 
+  const titleDue = titleCases.listCases(db, { dealershipId, filter: 'due' });
+
   // Pending deals whose customer reminders ran out with items still outstanding.
   const remindersEscalated = db.prepare(`
     SELECT COUNT(*) AS count FROM deals d
@@ -343,6 +375,8 @@ router.get('/', ...requirePermission('reports_view'), (req, res) => {
       paperwork_incomplete: paperworkIncomplete,
       stale_user_logins: staleUserAlerts.length,
       reminders_escalated: remindersEscalated,
+      title_cases_due: titleDue.length,
+      title_cases_overdue: titleDue.filter(c => c.level === 'overdue').length,
       inventory_reviews_due: unitAlerts.length,
       inventory_reviews_escalated: unitAlerts.filter(alert => alert.escalated).length,
     },
