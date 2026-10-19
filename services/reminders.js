@@ -264,6 +264,12 @@ async function runReminders(db, { now = Date.now(), env = process.env, secret, b
       }).filter(Boolean);
       if (!targets.length) { summary.skipped += 1; continue; }
 
+      // Record the attempt BEFORE sending, so a crash or restart mid-send can
+      // never cause the same reminder to go out again before the interval.
+      db.prepare(`INSERT INTO deal_reminder_state (dealership_id, deal_id, attempts, last_attempt_at) VALUES (?, ?, 1, ?)
+        ON CONFLICT(dealership_id, deal_id) DO UPDATE SET attempts = attempts + 1, last_attempt_at = excluded.last_attempt_at`)
+        .run(dealership.id, deal.id, new Date(now).toISOString());
+
       const labels = outstandingLabels(db, dealership.id, deal.id);
       const unsubscribeUrl = `${baseUrl}/api/public/unsubscribe?d=${dealership.id}&c=${deal.customer_id}&t=${unsubscribeToken(secret, dealership.id, deal.customer_id)}`;
       for (const { channel, to } of targets) {
@@ -274,7 +280,7 @@ async function runReminders(db, { now = Date.now(), env = process.env, secret, b
           VALUES (?, ?, ?, ?, 'missing_documents', 'sending', ?, ?, ?, ?)`)
           .run(dealership.id, deal.id, deal.customer_id, channel, to, content.subject || null, content.text, stamp).lastInsertRowid);
         try {
-          const result = await senders[channel]({ to, subject: content.subject, text: content.text });
+          const result = await senders[channel]({ to, subject: content.subject, text: content.text, unsubscribeUrl: channel === 'email' ? unsubscribeUrl : undefined });
           db.prepare("UPDATE communication_messages SET status = 'sent', provider = ?, provider_message_id = ?, completed_at = ? WHERE id = ?")
             .run(result.provider || null, result.provider_message_id || null, new Date().toISOString(), id);
           summary.sent += 1;
@@ -284,11 +290,8 @@ async function runReminders(db, { now = Date.now(), env = process.env, secret, b
           summary.failed += 1;
         }
       }
-      // One attempt per run, whether it succeeded or failed; failures are
-      // retried on the next interval until the attempt limit escalates.
-      db.prepare(`INSERT INTO deal_reminder_state (dealership_id, deal_id, attempts, last_attempt_at) VALUES (?, ?, 1, ?)
-        ON CONFLICT(dealership_id, deal_id) DO UPDATE SET attempts = attempts + 1, last_attempt_at = excluded.last_attempt_at`)
-        .run(dealership.id, deal.id, new Date(now).toISOString());
+      // One attempt per run (recorded above), whether it succeeded or failed;
+      // failures are retried on the next interval until the limit escalates.
     }
   }
   return summary;

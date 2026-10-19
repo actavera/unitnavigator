@@ -63,13 +63,17 @@ function requireAuth(req, res, next) {
   try {
     req.user = jwt.verify(token, JWT_SECRET);
     const user = db.prepare(`
-      SELECT u.id, u.dealership_id, u.role, u.permissions, u.permissions_version, u.status, d.status AS dealership_status
+      SELECT u.id, u.dealership_id, u.role, u.permissions, u.permissions_version, u.status, u.password_changed_at, d.status AS dealership_status
       FROM users u
       LEFT JOIN dealerships d ON d.id = u.dealership_id
       WHERE u.id = ?
     `).get(req.user.id);
     if (!user || user.status === 'revoked' || user.dealership_status === 'revoked') {
       return res.status(403).json({ error: 'Access revoked' });
+    }
+    // Sessions issued before the latest password change are no longer valid.
+    if (user.password_changed_at && (!req.user.iat || req.user.iat * 1000 < Date.parse(user.password_changed_at) - 1000)) {
+      return res.status(401).json({ error: 'Invalid or expired session' });
     }
     // Trust dealership_id from the live DB row, not the JWT payload: a stale or
     // (if the signing secret were ever weak) forged token must not be able to

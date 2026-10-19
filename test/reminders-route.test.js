@@ -140,7 +140,12 @@ test('email unsubscribe link: valid token opts out; forged token refused', async
   const token = reminders.unsubscribeToken(JWT_SECRET, a.dealershipId, customerId);
   assert.equal((await api(null, 'GET', `/api/public/unsubscribe?d=${a.dealershipId}&c=${customerId}&t=forged`)).status, 400);
   assert.equal((await api(null, 'GET', `/api/public/unsubscribe?d=${a.dealershipId}&c=${customerId + 1}&t=${token}`)).status, 400);
-  const ok = await api(null, 'GET', `/api/public/unsubscribe?d=${a.dealershipId}&c=${customerId}&t=${token}`);
+  const page = await api(null, 'GET', `/api/public/unsubscribe?d=${a.dealershipId}&c=${customerId}&t=${token}`);
+  assert.equal(page.status, 200);
+  assert.match(page.text, /<form method="post"/);
+  assert.equal(withDb(db => reminders.latestConsent(db, a.dealershipId, customerId, 'email')), null, 'GET (link scanners) changes nothing');
+  assert.equal((await api(null, 'POST', '/api/public/unsubscribe', `d=${a.dealershipId}&c=${customerId}&t=forged`, { 'Content-Type': 'application/x-www-form-urlencoded' })).status, 400);
+  const ok = await api(null, 'POST', '/api/public/unsubscribe', `d=${a.dealershipId}&c=${customerId}&t=${token}`, { 'Content-Type': 'application/x-www-form-urlencoded' });
   assert.equal(ok.status, 200);
   assert.equal(withDb(db => reminders.latestConsent(db, a.dealershipId, customerId, 'email').status), 'opted_out');
 });

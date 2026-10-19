@@ -340,7 +340,7 @@ router.patch('/dealership-users/:id', requireAuth, (req, res) => {
   if (req.body.password) {
     const password = String(req.body.password);
     if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
-    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(bcrypt.hashSync(password, 12), existing.id);
+    db.prepare("UPDATE users SET password_hash = ?, password_changed_at = ? WHERE id = ?").run(bcrypt.hashSync(password, 12), new Date().toISOString(), existing.id);
   }
 
   res.json({ user: userRow(dealerUserWithName(existing.id, dealershipId)) });
@@ -520,7 +520,7 @@ router.patch('/users/:id', (req, res) => {
   if (req.body.password) {
     const password = String(req.body.password);
     if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
-    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(bcrypt.hashSync(password, 12), user.id);
+    db.prepare("UPDATE users SET password_hash = ?, password_changed_at = ? WHERE id = ?").run(bcrypt.hashSync(password, 12), new Date().toISOString(), user.id);
   }
 
   const row = db.prepare(`

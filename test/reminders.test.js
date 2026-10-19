@@ -193,3 +193,16 @@ test('tenant isolation in the runner and cleanup helpers', async () => {
     assert.equal(db.prepare(`SELECT COUNT(*) AS n FROM ${t} WHERE dealership_id = 1`).get().n, 0);
   }
 });
+
+test('the attempt is recorded before sending, so a crash mid-send cannot cause a duplicate', async () => {
+  const db = freshDb();
+  seedOutstanding(db);
+  optIn(db, 'email');
+  let stateDuringSend = null;
+  const send = { email: async () => { stateDuringSend = db.prepare('SELECT attempts, last_attempt_at FROM deal_reminder_state WHERE deal_id = 1').get(); throw new Error('process died'); } };
+  await run(db, { send });
+  assert.equal(stateDuringSend.attempts, 1, 'attempt already recorded when the provider is called');
+  const { sent, send: ok } = fakeSend();
+  assert.equal((await run(db, { send: ok, now: NOON + 60 * 60 * 1000 })).sent, 0, 'an immediate rerun does not resend');
+  assert.equal(sent.length, 0);
+});

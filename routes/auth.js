@@ -96,14 +96,40 @@ function seedDemoCustomers(dealershipId) {
   rows.forEach(row => stmt.run(dealershipId, ...row));
 }
 
+// Per-account failed-login limit (the per-IP limit is in server.js).
+const DUMMY_HASH = bcrypt.hashSync('unit-navigator-timing-equalizer', 10);
+const FAILURE_WINDOW_MS = 15 * 60 * 1000;
+const MAX_FAILURES = 8;
+const failures = new Map();
+function emailLimited(email) {
+  if (process.env.NODE_ENV === 'test' && process.env.UNITNAV_TEST_RATE_LIMITS !== '1') return false;
+  const f = failures.get(email);
+  if (!f) return false;
+  if (f.reset <= Date.now()) { failures.delete(email); return false; }
+  return f.count >= MAX_FAILURES;
+}
+function recordFailure(email) {
+  const now = Date.now();
+  const f = failures.get(email);
+  if (!f || f.reset <= now) failures.set(email, { count: 1, reset: now + FAILURE_WINDOW_MS });
+  else f.count += 1;
+}
+
 router.post('/login', (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
 
-  const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email.toLowerCase().trim());
-  if (!user || !bcrypt.compareSync(password, user.password_hash)) {
+  const normalized = String(email).toLowerCase().trim();
+  if (emailLimited(normalized)) return res.status(429).json({ error: 'Too many sign-in attempts for this account. Please wait 15 minutes and try again.' });
+  const user = db.prepare('SELECT * FROM users WHERE email = ?').get(normalized);
+  // Compare against a dummy hash when the user does not exist so response
+  // timing does not reveal which emails have accounts.
+  const valid = bcrypt.compareSync(String(password), user ? user.password_hash : DUMMY_HASH);
+  if (!user || !valid) {
+    recordFailure(normalized);
     return res.status(401).json({ error: 'Invalid email or password' });
   }
+  failures.delete(normalized);
   if (user.status === 'revoked') {
     return res.status(403).json({ error: 'This login has been revoked' });
   }
