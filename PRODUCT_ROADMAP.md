@@ -34,9 +34,4 @@ Buy-here-pay-here account servicing (potential paid add-on).
 - Customer reminders with consent controls.
 - Payoff quotes, fees, adjustments, notes, permissions, reporting, and complete audit history.
 - Payment processing, provider selection, detailed compliance requirements, and pricing are decisions for this workstream.
-- BHPH financial data must pass the final security audit (item 8) before launch.
-
-## 8. Final Security and Production-Readiness Audit
-Covers: auth/session security, tenant isolation, permissions, PII and credit data, messaging consent, BHPH financial data, XSS/CSRF, uploads, SSRF, rate limiting, headers/CSP, secrets, database and document permissions, sensitive logging, dependencies, backups and restore, PM2 boot recovery, monitoring, and security regression tests.
-
-Deliverable: a final report ranking findings Critical, High, Medium, and Low. Critical and High findings must be resolved before the roadmap is considered complete.
+- BHPH financial data needs its own security review before launch.

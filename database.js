@@ -489,6 +489,9 @@ if (userSchema && (!userSchema.includes("'super_admin'") || !userColumns.include
 // Permission-list format version. Existing rows keep 1, under which
 // reports_view still implies contacts_export (unchanged access); saves through
 // user management write 2. No stored row is rewritten here.
+if (!db.prepare("PRAGMA table_info(users)").all().some(col => col.name === 'password_changed_at')) {
+  db.exec("ALTER TABLE users ADD COLUMN password_changed_at TEXT");
+}
 if (!db.prepare("PRAGMA table_info(users)").all().some(col => col.name === 'permissions_version')) {
   db.exec("ALTER TABLE users ADD COLUMN permissions_version INTEGER DEFAULT 1");
 }

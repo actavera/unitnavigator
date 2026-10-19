@@ -207,3 +207,43 @@ stat -c '%a %U:%G %n' /root/backups/unitnavigator /root/backups/unitnavigator/*
 ```
 
 Expected: the directory is `700` and each backup file is `600`. Copy backups off the droplet only over an encrypted channel to storage that is itself access-controlled, and keep photo uploads (`public/uploads/`) in the backup plan separately. Scheduling (for example a root cron entry that runs the command above under `umask 077`) and retention are still to be decided.
+
+## Production readiness (backups, boot recovery, health, dependencies)
+
+Run as root on the droplet.
+
+**Dependencies.** The restricted deploy script (`/usr/local/bin/unitnav-deploy`) pulls and restarts but does not install packages. When `package.json` or `package-lock.json` changes, run once after the deploy:
+
+```bash
+cd /var/www/unitnavigator && npm ci --omit=dev && pm2 restart unitnavigator
+```
+
+**Boot recovery.** Root's PM2 must start on boot, or the app stays down after a reboot:
+
+```bash
+pm2 startup systemd -u root --hp /root && pm2 save && systemctl is-enabled pm2-root
+```
+
+**Nightly database backup** (consistent online copy, integrity-checked, 0600 files in a 0700 directory, keeps 14):
+
+```bash
+mkdir -p /var/backups/unitnavigator && chmod 700 /var/backups/unitnavigator
+( crontab -l 2>/dev/null; echo '15 3 * * * cd /var/www/unitnavigator && /usr/bin/node scripts/backup-db.js /var/backups/unitnavigator --keep 14 >> /var/log/unitnav-backup.log 2>&1' ) | crontab -
+cd /var/www/unitnavigator && node scripts/backup-db.js /var/backups/unitnavigator   # run once now
+```
+
+Copy `/var/backups/unitnavigator` off the droplet regularly (or enable DigitalOcean droplet backups); on-box copies do not survive losing the droplet. Uploaded photos live in `public/uploads/` and e-sign archives in `data/esign-archives/`; include both in off-box copies.
+
+**Restore** (tested procedure): stop the app, copy the chosen backup over `data/unitnavigator.db`, remove any `unitnavigator.db-wal` and `-shm`, `chmod 600` the file, start the app, and check `/healthz`:
+
+```bash
+pm2 stop unitnavigator
+cp /var/backups/unitnavigator/unitnavigator-YYYYMMDD-HHMMSS.db /var/www/unitnavigator/data/unitnavigator.db
+rm -f /var/www/unitnavigator/data/unitnavigator.db-wal /var/www/unitnavigator/data/unitnavigator.db-shm
+chmod 600 /var/www/unitnavigator/data/unitnavigator.db && pm2 start unitnavigator
+curl -s https://unitnavigator.com/healthz
+```
+
+**Health check.** `GET /healthz` returns `{"ok":true}` when the process is up and the database is reachable (503 otherwise). Point an uptime monitor at `https://unitnavigator.com/healthz`.
+
+**Throttling.** Sign-in (20 attempts per IP per 15 minutes, and 8 failures per account), demo sessions (30 per IP per hour), and the SMS/unsubscribe webhooks are rate-limited in-process. The app trusts only the local nginx (`trust proxy: loopback`) for client IPs, so nginx must keep sending `X-Forwarded-For`.

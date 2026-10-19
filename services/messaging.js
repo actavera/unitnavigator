@@ -61,14 +61,18 @@ function providerError(status, body) {
   return Object.assign(new Error(`Provider rejected the message (${status})${detail ? `: ${String(detail).slice(0, 160)}` : ''}`), { code: 'provider_rejected' });
 }
 
-async function sendEmail({ to, subject, text }, env = process.env) {
+async function sendEmail({ to, subject, text, unsubscribeUrl }, env = process.env) {
   const config = emailConfig(env);
   if (!config) throw Object.assign(new Error('Email is not configured'), { code: 'not_configured' });
   const res = await transport({
     hostname: 'api.postmarkapp.com',
     path: '/email',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-Postmark-Server-Token': config.token },
-    body: JSON.stringify({ From: config.from, To: to, Subject: subject, TextBody: text, MessageStream: 'outbound' }),
+    body: JSON.stringify({
+      From: config.from, To: to, Subject: subject, TextBody: text, MessageStream: 'outbound',
+      // One-click unsubscribe (RFC 8058) for mail clients that support it.
+      ...(unsubscribeUrl ? { Headers: [{ Name: 'List-Unsubscribe', Value: `<${unsubscribeUrl}>` }, { Name: 'List-Unsubscribe-Post', Value: 'List-Unsubscribe=One-Click' }] } : {}),
+    }),
   });
   if (res.status < 200 || res.status >= 300) throw providerError(res.status, res.body);
   let id = null;

@@ -177,19 +177,37 @@ router.post('/sms/inbound', (req, res) => {
   res.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response>${reply ? `<Message>${xml(reply)}</Message>` : ''}</Response>`);
 });
 
-// One-click email unsubscribe from a reminder's signed link.
-function unsubscribe(req, res) {
-  const dealershipId = Number(req.query.d);
-  const customerId = Number(req.query.c);
+// Email unsubscribe from a reminder's signed link. GET only shows a
+// confirmation page (link scanners and prefetchers issue GETs); the opt-out
+// is recorded on POST, which the page's button and one-click
+// List-Unsubscribe-Post clients send.
+function unsubscribeTarget(src) {
+  const dealershipId = Number(src.d);
+  const customerId = Number(src.c);
   const ok = Number.isInteger(dealershipId) && Number.isInteger(customerId)
-    && reminders.validUnsubscribeToken(JWT_SECRET, dealershipId, customerId, req.query.t)
+    && reminders.validUnsubscribeToken(JWT_SECRET, dealershipId, customerId, src.t)
     && db.prepare('SELECT 1 FROM customers WHERE id = ? AND dealership_id = ?').get(customerId, dealershipId);
-  if (!ok) return res.status(400).type('html').send('<!doctype html><meta charset="utf-8"><title>Unsubscribe</title><p>This unsubscribe link is not valid.</p>');
-  reminders.recordConsent(db, { dealershipId, customerId, channel: 'email', status: 'opted_out', source: 'email_unsubscribe' });
-  res.type('html').send('<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Unsubscribed</title><p style="font-family:sans-serif;padding:24px;">You have been unsubscribed from these reminder emails.</p>');
+  return ok ? { dealershipId, customerId, token: String(src.t) } : null;
 }
-router.get('/unsubscribe', unsubscribe);
-router.post('/unsubscribe', unsubscribe);
+const PAGE = body => `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Unsubscribe</title><div style="font-family:sans-serif;padding:24px;max-width:520px;">${body}</div>`;
+const INVALID = PAGE('<p>This unsubscribe link is not valid.</p>');
+
+router.get('/unsubscribe', (req, res) => {
+  const target = unsubscribeTarget(req.query);
+  if (!target) return res.status(400).type('html').send(INVALID);
+  res.type('html').send(PAGE(`<p>Stop receiving paperwork reminder emails?</p>
+    <form method="post" action="/api/public/unsubscribe">
+      <input type="hidden" name="d" value="${target.dealershipId}"><input type="hidden" name="c" value="${target.customerId}"><input type="hidden" name="t" value="${xml(target.token)}">
+      <button type="submit" style="padding:10px 16px;">Unsubscribe</button>
+    </form>`));
+});
+
+router.post('/unsubscribe', (req, res) => {
+  const target = unsubscribeTarget({ ...req.query, ...(req.body || {}) });
+  if (!target) return res.status(400).type('html').send(INVALID);
+  reminders.recordConsent(db, { dealershipId: target.dealershipId, customerId: target.customerId, channel: 'email', status: 'opted_out', source: 'email_unsubscribe' });
+  res.type('html').send(PAGE('<p>You have been unsubscribed from these reminder emails.</p>'));
+});
 
 router.PUBLIC_UNIT_COLUMNS = PUBLIC_UNIT_COLUMNS;
 

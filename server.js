@@ -13,8 +13,34 @@ const PORT = process.env.PORT || 3001;
   if (!fs.existsSync(full)) fs.mkdirSync(full, { recursive: true });
 });
 
+const { securityHeaders, rateLimit, errorHandler, validateProductionEnv } = require('./services/security');
+validateProductionEnv();
+
+// nginx on the same host is the only proxy; trust it for the client IP.
+app.set('trust proxy', 'loopback');
+app.disable('x-powered-by');
+app.use(securityHeaders());
+
+// Unauthenticated entry points are throttled per client IP.
+const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, message: 'Too many sign-in attempts. Please wait 15 minutes and try again.' });
+const demoLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 30, message: 'Too many demo sessions from this network. Please try again later.' });
+const webhookLimiter = rateLimit({ windowMs: 60 * 1000, max: 120 });
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/demo-login', demoLimiter);
+app.use(['/api/public/sms', '/api/public/unsubscribe'], webhookLimiter);
+
+// Liveness for monitoring: process up and database reachable. No details.
+app.get('/healthz', (_req, res) => {
+  try {
+    db.prepare('SELECT 1').get();
+    res.json({ ok: true });
+  } catch {
+    res.status(503).json({ ok: false });
+  }
+});
+
 app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 app.get('/favicon.ico', (_req, res) => res.type('png').sendFile(path.join(__dirname, 'public', 'favicon.png')));
 
@@ -176,6 +202,10 @@ app.get('/:dealerSlug', (req, res, next) => {
 // Final gate: never accept traffic if the data directory or database files are
 // readable by anyone other than the runtime account. database.js already
 // repairs loosened modes at load; this fails closed if anything is still open.
+// Unmatched API routes return JSON, and errors never expose internals.
+app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }));
+app.use(errorHandler);
+
 assertPrivate(db.dataDir, db.dbFilePath);
 
 app.listen(PORT, () => console.log(`Unit Navigator → http://localhost:${PORT}`));
