@@ -4,6 +4,8 @@ const db = require('../database');
 const { requireAuth, requirePermission, hasPermission } = require('../middleware/auth');
 const { generateBatchGuidance } = require('../services/priorityGuidance');
 const inventoryTruth = require('../services/inventoryTruth');
+const dealChecklist = require('../services/dealChecklist');
+const { closeDeal, checklistWarning } = require('../services/dealClose');
 
 const UNIT_STAGES = new Set(['acquired','transport','screening','recon','ready','pending','sold','archived']);
 const DEAL_ACTIONS = new Set(['still_pending','dead','vehicle_changed','closed']);
@@ -33,7 +35,8 @@ function dueDeal(row) {
 
 function getDealAlerts(dealershipId) {
   return db.prepare(`
-    SELECT d.*, c.first_name, c.last_name, c.phone, c.email, u.year, u.make, u.model, u.vin
+    SELECT d.*, c.first_name, c.last_name, c.phone, c.email, u.year, u.make, u.model, u.vin,
+      ${dealChecklist.OUTSTANDING_COUNT_SQL} AS checklist_outstanding
     FROM deals d
     LEFT JOIN customers c ON c.id = d.customer_id
     LEFT JOIN units u ON u.id = d.unit_id
@@ -51,6 +54,7 @@ function getDealAlerts(dealershipId) {
       vehicle: vehicleName(row),
       unit_id: row.unit_id,
       created_at: row.created_at,
+      checklist_outstanding: Number(row.checklist_outstanding || 0),
     }));
 }
 
@@ -146,6 +150,11 @@ function priorityScore(type, ageDays, id) {
   return (2 - categoryRank) * 10_000_000 + Math.max(0, Number(ageDays) || 0) * 1000 - (Number(id) / 1e9);
 }
 
+function checklistNote(row) {
+  const n = Number(row.checklist_outstanding || 0);
+  return n ? ` ${plural(n, 'checklist item')} outstanding.` : '';
+}
+
 function toPriority(type, row) {
   const ageDays = row.age_days || 0;
   const base = {
@@ -160,7 +169,7 @@ function toPriority(type, row) {
     return {
       ...base,
       title: `Follow up with ${row.customer_name}`,
-      reason: `Pending for ${plural(ageDays, 'day')} with no status update.`,
+      reason: `Pending for ${plural(ageDays, 'day')} with no status update.${checklistNote(row)}`,
       next_step: `Contact ${row.customer_name} to confirm the deal is still moving forward.`,
       // Name-free version of reason/next_step, used ONLY as the input sent
       // to the AI-guidance service (services/priorityGuidance.js). The
@@ -168,7 +177,10 @@ function toPriority(type, row) {
       // unnecessary personal data for an AI request whose whole job is to
       // rephrase a generic situation, so it's deliberately never included in
       // what gets sent.
-      ai_context: `A deal has been pending for ${plural(ageDays, 'day')} with no status update.`,
+      // Only the numeric outstanding-checklist count is shared; never item
+      // labels, notes, or reasons.
+      ai_context: `A deal has been pending for ${plural(ageDays, 'day')} with no status update.${checklistNote(row)}`,
+      checklist_outstanding: Number(row.checklist_outstanding || 0),
       status: 'pending',
       vehicle: row.vehicle,
       link: '/deals',
@@ -311,10 +323,7 @@ router.get('/', ...requirePermission('reports_view'), (req, res) => {
   const paperworkIncomplete = db.prepare(`
     SELECT COUNT(*) AS count FROM deals d
     WHERE d.dealership_id = ? AND d.status = 'pending'
-      AND EXISTS (
-        SELECT 1 FROM documents docs
-        WHERE docs.deal_id = d.id AND docs.status = 'missing'
-      )
+      AND ${dealChecklist.OUTSTANDING_COUNT_SQL} > 0
   `).get(dealershipId).count || 0;
 
   res.json({
@@ -366,47 +375,27 @@ router.post('/deal-alert/:id/action', ...requirePermission('deals_manage'), (req
   if (!deal) return res.status(404).json({ error: 'Deal not found' });
 
   const now = new Date().toISOString();
-  let status = deal.status;
-  let closedAt = deal.closed_at;
-  if (action === 'dead') status = 'dead';
-  if (action === 'vehicle_changed') status = 'vehicle_changed';
-  // Closing a deal records a retail-sold disposition (no amount, so
-  // sold_price stays null) for its linked active vehicle, through the same
-  // disposition service. The deal update and the disposition commit together
-  // or not at all. Entering or correcting a sale price later still needs the
-  // inventory pricing permission.
-  if (action === 'closed') {
-    status = 'closed';
-    closedAt = now;
-  }
-
+  let result = null;
   try {
     db.transaction(() => {
-      if (action === 'closed' && deal.unit_id) {
-        const unit = db.prepare('SELECT id, stage FROM units WHERE id = ? AND dealership_id = ?').get(deal.unit_id, req.user.dealership_id);
-        if (unit && !inventoryTruth.TERMINAL_STAGES.has(unit.stage)) {
-          inventoryTruth.recordDisposition(db, {
-            dealershipId: req.user.dealership_id, unitId: unit.id, actorId: req.user.id,
-            body: { outcome: 'retail_sold', note: 'Recorded when the deal was closed' }, canPrice: true,
-          });
-        }
+      if (action === 'closed') {
+        result = closeDeal(db, { dealershipId: req.user.dealership_id, dealId: deal.id, actorId: req.user.id, markStatusChecked: true });
+      } else {
+        const status = action === 'still_pending' ? deal.status : action;
+        db.prepare('UPDATE deals SET status = ?, last_status_check_at = ? WHERE id = ? AND dealership_id = ?')
+          .run(status, now, deal.id, req.user.dealership_id);
       }
-
-      db.prepare(`
-        UPDATE deals SET status = ?, closed_at = ?, last_status_check_at = ?
-        WHERE id = ? AND dealership_id = ?
-      `).run(status, closedAt, now, req.params.id, req.user.dealership_id);
-
       db.prepare(`INSERT INTO activity_logs (dealership_id, entity_type, entity_id, action, note, user_id)
         VALUES (?, 'deal', ?, ?, ?, ?)`)
-        .run(req.user.dealership_id, req.params.id, 'Deal alert resolved', action, req.user.id);
+        .run(req.user.dealership_id, deal.id, 'Deal alert resolved', action, req.user.id);
     })();
   } catch (err) {
     console.error('Deal alert action failed', err);
     return res.status(500).json({ error: 'Could not update the deal. Nothing was changed.' });
   }
 
-  res.json({ ok: true });
+  const warning = result ? checklistWarning(result.outstanding_checklist_items) : null;
+  res.json({ ok: true, ...(warning ? { warning, outstanding_checklist_items: result.outstanding_checklist_items } : {}) });
 });
 
 router.post('/unit-alert/:id/action', requireAuth, (req, res) => {

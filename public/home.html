@@ -348,7 +348,8 @@ function customerOptions() {
 
 async function resolveDealAlert(action) {
   try {
-    await UN.api('POST', `/api/dashboard/deal-alert/${activeAlert.id}/action`, { action });
+    const result = await UN.api('POST', `/api/dashboard/deal-alert/${activeAlert.id}/action`, { action });
+    if (result && result.warning) toast(`Deal closed. ${result.warning}`);
     await refreshAfterAlert();
   } catch (err) {
     toast(err.message, 'err');

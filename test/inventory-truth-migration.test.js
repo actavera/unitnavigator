@@ -22,7 +22,7 @@ function runMigration(dataDir) {
   });
 }
 
-test('upgrades a pre-feature database without touching existing data, idempotently', () => {
+test('upgrades a pre-feature database (inventory truth and deal checklist) without touching existing data, idempotently', () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'unitnav-truth-migration-'));
   try {
     runMigration(dataDir);
@@ -33,6 +33,8 @@ test('upgrades a pre-feature database without touching existing data, idempotent
     legacy.exec(`
       DROP TABLE unit_assignments;
       DROP TABLE unit_dispositions;
+      DROP TABLE deal_checklist_items;
+      DROP TABLE deal_checklist_events;
       ALTER TABLE units DROP COLUMN assigned_user_id;
       ALTER TABLE dealerships DROP COLUMN inventory_review_interval_days;
     `);
@@ -52,7 +54,7 @@ test('upgrades a pre-feature database without touching existing data, idempotent
       assert.equal(unit.assigned_user_id, null);
       assert.equal(unit.last_age_check_at, '2026-09-20T10:00:00.000Z');
       assert.equal(unit.stage, 'ready');
-      for (const table of ['unit_assignments', 'unit_dispositions']) {
+      for (const table of ['unit_assignments', 'unit_dispositions', 'deal_checklist_items', 'deal_checklist_events']) {
         assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table), `${table} exists`);
         assert.equal(db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n, 0);
       }

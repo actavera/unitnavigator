@@ -225,6 +225,29 @@
   </div>
 </div>
 
+<div class="draft-modal" id="dealModal" role="dialog" aria-modal="true" aria-labelledby="dealModalTitle">
+  <div class="draft-panel">
+    <h2 id="dealModalTitle">Deal</h2>
+    <div class="hint" id="dealModalFacts"></div>
+    <h3 style="margin:14px 0 6px;font-size:1rem;">Document checklist</h3>
+    <p class="hint">Tracks what this deal still needs. Status only: documents are not stored here and nothing is sent to the customer.</p>
+    <div id="checklistSummary" class="draft-status"></div>
+    <div id="checklistItems"></div>
+    <div class="draft-actions" id="checklistAddRow">
+      <button class="btn btn-ghost btn-sm" type="button" onclick="addStandardChecklist()">Add standard items</button>
+      <input class="form-input" id="checklistNewLabel" maxlength="80" placeholder="Other item or lender stipulation" style="flex:1;min-width:160px;">
+      <select class="form-select" id="checklistNewType" style="max-width:170px;">
+        <option value="custom">Other</option>
+        <option value="lender_stipulation">Lender stipulation</option>
+      </select>
+      <button class="btn btn-ghost btn-sm" type="button" onclick="addChecklistItem()">Add</button>
+    </div>
+    <div class="draft-actions">
+      <button class="btn btn-ghost btn-sm" type="button" onclick="closeDealModal()">Close</button>
+    </div>
+  </div>
+</div>
+
 <script src="/js/nav.js"></script>
 <script>
 if (UN.requireAuth()) UN.renderNav();
@@ -386,7 +409,7 @@ function dealCard(deal) {
       <div class="deal-meta">
         <div><span>Last activity</span><strong>${esc(deal.last_activity)}</strong></div>
         <div><span>Next follow-up</span><strong>${followText}</strong></div>
-        <div><span>Missing docs</span><strong>${deal.missing_docs}</strong></div>
+        <div><span>Checklist outstanding</span><strong>${deal.missing_docs}</strong></div>
       </div>
       <div class="deal-actions">
         <button class="btn btn-ghost btn-sm" onclick="openDeal(${deal.id})">Open Deal</button>
@@ -469,17 +492,111 @@ function esc(value) {
   }[ch]));
 }
 
+let checklistDealId = null;
+let checklistData = null;
+const CHECKLIST_STATUS_LABELS = { required: 'Required', received: 'Received', approved: 'Approved', rejected: 'Rejected', waived: 'Waived' };
+
 function openDeal(id) {
   const deal = deals.find(d => d.id === id);
   if (!deal) return;
-  alert([
-    deal.customer_name,
-    deal.vehicle,
-    deal.deal_type_label,
-    deal.email || 'No email',
-    deal.phone || 'No phone',
-    `Missing docs: ${deal.missing_docs}`,
-  ].join('\\n'));
+  checklistDealId = Number(id);
+  document.getElementById('dealModalTitle').textContent = deal.customer_name;
+  document.getElementById('dealModalFacts').textContent = [deal.vehicle, deal.deal_type_label, deal.email || 'No email', deal.phone || 'No phone'].join(' · ');
+  document.getElementById('checklistAddRow').style.display = UN.can('deals_manage') ? '' : 'none';
+  document.getElementById('checklistItems').innerHTML = '';
+  document.getElementById('checklistSummary').textContent = 'Loading checklist…';
+  document.getElementById('dealModal').classList.add('show');
+  loadChecklist();
+}
+
+function closeDealModal() {
+  document.getElementById('dealModal').classList.remove('show');
+  checklistDealId = null;
+}
+
+async function loadChecklist() {
+  try {
+    renderChecklist(await UN.api('GET', `/api/deals/${checklistDealId}/checklist`));
+  } catch (e) {
+    document.getElementById('checklistSummary').textContent = e.message;
+  }
+}
+
+// Actions shown follow the server's rules: deals_manage marks received;
+// paperwork_manage approves, rejects, waives, or reopens.
+function checklistActions(item) {
+  const s = item.status;
+  const canDeals = UN.can('deals_manage');
+  const canPaper = UN.can('paperwork_manage');
+  const out = [];
+  if (canDeals && (s === 'required' || s === 'rejected')) out.push(['received', 'Mark received']);
+  if (canPaper && s === 'received') out.push(['approved', 'Approve'], ['rejected', 'Reject']);
+  if (canPaper && item.effective_status === 'received' && s !== 'received' && s !== 'approved') out.push(['received', 'Mark received']);
+  if (canPaper && ['required', 'received', 'rejected'].includes(s)) out.push(['waived', 'Waive']);
+  if (canPaper && (s === 'approved' || s === 'waived')) out.push(['required', 'Reopen']);
+  return out.filter((a, i, all) => all.findIndex(b => b[0] === a[0]) === i);
+}
+
+function renderChecklist(data) {
+  checklistData = data;
+  const { items, summary } = data;
+  document.getElementById('checklistSummary').textContent = items.length
+    ? `${summary.outstanding} of ${summary.total} outstanding`
+    : 'No checklist yet. Add the standard items for this deal type, or add your own.';
+  document.getElementById('checklistItems').innerHTML = items.map(item => {
+    const effective = item.effective_status;
+    const signed = item.esign_envelope_id && effective !== item.status ? ' · e-sign completed' : '';
+    const note = item.note ? `<div class="hint">${esc(item.note)}</div>` : (item.note_hidden ? '<div class="hint">Note hidden (needs paperwork access)</div>' : '');
+    const buttons = checklistActions(item).map(([to, label]) =>
+      `<button class="btn btn-ghost btn-sm" type="button" onclick="setChecklistStatus(${Number(item.id)}, '${to}')">${esc(label)}</button>`).join('');
+    return `
+      <div class="draft-field" style="border-top:1px solid var(--border);padding-top:8px;">
+        <strong>${esc(item.label)}</strong>
+        <span class="hint"> · ${esc(CHECKLIST_STATUS_LABELS[effective] || effective)}${esc(signed)}${item.due_date ? ' · due ' + esc(item.due_date) : ''}</span>
+        ${note}
+        <div class="draft-actions" style="margin-top:6px;">${buttons}</div>
+      </div>`;
+  }).join('');
+}
+
+async function addStandardChecklist() {
+  try {
+    const data = await UN.api('POST', `/api/deals/${checklistDealId}/checklist/standard`, {});
+    renderChecklist(data);
+    toast(data.added ? `${data.added} item${data.added === 1 ? '' : 's'} added` : 'Standard items are already on this checklist');
+    await refreshDeals();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function addChecklistItem() {
+  const label = document.getElementById('checklistNewLabel').value.trim();
+  if (!label) return toast('Name the item first', 'err');
+  try {
+    renderChecklist(await UN.api('POST', `/api/deals/${checklistDealId}/checklist`, { item_key: document.getElementById('checklistNewType').value, label }));
+    document.getElementById('checklistNewLabel').value = '';
+    await refreshDeals();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function setChecklistStatus(itemId, status) {
+  const body = { status };
+  if (status === 'waived' || status === 'rejected' || status === 'required') {
+    const reason = prompt(status === 'required' ? 'Why is this being reopened?' : `Why is this item ${status}?`);
+    if (!reason || !reason.trim()) return;
+    body.reason = reason.trim();
+  }
+  try {
+    renderChecklist(await UN.api('PATCH', `/api/deals/${checklistDealId}/checklist/${Number(itemId)}`, body));
+    await refreshDeals();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function refreshDeals() {
+  try {
+    const data = await UN.api('GET', '/api/deals?status=all');
+    deals = data.deals || deals;
+    renderSummary(); renderDeals(); renderFollowUpAlert();
+  } catch { /* the board refreshes on the next load */ }
 }
 
 async function openClient(id) {
@@ -516,7 +633,7 @@ async function markStatus(id, status) {
     const data = await UN.api('PATCH', `/api/deals/${id}/status`, { status });
     deals = deals.map(deal => deal.id === id ? data.deal : deal);
     renderSummary(); renderDeals(); renderFollowUpAlert();
-    toast(`Deal marked ${statusLabel(status)}`);
+    toast(data.warning ? `Deal marked ${statusLabel(status)}. ${data.warning}` : `Deal marked ${statusLabel(status)}`);
   } catch(e) { toast(e.message, 'err'); }
 }
 
