@@ -222,6 +222,24 @@
       </div>
     </article>
     <article class="settings-card full">
+      <div class="settings-card-head"><h2>Customer Reminders</h2></div>
+      <div class="settings-card-body">
+        <p class="settings-note">Automatic reminders for outstanding deal checklist items. They go only to customers who have consented, list only the item names, and stop after the attempt limit, when the deal is flagged for staff follow-up. Texts include "Reply STOP to opt out"; emails include an unsubscribe link.</p>
+        <p class="settings-note" id="messagingStatus"></p>
+        <div class="settings-form-grid">
+          <div class="form-group"><label class="form-label" for="reminders_email_enabled">Email reminders</label><select class="form-select" id="reminders_email_enabled"><option value="0">Off</option><option value="1">On</option></select></div>
+          <div class="form-group"><label class="form-label" for="reminders_sms_enabled">Text reminders</label><select class="form-select" id="reminders_sms_enabled"><option value="0">Off</option><option value="1">On</option></select></div>
+          <div class="form-group"><label class="form-label" for="reminder_first_after_days">First reminder after (days, 0–30)</label><input class="form-input" id="reminder_first_after_days" type="number" min="0" max="30" step="1"></div>
+          <div class="form-group"><label class="form-label" for="reminder_interval_days">Days between reminders (1–30)</label><input class="form-input" id="reminder_interval_days" type="number" min="1" max="30" step="1"></div>
+          <div class="form-group"><label class="form-label" for="reminder_max_attempts">Attempts before staff follow-up (1–10)</label><input class="form-input" id="reminder_max_attempts" type="number" min="1" max="10" step="1"></div>
+          <div class="form-group"><label class="form-label" for="timezone">Time zone (sends 9am–6pm)</label><select class="form-select" id="timezone">
+            <option value="America/Denver">Mountain</option><option value="America/Phoenix">Arizona</option><option value="America/Los_Angeles">Pacific</option>
+            <option value="America/Chicago">Central</option><option value="America/New_York">Eastern</option></select></div>
+        </div>
+      </div>
+    </article>
+
+    <article class="settings-card full">
       <div class="settings-card-head"><h2>Inventory Review</h2></div>
       <div class="settings-card-body">
         <p class="settings-note">How often each active vehicle should be reviewed. A review that is ignored for another full interval is escalated for manager attention.</p>
@@ -253,6 +271,7 @@ const SETTING_FIELDS = [
   'default_doc_fee', 'default_filing_fee', 'default_lender_fee', 'default_license_fee', 'default_plate_fee',
   'default_age_property_tax', 'default_title_fee', 'default_emissions_fee', 'default_tax_rate',
   'inventory_review_interval_days',
+  'reminders_email_enabled', 'reminders_sms_enabled', 'reminder_first_after_days', 'reminder_interval_days', 'reminder_max_attempts', 'timezone',
 ];
 
 async function initSettings() {
@@ -289,6 +308,8 @@ async function loadSettings() {
       const el = document.getElementById(field);
       if (el) el.value = dealer[field] ?? '';
     });
+    const configured = data.messaging || {};
+    document.getElementById('messagingStatus').textContent = `Sending setup: email ${configured.email ? 'ready' : 'not set up yet'}, text ${configured.sms ? 'ready' : 'not set up yet'}. Nothing is sent until sending is set up and the channel is on.`;
     updateLogoPreview();
     updateShareImagePreview();
     updateShowroomPreview();

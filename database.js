@@ -5,6 +5,7 @@ const { ensurePrivateDataDir, ensurePrivateDbFiles, assertPrivate } = require('.
 const { SCHEMA_SQL: IMPORT_HISTORY_SCHEMA } = require('./services/importHistory');
 const { SCHEMA_SQL: INVENTORY_TRUTH_SCHEMA } = require('./services/inventoryTruth');
 const { SCHEMA_SQL: DEAL_CHECKLIST_SCHEMA } = require('./services/dealChecklist');
+const { SCHEMA_SQL: REMINDERS_SCHEMA } = require('./services/reminders');
 
 const dataDir = process.env.UNITNAV_DATA_DIR
   ? path.resolve(process.env.UNITNAV_DATA_DIR)
@@ -377,6 +378,13 @@ addDealershipColumn('dealercenter_sftp_username', 'dealercenter_sftp_username TE
 // Inventory review interval (7-90 days). Existing dealerships get 30, the
 // interval the aging alerts have always used.
 addDealershipColumn('inventory_review_interval_days', 'inventory_review_interval_days INTEGER DEFAULT 30');
+// Missing-document reminders: every channel starts disabled.
+addDealershipColumn('reminders_email_enabled', 'reminders_email_enabled INTEGER DEFAULT 0');
+addDealershipColumn('reminders_sms_enabled', 'reminders_sms_enabled INTEGER DEFAULT 0');
+addDealershipColumn('reminder_first_after_days', 'reminder_first_after_days INTEGER DEFAULT 2');
+addDealershipColumn('reminder_interval_days', 'reminder_interval_days INTEGER DEFAULT 3');
+addDealershipColumn('reminder_max_attempts', 'reminder_max_attempts INTEGER DEFAULT 3');
+addDealershipColumn('timezone', "timezone TEXT DEFAULT 'America/Denver'");
 
 db.prepare(`
   UPDATE dealerships
@@ -402,6 +410,9 @@ db.exec(INVENTORY_TRUTH_SCHEMA);
 
 // Per-deal document checklist and its status history (additive).
 db.exec(DEAL_CHECKLIST_SCHEMA);
+
+// Communications: consent history, message attempts, per-deal reminder state.
+db.exec(REMINDERS_SCHEMA);
 
 function slugify(value) {
   return String(value || '')

@@ -7,6 +7,8 @@ const multer = require('multer');
 const crypto = require('crypto');
 const db = require('../database');
 const importHistory = require('../services/importHistory');
+const reminders = require('../services/reminders');
+const messaging = require('../services/messaging');
 const { validInterval: validReviewInterval, MIN_REVIEW_INTERVAL_DAYS, MAX_REVIEW_INTERVAL_DAYS } = require('../services/inventoryTruth');
 const { requireAuth, requireRole, hasPermission, parsePermissions, ALL_PERMISSIONS } = require('../middleware/auth');
 const { finalizeUploadedImage } = require('../services/imageSignature');
@@ -99,8 +101,32 @@ function canViewDealerSettings(req, dealershipId) {
   return Number(req.user.dealership_id) === Number(dealershipId);
 }
 
+const REMINDER_SETTING_FIELDS = ['reminders_email_enabled', 'reminders_sms_enabled', 'reminder_first_after_days', 'reminder_interval_days', 'reminder_max_attempts', 'timezone'];
+
+// Reminder settings are validated on their own; omitted fields keep their
+// saved values. Returns { values } or { error }.
+function reminderSettings(body, existing) {
+  const values = {};
+  for (const field of ['reminders_email_enabled', 'reminders_sms_enabled']) {
+    values[field] = body[field] === undefined || body[field] === '' ? Number(existing[field]) || 0 : (body[field] === true || body[field] === 1 || body[field] === '1' || body[field] === 'true' ? 1 : 0);
+  }
+  const ranges = { reminder_first_after_days: 'first_after_days', reminder_interval_days: 'interval_days', reminder_max_attempts: 'max_attempts' };
+  for (const [field, key] of Object.entries(ranges)) {
+    const raw = body[field];
+    if (raw === undefined || raw === null || raw === '') { values[field] = existing[field] ?? reminders.DEFAULTS[key]; continue; }
+    const n = Number(raw);
+    const [min, max] = reminders.LIMITS[key];
+    if (!Number.isInteger(n) || n < min || n > max) return { error: `${field.replace(/_/g, ' ')} must be a whole number from ${min} to ${max}.` };
+    values[field] = n;
+  }
+  const tz = body.timezone === undefined || body.timezone === '' ? existing.timezone || reminders.DEFAULTS.timezone : String(body.timezone);
+  if (!reminders.validTimezone(tz)) return { error: 'Time zone is not recognized.' };
+  values.timezone = tz;
+  return { values };
+}
+
 function settingsRow(id) {
-  return db.prepare(`SELECT ${DEALER_SETTING_FIELDS.join(', ')}, inventory_review_interval_days, id, status, created_at FROM dealerships WHERE id = ?`).get(id);
+  return db.prepare(`SELECT ${DEALER_SETTING_FIELDS.join(', ')}, inventory_review_interval_days, ${REMINDER_SETTING_FIELDS.join(', ')}, id, status, created_at FROM dealerships WHERE id = ?`).get(id);
 }
 
 function normalizeEmail(email) {
@@ -148,7 +174,9 @@ router.get('/dealership-settings', requireAuth, (req, res) => {
   if (!canViewDealerSettings(req, dealershipId)) return res.status(403).json({ error: 'Insufficient permissions' });
   const dealership = settingsRow(dealershipId);
   if (!dealership) return res.status(404).json({ error: 'Dealership not found' });
-  res.json({ dealership });
+  // Whether each reminder channel's provider is configured on the server
+  // (booleans only; credentials are never returned).
+  res.json({ dealership, messaging: messaging.providerStatus() });
 });
 
 router.put('/dealership-settings', requireAuth, (req, res) => {
@@ -178,6 +206,8 @@ router.put('/dealership-settings', requireAuth, (req, res) => {
     }
     reviewInterval = Number(rawInterval);
   }
+  const reminderResult = reminderSettings(req.body, existing);
+  if (reminderResult.error) return res.status(400).json({ error: reminderResult.error });
   if (!values.legal_name) values.legal_name = values.name;
   if (!values.state) values.state = 'UT';
   values.public_site_enabled = values.public_site_enabled ? 1 : 0;
@@ -192,9 +222,9 @@ router.put('/dealership-settings', requireAuth, (req, res) => {
   if (!values.public_apr_options) values.public_apr_options = '9.99,7.99,12.99,18.99';
 
   const assignments = DEALER_SETTING_FIELDS.map(field => `${field} = ?`).join(', ');
-  db.prepare(`UPDATE dealerships SET ${assignments}, inventory_review_interval_days = ? WHERE id = ?`)
-    .run(...DEALER_SETTING_FIELDS.map(field => values[field]), reviewInterval, dealershipId);
-  res.json({ dealership: settingsRow(dealershipId) });
+  db.prepare(`UPDATE dealerships SET ${assignments}, inventory_review_interval_days = ?, ${REMINDER_SETTING_FIELDS.map(f => `${f} = ?`).join(', ')} WHERE id = ?`)
+    .run(...DEALER_SETTING_FIELDS.map(field => values[field]), reviewInterval, ...REMINDER_SETTING_FIELDS.map(f => reminderResult.values[f]), dealershipId);
+  res.json({ dealership: settingsRow(dealershipId), messaging: messaging.providerStatus() });
 });
 
 router.post('/dealership-settings/logo', requireAuth, logoUpload.single('logo'), (req, res) => {

@@ -36,7 +36,8 @@ function dueDeal(row) {
 function getDealAlerts(dealershipId) {
   return db.prepare(`
     SELECT d.*, c.first_name, c.last_name, c.phone, c.email, u.year, u.make, u.model, u.vin,
-      ${dealChecklist.OUTSTANDING_COUNT_SQL} AS checklist_outstanding
+      ${dealChecklist.OUTSTANDING_COUNT_SQL} AS checklist_outstanding,
+      (SELECT escalated_at FROM deal_reminder_state rs WHERE rs.dealership_id = d.dealership_id AND rs.deal_id = d.id) AS reminders_escalated_at
     FROM deals d
     LEFT JOIN customers c ON c.id = d.customer_id
     LEFT JOIN units u ON u.id = d.unit_id
@@ -55,6 +56,7 @@ function getDealAlerts(dealershipId) {
       unit_id: row.unit_id,
       created_at: row.created_at,
       checklist_outstanding: Number(row.checklist_outstanding || 0),
+      reminders_escalated: Boolean(row.reminders_escalated_at) && Number(row.checklist_outstanding || 0) > 0,
     }));
 }
 
@@ -152,7 +154,7 @@ function priorityScore(type, ageDays, id) {
 
 function checklistNote(row) {
   const n = Number(row.checklist_outstanding || 0);
-  return n ? ` ${plural(n, 'checklist item')} outstanding.` : '';
+  return n ? ` ${plural(n, 'checklist item')} outstanding${row.reminders_escalated ? '; customer reminders exhausted' : ''}.` : '';
 }
 
 function toPriority(type, row) {
@@ -326,6 +328,13 @@ router.get('/', ...requirePermission('reports_view'), (req, res) => {
       AND ${dealChecklist.OUTSTANDING_COUNT_SQL} > 0
   `).get(dealershipId).count || 0;
 
+  // Pending deals whose customer reminders ran out with items still outstanding.
+  const remindersEscalated = db.prepare(`
+    SELECT COUNT(*) AS count FROM deals d
+    JOIN deal_reminder_state rs ON rs.dealership_id = d.dealership_id AND rs.deal_id = d.id AND rs.escalated_at IS NOT NULL
+    WHERE d.dealership_id = ? AND d.status = 'pending' AND ${dealChecklist.OUTSTANDING_COUNT_SQL} > 0
+  `).get(dealershipId).count || 0;
+
   res.json({
     metrics: {
       deals_need_follow_up: dealAlerts.length,
@@ -333,6 +342,7 @@ router.get('/', ...requirePermission('reports_view'), (req, res) => {
       missing_acquisition_cost: missingAcquisitionCost,
       paperwork_incomplete: paperworkIncomplete,
       stale_user_logins: staleUserAlerts.length,
+      reminders_escalated: remindersEscalated,
       inventory_reviews_due: unitAlerts.length,
       inventory_reviews_escalated: unitAlerts.filter(alert => alert.escalated).length,
     },

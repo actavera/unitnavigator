@@ -35,6 +35,9 @@ test('upgrades a pre-feature database (inventory truth and deal checklist) witho
       DROP TABLE unit_dispositions;
       DROP TABLE deal_checklist_items;
       DROP TABLE deal_checklist_events;
+      DROP TABLE communication_consents;
+      DROP TABLE communication_messages;
+      DROP TABLE deal_reminder_state;
       ALTER TABLE units DROP COLUMN assigned_user_id;
       ALTER TABLE dealerships DROP COLUMN inventory_review_interval_days;
     `);
@@ -50,11 +53,12 @@ test('upgrades a pre-feature database (inventory truth and deal checklist) witho
     try {
       assert.ok(db.prepare('PRAGMA table_info(units)').all().some(c => c.name === 'assigned_user_id'));
       assert.equal(db.prepare('SELECT inventory_review_interval_days AS d FROM dealerships WHERE id = ?').get(dealershipId).d, 30);
+      assert.deepEqual(db.prepare('SELECT reminders_email_enabled AS e, reminders_sms_enabled AS s FROM dealerships WHERE id = ?').get(dealershipId), { e: 0, s: 0 }, 'existing dealerships start with reminders off');
       const unit = db.prepare('SELECT * FROM units WHERE id = ?').get(unitId);
       assert.equal(unit.assigned_user_id, null);
       assert.equal(unit.last_age_check_at, '2026-09-20T10:00:00.000Z');
       assert.equal(unit.stage, 'ready');
-      for (const table of ['unit_assignments', 'unit_dispositions', 'deal_checklist_items', 'deal_checklist_events']) {
+      for (const table of ['unit_assignments', 'unit_dispositions', 'deal_checklist_items', 'deal_checklist_events', 'communication_consents', 'communication_messages', 'deal_reminder_state']) {
         assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table), `${table} exists`);
         assert.equal(db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n, 0);
       }

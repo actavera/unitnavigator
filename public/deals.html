@@ -242,6 +242,9 @@
       </select>
       <button class="btn btn-ghost btn-sm" type="button" onclick="addChecklistItem()">Add</button>
     </div>
+    <h3 style="margin:14px 0 6px;font-size:1rem;">Customer reminders</h3>
+    <p class="hint">Automatic reminders list only the outstanding item names. They go out only with the customer's consent, when the dealership has turned the channel on.</p>
+    <div id="reminderPanel"></div>
     <div class="draft-actions">
       <button class="btn btn-ghost btn-sm" type="button" onclick="closeDealModal()">Close</button>
     </div>
@@ -506,7 +509,9 @@ function openDeal(id) {
   document.getElementById('checklistItems').innerHTML = '';
   document.getElementById('checklistSummary').textContent = 'Loading checklist…';
   document.getElementById('dealModal').classList.add('show');
+  document.getElementById('reminderPanel').innerHTML = '';
   loadChecklist();
+  loadReminders();
 }
 
 function closeDealModal() {
@@ -557,6 +562,51 @@ function renderChecklist(data) {
         <div class="draft-actions" style="margin-top:6px;">${buttons}</div>
       </div>`;
   }).join('');
+}
+
+const CHANNEL_LABELS = { email: 'Email', sms: 'Text' };
+const CONSENT_LABELS = { opted_in: 'Opted in', opted_out: 'Opted out', none: 'No consent recorded' };
+const CONSENT_SOURCES = { sms_stop: ' (replied STOP)', email_unsubscribe: ' (unsubscribed)', sms_start: ' (replied START)' };
+
+async function loadReminders() {
+  try { renderReminders(await UN.api('GET', `/api/deals/${checklistDealId}/communications`)); }
+  catch (e) { document.getElementById('reminderPanel').textContent = e.message; }
+}
+
+function renderReminders(data) {
+  const canManage = UN.can('deals_manage');
+  const rows = data.channels.map(ch => {
+    const blockers = [
+      !ch.dealership_enabled ? 'turned off in dealership settings' : '',
+      !ch.provider_configured ? 'sending not set up yet' : '',
+      !ch.has_address ? (ch.channel === 'email' ? 'no valid email on file' : 'no valid mobile number on file') : '',
+    ].filter(Boolean);
+    const action = !canManage ? '' : ch.consent === 'opted_in'
+      ? `<button class="btn btn-ghost btn-sm" type="button" onclick="setReminderConsent('${ch.channel}', 'opted_out')">Opt out</button>`
+      : `<button class="btn btn-ghost btn-sm" type="button" onclick="setReminderConsent('${ch.channel}', 'opted_in')">Record consent</button>`;
+    return `<div class="draft-field" style="border-top:1px solid var(--border);padding-top:8px;">
+      <strong>${esc(CHANNEL_LABELS[ch.channel])}</strong>
+      <span class="hint"> · ${esc(CONSENT_LABELS[ch.consent] || ch.consent)}${esc(CONSENT_SOURCES[ch.consent_source] || '')}${blockers.length ? ' · not sending: ' + esc(blockers.join(', ')) : ''}</span>
+      <div class="draft-actions" style="margin-top:6px;">${action}</div>
+    </div>`;
+  }).join('');
+  const st = data.state || {};
+  const status = st.escalated_at
+    ? '<div class="draft-status">Reminders exhausted; follow up with the customer directly.</div>'
+    : st.attempts ? `<div class="hint">${Number(st.attempts)} reminder attempt${Number(st.attempts) === 1 ? '' : 's'} so far.</div>` : '';
+  const history = (data.messages || []).slice(0, 5).map(m =>
+    `<div class="hint">${esc(CHANNEL_LABELS[m.channel])} to ${esc(m.to_address)} · ${esc(m.status)}${m.error ? ' · ' + esc(m.error) : ''} · ${esc(UN.fmt && UN.fmt.ago ? UN.fmt.ago(m.created_at) : m.created_at)}</div>`).join('');
+  document.getElementById('reminderPanel').innerHTML = rows + status + history;
+}
+
+async function setReminderConsent(channel, status) {
+  const body = { channel, status };
+  if (status === 'opted_in') {
+    if (!confirm(`Confirm the customer agreed to receive ${channel === 'sms' ? 'text' : 'email'} reminders about this deal's paperwork.`)) return;
+    body.attested = true;
+  }
+  try { renderReminders(await UN.api('POST', `/api/deals/${checklistDealId}/communications/consent`, body)); toast('Reminder consent updated'); }
+  catch (e) { toast(e.message, 'err'); }
 }
 
 async function addStandardChecklist() {

@@ -6,6 +6,7 @@ const { buildFollowUpDraft, FollowUpError } = require('../services/followUpDraft
 const { requireAuth, requirePermission, hasPermission } = require('../middleware/auth');
 const dealChecklist = require('../services/dealChecklist');
 const { closeDeal, checklistWarning } = require('../services/dealClose');
+const reminders = require('../services/reminders');
 
 const VALID_STATUSES = new Set(['pending', 'closed', 'dead', 'vehicle_changed']);
 const VALID_DEAL_TYPES = new Set(['we_finance', 'bhph', 'they_finance', 'cash']);
@@ -327,6 +328,24 @@ router.delete('/:id/checklist/:itemId', ...requirePermission('deals_manage'), (r
   } catch (err) { checklistError(res, err); }
 });
 
+// ── Reminder consent and history ────────────────────────────────────────────
+function reminderError(res, err) {
+  if (err instanceof reminders.ReminderError) return res.status(err.statusCode).json({ error: err.message });
+  console.error('Reminder request failed', err);
+  return res.status(500).json({ error: 'Could not update reminder settings' });
+}
+
+router.get('/:id/communications', ...requirePermission('deals_view'), (req, res) => {
+  try { res.json(reminders.dealCommunications(db, { dealershipId: req.user.dealership_id, dealId: req.params.id })); } catch (err) { reminderError(res, err); }
+});
+
+router.post('/:id/communications/consent', ...requirePermission('deals_manage'), (req, res) => {
+  try {
+    reminders.setDealConsent(db, { dealershipId: req.user.dealership_id, dealId: req.params.id, actorId: req.user.id, body: req.body || {} });
+    res.json(reminders.dealCommunications(db, { dealershipId: req.user.dealership_id, dealId: req.params.id }));
+  } catch (err) { reminderError(res, err); }
+});
+
 router.delete('/:id', ...requirePermission('deals_manage'), (req, res) => {
   const deal = db.prepare('SELECT * FROM deals WHERE id = ? AND dealership_id = ?')
     .get(req.params.id, req.user.dealership_id);
@@ -334,6 +353,7 @@ router.delete('/:id', ...requirePermission('deals_manage'), (req, res) => {
 
   db.transaction(() => {
     dealChecklist.deleteForDeals(db, req.user.dealership_id, [deal.id]);
+    reminders.deleteForDeals(db, req.user.dealership_id, [deal.id]);
     db.prepare('DELETE FROM documents WHERE deal_id = ? AND dealership_id = ?').run(deal.id, req.user.dealership_id);
     db.prepare('DELETE FROM activity_logs WHERE entity_type = ? AND entity_id = ? AND dealership_id = ?')
       .run('deal', deal.id, req.user.dealership_id);
