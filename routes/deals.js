@@ -3,7 +3,9 @@ const router = require('express').Router();
 const db = require('../database');
 const { safeText, safePhone } = require('../services/csv');
 const { buildFollowUpDraft, FollowUpError } = require('../services/followUpDraft');
-const { requireAuth, requirePermission } = require('../middleware/auth');
+const { requireAuth, requirePermission, hasPermission } = require('../middleware/auth');
+const dealChecklist = require('../services/dealChecklist');
+const { closeDeal, checklistWarning } = require('../services/dealClose');
 
 const VALID_STATUSES = new Set(['pending', 'closed', 'dead', 'vehicle_changed']);
 const VALID_DEAL_TYPES = new Set(['we_finance', 'bhph', 'they_finance', 'cash']);
@@ -27,10 +29,9 @@ function dealSelect() {
       d.*,
       c.first_name, c.last_name, c.phone, c.email,
       u.year, u.make, u.model, u.vin,
-      (
-        SELECT COUNT(*) FROM documents docs
-        WHERE docs.deal_id = d.id AND docs.status = 'missing'
-      ) AS missing_docs,
+      -- Outstanding checklist items (required or rejected; a signature item
+      -- with a completed e-sign packet is not outstanding).
+      ${dealChecklist.OUTSTANDING_COUNT_SQL} AS missing_docs,
       (
         SELECT a.action FROM activity_logs a
         WHERE a.entity_type = 'deal' AND a.entity_id = d.id
@@ -227,20 +228,35 @@ router.post('/:id/email-reminder', ...requirePermission('deals_manage'), (req, r
 });
 
 router.patch('/:id/status', ...requirePermission('deals_manage'), (req, res) => {
-  const { status } = req.body;
+  const { status } = req.body || {};
   if (!VALID_STATUSES.has(status)) return res.status(400).json({ error: 'Invalid deal status' });
 
   const deal = db.prepare('SELECT * FROM deals WHERE id = ? AND dealership_id = ?')
     .get(req.params.id, req.user.dealership_id);
   if (!deal) return res.status(404).json({ error: 'Deal not found' });
 
-  const closedAt = status === 'closed' ? new Date().toISOString() : null;
-  db.prepare('UPDATE deals SET status = ?, closed_at = ? WHERE id = ? AND dealership_id = ?')
-    .run(status, closedAt, req.params.id, req.user.dealership_id);
+  // Closing uses the shared close (deal + retail-sold disposition for its
+  // active vehicle, atomically), the same as the dashboard deal alert.
+  let result = null;
+  try {
+    db.transaction(() => {
+      if (status === 'closed' && deal.status !== 'closed') {
+        result = closeDeal(db, { dealershipId: req.user.dealership_id, dealId: deal.id, actorId: req.user.id });
+      } else {
+        const closedAt = status === 'closed' ? deal.closed_at : null;
+        db.prepare('UPDATE deals SET status = ?, closed_at = ? WHERE id = ? AND dealership_id = ?')
+          .run(status, closedAt, deal.id, req.user.dealership_id);
+      }
+      logDeal(req, deal.id, 'Deal status changed', `${deal.status} -> ${status}`);
+    })();
+  } catch (err) {
+    console.error('Deal status change failed', err);
+    return res.status(500).json({ error: 'Could not update the deal. Nothing was changed.' });
+  }
 
-  logDeal(req, req.params.id, 'Deal status changed', `${deal.status} -> ${status}`);
-  const updated = db.prepare(`${dealSelect()} AND d.id = ?`).get(req.user.dealership_id, req.params.id);
-  res.json({ deal: enrichDeal(updated) });
+  const updated = db.prepare(`${dealSelect()} AND d.id = ?`).get(req.user.dealership_id, deal.id);
+  const warning = result ? checklistWarning(result.outstanding_checklist_items) : null;
+  res.json({ deal: enrichDeal(updated), ...(warning ? { warning } : {}) });
 });
 
 router.patch('/:id/follow-up', ...requirePermission('deals_manage'), (req, res) => {
@@ -257,15 +273,72 @@ router.patch('/:id/follow-up', ...requirePermission('deals_manage'), (req, res) 
   res.json({ deal: enrichDeal(updated) });
 });
 
+// ── Customer document checklist ───────────────────────────────────────────
+// Status tracking only: no files are stored and nothing is sent. Labels and
+// statuses are visible with deals_view; notes and reasons on sensitive items
+// need paperwork_manage or credit_pull.
+function checklistError(res, err) {
+  if (err instanceof dealChecklist.ChecklistError) return res.status(err.statusCode).json({ error: err.message });
+  console.error('Checklist request failed', err);
+  return res.status(500).json({ error: 'Could not update the checklist' });
+}
+
+function checklistFor(req) {
+  return dealChecklist.listChecklist(db, {
+    dealershipId: req.user.dealership_id,
+    dealId: req.params.id,
+    canSeeSensitive: hasPermission(req.user, 'paperwork_manage') || hasPermission(req.user, 'credit_pull'),
+  });
+}
+
+router.get('/:id/checklist', ...requirePermission('deals_view'), (req, res) => {
+  try { res.json(checklistFor(req)); } catch (err) { checklistError(res, err); }
+});
+
+router.post('/:id/checklist/standard', ...requirePermission('deals_manage'), (req, res) => {
+  try {
+    const result = dealChecklist.addStandardItems(db, { dealershipId: req.user.dealership_id, dealId: req.params.id, actorId: req.user.id });
+    res.json({ ...result, ...checklistFor(req) });
+  } catch (err) { checklistError(res, err); }
+});
+
+router.post('/:id/checklist', ...requirePermission('deals_manage'), (req, res) => {
+  try {
+    const result = dealChecklist.addItem(db, { dealershipId: req.user.dealership_id, dealId: req.params.id, actorId: req.user.id, body: req.body || {} });
+    res.status(201).json({ ...result, ...checklistFor(req) });
+  } catch (err) { checklistError(res, err); }
+});
+
+router.patch('/:id/checklist/:itemId', requireAuth, (req, res) => {
+  const can = { deals: hasPermission(req.user, 'deals_manage'), paperwork: hasPermission(req.user, 'paperwork_manage') };
+  if (!can.deals && !can.paperwork) return res.status(403).json({ error: 'You do not have access to update this checklist.' });
+  try {
+    const result = dealChecklist.changeStatus(db, {
+      dealershipId: req.user.dealership_id, dealId: req.params.id, itemId: req.params.itemId, actorId: req.user.id, body: req.body || {}, can,
+    });
+    res.json({ ...result, ...checklistFor(req) });
+  } catch (err) { checklistError(res, err); }
+});
+
+router.delete('/:id/checklist/:itemId', ...requirePermission('deals_manage'), (req, res) => {
+  try {
+    dealChecklist.removeItem(db, { dealershipId: req.user.dealership_id, dealId: req.params.id, itemId: req.params.itemId, actorId: req.user.id });
+    res.json(checklistFor(req));
+  } catch (err) { checklistError(res, err); }
+});
+
 router.delete('/:id', ...requirePermission('deals_manage'), (req, res) => {
   const deal = db.prepare('SELECT * FROM deals WHERE id = ? AND dealership_id = ?')
     .get(req.params.id, req.user.dealership_id);
   if (!deal) return res.status(404).json({ error: 'Deal not found' });
 
-  db.prepare('DELETE FROM documents WHERE deal_id = ? AND dealership_id = ?').run(req.params.id, req.user.dealership_id);
-  db.prepare('DELETE FROM activity_logs WHERE entity_type = ? AND entity_id = ? AND dealership_id = ?')
-    .run('deal', req.params.id, req.user.dealership_id);
-  db.prepare('DELETE FROM deals WHERE id = ? AND dealership_id = ?').run(req.params.id, req.user.dealership_id);
+  db.transaction(() => {
+    dealChecklist.deleteForDeals(db, req.user.dealership_id, [deal.id]);
+    db.prepare('DELETE FROM documents WHERE deal_id = ? AND dealership_id = ?').run(deal.id, req.user.dealership_id);
+    db.prepare('DELETE FROM activity_logs WHERE entity_type = ? AND entity_id = ? AND dealership_id = ?')
+      .run('deal', deal.id, req.user.dealership_id);
+    db.prepare('DELETE FROM deals WHERE id = ? AND dealership_id = ?').run(deal.id, req.user.dealership_id);
+  })();
 
   res.json({ ok: true });
 });

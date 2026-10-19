@@ -1,6 +1,7 @@
 'use strict';
 const router = require('express').Router();
 const db = require('../database');
+const dealChecklist = require('../services/dealChecklist');
 const { requireAuth, requirePermission, hasPermission } = require('../middleware/auth');
 
 // Client records hold personal and financial data, so access is tiered by the
@@ -245,6 +246,7 @@ router.delete('/:id', ...requirePermission('deals_manage'), (req, res) => {
       .all(req.params.id, req.user.dealership_id)
       .map(row => row.id);
 
+    dealChecklist.deleteForDeals(db, req.user.dealership_id, dealIds);
     dealIds.forEach(id => {
       db.prepare('DELETE FROM documents WHERE deal_id = ? AND dealership_id = ?').run(id, req.user.dealership_id);
       db.prepare('DELETE FROM activity_logs WHERE entity_type = ? AND entity_id = ? AND dealership_id = ?')

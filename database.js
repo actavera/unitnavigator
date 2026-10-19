@@ -4,6 +4,7 @@ const path = require('path');
 const { ensurePrivateDataDir, ensurePrivateDbFiles, assertPrivate } = require('./services/dataDirSecurity');
 const { SCHEMA_SQL: IMPORT_HISTORY_SCHEMA } = require('./services/importHistory');
 const { SCHEMA_SQL: INVENTORY_TRUTH_SCHEMA } = require('./services/inventoryTruth');
+const { SCHEMA_SQL: DEAL_CHECKLIST_SCHEMA } = require('./services/dealChecklist');
 
 const dataDir = process.env.UNITNAV_DATA_DIR
   ? path.resolve(process.env.UNITNAV_DATA_DIR)
@@ -398,6 +399,9 @@ db.exec(IMPORT_HISTORY_SCHEMA);
 
 // Inventory assignment and disposition history (additive, append-only).
 db.exec(INVENTORY_TRUTH_SCHEMA);
+
+// Per-deal document checklist and its status history (additive).
+db.exec(DEAL_CHECKLIST_SCHEMA);
 
 function slugify(value) {
   return String(value || '')
