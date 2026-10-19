@@ -8,6 +8,8 @@ const dealChecklist = require('../services/dealChecklist');
 const { closeDeal, checklistWarning } = require('../services/dealClose');
 const reminders = require('../services/reminders');
 const titleCases = require('../services/titleCases');
+const usage = require('../services/usage');
+const { generateAiDraft } = require('../services/followUpDraft');
 
 const VALID_STATUSES = new Set(['pending', 'closed', 'dead', 'vehicle_changed']);
 const VALID_DEAL_TYPES = new Set(['we_finance', 'bhph', 'they_finance', 'cash']);
@@ -154,7 +156,8 @@ router.post('/', ...requirePermission('deals_manage'), (req, res) => {
   res.status(201).json({ deal: enrichDeal(created) });
 });
 
-router.get('/export/contacts.csv', ...requirePermission('reports_view'), (req, res) => {
+// Bulk contact export has its own permission and every export is recorded.
+router.get('/export/contacts.csv', ...requirePermission('contacts_export'), (req, res) => {
   const rows = db.prepare(`
     SELECT DISTINCT
       COALESCE(c.first_name, '') AS first_name,
@@ -182,6 +185,7 @@ router.get('/export/contacts.csv', ...requirePermission('reports_view'), (req, r
   ].join('\n');
 
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  usage.recordExport(db, { dealershipId: req.user.dealership_id, userId: req.user.id, exportType: 'contacts', rowCount: rows.length });
   res.setHeader('Content-Disposition', 'attachment; filename="unit-navigator-contacts.csv"');
   res.send(`\uFEFF${csv}`);
 });
@@ -197,6 +201,7 @@ router.post('/:id/follow-up-draft', ...requirePermission('deals_manage'), async 
     res.json(await buildFollowUpDraft({
       db, dealershipId: req.user.dealership_id, userId: req.user.id, dealId: req.params.id,
       channel: body.channel, useAi: body.ai === true,
+      generate: usage.metered(db, { dealershipId: req.user.dealership_id, userId: req.user.id, feature: 'follow_up_rewrite' }, generateAiDraft),
     }));
   } catch (err) {
     if (err instanceof FollowUpError) return res.status(err.statusCode).json({ error: err.message });

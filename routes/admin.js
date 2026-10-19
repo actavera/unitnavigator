@@ -8,6 +8,7 @@ const crypto = require('crypto');
 const db = require('../database');
 const importHistory = require('../services/importHistory');
 const reminders = require('../services/reminders');
+const usage = require('../services/usage');
 const messaging = require('../services/messaging');
 const { validInterval: validReviewInterval, MIN_REVIEW_INTERVAL_DAYS, MAX_REVIEW_INTERVAL_DAYS } = require('../services/inventoryTruth');
 const { requireAuth, requireRole, hasPermission, parsePermissions, ALL_PERMISSIONS } = require('../middleware/auth');
@@ -135,7 +136,7 @@ function normalizeEmail(email) {
 
 function cleanPermissions(value, role) {
   if (role === 'super_admin') return [...ALL_PERMISSIONS];
-  if (!Array.isArray(value)) return parsePermissions(null, role);
+  if (!Array.isArray(value)) return parsePermissions(null, role, 2);
   const list = value;
   return list.filter(permission => ALL_PERMISSIONS.includes(permission));
 }
@@ -148,7 +149,7 @@ function userRow(row) {
     name: row.name,
     email: row.email,
     role: row.role,
-    permissions: parsePermissions(row.permissions, row.role),
+    permissions: parsePermissions(row.permissions, row.role, row.permissions_version),
     status: row.status || 'active',
     created_at: row.created_at,
   };
@@ -297,8 +298,8 @@ router.post('/dealership-users', requireAuth, (req, res) => {
 
   try {
     const info = db.prepare(`
-      INSERT INTO users (dealership_id, name, email, password_hash, role, permissions, status)
-      VALUES (?, ?, ?, ?, ?, ?, 'active')
+      INSERT INTO users (dealership_id, name, email, password_hash, role, permissions, permissions_version, status)
+      VALUES (?, ?, ?, ?, ?, ?, 2, 'active')
     `).run(dealershipId, name, email, bcrypt.hashSync(password, 12), role, JSON.stringify(permissions));
     res.status(201).json({ user: userRow(dealerUserWithName(info.lastInsertRowid, dealershipId)) });
   } catch (err) {
@@ -323,12 +324,12 @@ router.patch('/dealership-users/:id', requireAuth, (req, res) => {
   const email = normalizeEmail(req.body.email ?? existing.email);
   const role = ['admin','manager','staff'].includes(req.body.role) ? req.body.role : existing.role;
   const status = req.body.status === 'revoked' ? 'revoked' : 'active';
-  const permissions = cleanPermissions(req.body.permissions ?? parsePermissions(existing.permissions, existing.role), role);
+  const permissions = cleanPermissions(req.body.permissions ?? parsePermissions(existing.permissions, existing.role, existing.permissions_version), role);
 
   try {
     db.prepare(`
       UPDATE users
-      SET dealership_id = ?, name = ?, email = ?, role = ?, permissions = ?, status = ?
+      SET dealership_id = ?, name = ?, email = ?, role = ?, permissions = ?, permissions_version = 2, status = ?
       WHERE id = ?
     `).run(dealershipId, name, email, role, JSON.stringify(permissions), status, existing.id);
   } catch (err) {
@@ -352,6 +353,16 @@ router.delete('/dealership-users/:id', requireAuth, (req, res) => {
   if (user.id === req.user.id) return res.status(400).json({ error: 'You cannot delete your own login while signed in' });
   db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
   res.json({ ok: true });
+});
+
+// Usage this month and recent exports, for dealership admins (and the
+// platform admin for any dealership). Read-only; nothing here bills.
+router.get('/usage', requireAuth, (req, res) => {
+  const dealershipId = Number(req.query.dealership_id || req.user.dealership_id);
+  const allowed = req.user.role === 'super_admin'
+    || (Number(dealershipId) === Number(req.user.dealership_id) && (hasPermission(req.user, 'settings_manage') || hasPermission(req.user, 'users_manage')));
+  if (!allowed) return res.status(403).json({ error: 'Insufficient permissions' });
+  res.json(usage.usageSummary(db, { dealershipId }));
 });
 
 router.use(...requireRole('super_admin'));
@@ -443,6 +454,7 @@ router.delete('/dealerships/:id', (req, res) => {
     db.prepare('DELETE FROM users WHERE dealership_id = ?').run(dealership.id);
     db.prepare('DELETE FROM activity_logs WHERE dealership_id = ?').run(dealership.id);
     importHistory.deleteForDealership(db, dealership.id);
+    usage.deleteForDealership(db, dealership.id);
     db.prepare('DELETE FROM dealerships WHERE id = ?').run(dealership.id);
   });
   tx();
@@ -466,8 +478,8 @@ router.post('/users', (req, res) => {
   const hash = bcrypt.hashSync(password, 12);
   try {
     const info = db.prepare(`
-      INSERT INTO users (dealership_id, name, email, password_hash, role, permissions, status)
-      VALUES (?, ?, ?, ?, ?, ?, 'active')
+      INSERT INTO users (dealership_id, name, email, password_hash, role, permissions, permissions_version, status)
+      VALUES (?, ?, ?, ?, ?, ?, 2, 'active')
     `).run(dealershipId, name, email, hash, role, JSON.stringify(permissions));
     const row = db.prepare(`
       SELECT u.*, d.name AS dealership_name
@@ -493,11 +505,11 @@ router.patch('/users/:id', (req, res) => {
   const email = normalizeEmail(req.body.email ?? user.email);
   const role = ['super_admin','admin','manager','staff'].includes(req.body.role) ? req.body.role : user.role;
   const status = req.body.status === 'revoked' ? 'revoked' : 'active';
-  const permissions = cleanPermissions(req.body.permissions ?? parsePermissions(user.permissions, user.role), role);
+  const permissions = cleanPermissions(req.body.permissions ?? parsePermissions(user.permissions, user.role, user.permissions_version), role);
   try {
     db.prepare(`
       UPDATE users
-      SET dealership_id = ?, name = ?, email = ?, role = ?, permissions = ?, status = ?
+      SET dealership_id = ?, name = ?, email = ?, role = ?, permissions = ?, permissions_version = 2, status = ?
       WHERE id = ?
     `).run(dealershipId, name, email, role, JSON.stringify(permissions), status, user.id);
   } catch (err) {
@@ -525,6 +537,25 @@ router.delete('/users/:id', (req, res) => {
   if (user.id === req.user.id) return res.status(400).json({ error: 'You cannot delete your own login while signed in' });
   db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
   res.json({ ok: true });
+});
+
+// Paid add-on entitlements (platform admin only; this section is below the
+// super_admin guard). No billing: this records what a dealership may use.
+router.get('/dealerships/:id/entitlements', (req, res) => {
+  const dealership = db.prepare('SELECT id FROM dealerships WHERE id = ?').get(req.params.id);
+  if (!dealership) return res.status(404).json({ error: 'Dealership not found' });
+  res.json({ entitlements: usage.listEntitlements(db, dealership.id) });
+});
+
+router.put('/dealerships/:id/entitlements/:feature', (req, res) => {
+  const dealership = db.prepare('SELECT id FROM dealerships WHERE id = ?').get(req.params.id);
+  if (!dealership) return res.status(404).json({ error: 'Dealership not found' });
+  try {
+    res.json({ entitlements: usage.setEntitlement(db, { dealershipId: dealership.id, feature: req.params.feature, actorId: req.user.id, body: req.body || {} }) });
+  } catch (err) {
+    if (err instanceof usage.UsageError) return res.status(err.statusCode).json({ error: err.message });
+    throw err;
+  }
 });
 
 module.exports = router;

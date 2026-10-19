@@ -11,9 +11,10 @@ const importHistory = require('../services/importHistory');
 const dealChecklist = require('../services/dealChecklist');
 const reminders = require('../services/reminders');
 const titleCases = require('../services/titleCases');
+const usage = require('../services/usage');
 
 function signUser(user, dealership, extra = {}) {
-  const permissions = parsePermissions(user.permissions, user.role);
+  const permissions = parsePermissions(user.permissions, user.role, user.permissions_version);
   return jwt.sign(
     { id: user.id, name: user.name, email: user.email, role: user.role, dealership_id: user.dealership_id, permissions, ...extra },
     JWT_SECRET,
@@ -22,7 +23,7 @@ function signUser(user, dealership, extra = {}) {
 }
 
 function userPayload(user, dealership, extra = {}) {
-  const permissions = parsePermissions(user.permissions, user.role);
+  const permissions = parsePermissions(user.permissions, user.role, user.permissions_version);
   return {
     id: user.id,
     name: user.name,
@@ -55,6 +56,7 @@ function cleanupDemoDealership(dealershipId) {
     dealChecklist.deleteForDealership(db, dealershipId);
     reminders.deleteForDealership(db, dealershipId);
     titleCases.deleteForDealership(db, dealershipId);
+    usage.deleteForDealership(db, dealershipId);
     db.prepare('DELETE FROM unit_assignments WHERE dealership_id = ?').run(dealershipId);
     db.prepare('DELETE FROM unit_dispositions WHERE dealership_id = ?').run(dealershipId);
     db.prepare('DELETE FROM platform_sold_units WHERE dealership_id = ?').run(dealershipId);

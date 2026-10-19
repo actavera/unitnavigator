@@ -7,6 +7,7 @@ const { SCHEMA_SQL: INVENTORY_TRUTH_SCHEMA } = require('./services/inventoryTrut
 const { SCHEMA_SQL: DEAL_CHECKLIST_SCHEMA } = require('./services/dealChecklist');
 const { SCHEMA_SQL: REMINDERS_SCHEMA } = require('./services/reminders');
 const { SCHEMA_SQL: TITLE_CASES_SCHEMA } = require('./services/titleCases');
+const { SCHEMA_SQL: USAGE_SCHEMA } = require('./services/usage');
 
 const dataDir = process.env.UNITNAV_DATA_DIR
   ? path.resolve(process.env.UNITNAV_DATA_DIR)
@@ -418,6 +419,9 @@ db.exec(REMINDERS_SCHEMA);
 // Title, plate, and registration cases and their history (additive; no backfill).
 db.exec(TITLE_CASES_SCHEMA);
 
+// AI/export usage records and add-on entitlements (additive).
+db.exec(USAGE_SCHEMA);
+
 function slugify(value) {
   return String(value || '')
     .toLowerCase()
@@ -480,6 +484,13 @@ if (userSchema && (!userSchema.includes("'super_admin'") || !userColumns.include
     DROP TABLE users_old_admin_migration;
     PRAGMA foreign_keys = ON;
   `);
+}
+
+// Permission-list format version. Existing rows keep 1, under which
+// reports_view still implies contacts_export (unchanged access); saves through
+// user management write 2. No stored row is rewritten here.
+if (!db.prepare("PRAGMA table_info(users)").all().some(col => col.name === 'permissions_version')) {
+  db.exec("ALTER TABLE users ADD COLUMN permissions_version INTEGER DEFAULT 1");
 }
 
 db.prepare(`

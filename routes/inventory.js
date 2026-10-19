@@ -11,6 +11,8 @@ const { generateVehicleDescription } = require('../services/vehicleDescription')
 const { runBulkSuggestions, ListingSuiteError } = require('../services/listingSuite');
 const importHistory = require('../services/importHistory');
 const inventoryTruth = require('../services/inventoryTruth');
+const usage = require('../services/usage');
+const { generateBatchDescriptions } = require('../services/vehicleDescription');
 const { csvCell } = require('../services/csv');
 const { safeFetch, readBodyWithLimit, releaseResponse } = require('../services/safeFetch');
 const { resolveUploadPath } = require('../services/uploads');
@@ -783,6 +785,7 @@ router.get('/export', requireAuth, (req, res) => {
   ].join('\n');
 
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  usage.recordExport(db, { dealershipId: req.user.dealership_id, userId: req.user.id, exportType: 'inventory', rowCount: rows.length, filters: { stage: stage || 'all', search: search ? 'yes' : undefined, selected: ids ? 'yes' : undefined } });
   res.setHeader('Content-Disposition', `attachment; filename="${exportFilename(req.user.dealership_id)}"`);
   res.send(`\uFEFF${csv}`);
 });
@@ -1040,7 +1043,7 @@ router.get('/price-suggestion', ...requirePermission('inventory_pricing'), (req,
 
 router.post('/description-suggestion', ...requirePermission('inventory_edit'), async (req, res) => {
   try {
-    const description = await generateVehicleDescription({
+    const description = await usage.metered(db, { dealershipId: req.user.dealership_id, userId: req.user.id, feature: 'listing_description' }, generateVehicleDescription)({
       year: req.body.year,
       make: req.body.make,
       model: req.body.model,
@@ -1061,7 +1064,7 @@ router.post('/description-suggestion', ...requirePermission('inventory_edit'), a
 // existing PUT /api/inventory/:id update path.
 router.post('/description-suggestions/bulk', ...requirePermission('inventory_edit'), async (req, res) => {
   try {
-    res.json(await runBulkSuggestions({ db, dealershipId: req.user.dealership_id, body: req.body }));
+    res.json(await runBulkSuggestions({ db, dealershipId: req.user.dealership_id, body: req.body, generate: usage.metered(db, { dealershipId: req.user.dealership_id, userId: req.user.id, feature: 'listing_bulk' }, generateBatchDescriptions) }));
   } catch (err) {
     if (err instanceof ListingSuiteError) return res.status(err.statusCode).json({ error: err.message });
     res.status(500).json({ error: 'Could not generate description suggestions' });
@@ -1074,7 +1077,7 @@ router.post('/:id/description-suggestion', ...requirePermission('inventory_edit'
   if (!unit) return res.status(404).json({ error: 'Unit not found' });
 
   try {
-    const description = await generateVehicleDescription(unit);
+    const description = await usage.metered(db, { dealershipId: req.user.dealership_id, userId: req.user.id, feature: 'listing_description' }, generateVehicleDescription)(unit);
     res.json({ description });
   } catch (err) {
     res.status(err.code === 'missing_openai_key' ? 503 : 502).json({ error: err.message || 'Could not generate description' });
