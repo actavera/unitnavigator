@@ -7,6 +7,7 @@ const inventoryTruth = require('../services/inventoryTruth');
 const dealChecklist = require('../services/dealChecklist');
 const { closeDeal, checklistWarning } = require('../services/dealClose');
 const titleCases = require('../services/titleCases');
+const usage = require('../services/usage');
 
 const UNIT_STAGES = new Set(['acquired','transport','screening','recon','ready','pending','sold','archived']);
 const DEAL_ACTIONS = new Set(['still_pending','dead','vehicle_changed','closed']);
@@ -330,7 +331,10 @@ async function buildAiGuidanceResponse({ dealershipId, priorities, requestedIds,
 router.post('/priorities/ai-guidance', ...requirePermission('reports_view'), async (req, res) => {
   const priorities = currentPriorities(req);
   const requestedIds = Array.isArray(req.body?.ids) ? req.body.ids.filter(id => typeof id === 'string') : null;
-  const result = await buildAiGuidanceResponse({ dealershipId: req.user.dealership_id, priorities, requestedIds });
+  const result = await buildAiGuidanceResponse({
+    dealershipId: req.user.dealership_id, priorities, requestedIds,
+    generate: usage.metered(db, { dealershipId: req.user.dealership_id, userId: req.user.id, feature: 'priority_guidance' }, generateBatchGuidance),
+  });
   res.json(result);
 });
 

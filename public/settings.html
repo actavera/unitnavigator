@@ -222,6 +222,11 @@
       </div>
     </article>
     <article class="settings-card full">
+      <div class="settings-card-head"><h2>Usage &amp; Exports</h2></div>
+      <div class="settings-card-body" id="usagePanel"><p class="settings-note">Loading…</p></div>
+    </article>
+
+    <article class="settings-card full">
       <div class="settings-card-head"><h2>Customer Reminders</h2></div>
       <div class="settings-card-body">
         <p class="settings-note">Automatic reminders for outstanding deal checklist items. They go only to customers who have consented, list only the item names, and stop after the attempt limit, when the deal is flagged for staff follow-up. Texts include "Reply STOP to opt out"; emails include an unsubscribe link.</p>
@@ -310,11 +315,34 @@ async function loadSettings() {
     });
     const configured = data.messaging || {};
     document.getElementById('messagingStatus').textContent = `Sending setup: email ${configured.email ? 'ready' : 'not set up yet'}, text ${configured.sms ? 'ready' : 'not set up yet'}. Nothing is sent until sending is set up and the channel is on.`;
+    loadUsage();
     updateLogoPreview();
     updateShareImagePreview();
     updateShowroomPreview();
   } catch (err) {
     toast(err.message, 'err');
+  }
+}
+
+const AI_LABELS = { listing_description: 'Listing descriptions', listing_bulk: 'Bulk listing suggestions', priority_guidance: 'Priorities AI guidance', follow_up_rewrite: 'Follow-up AI rewrites' };
+
+async function loadUsage() {
+  const el = document.getElementById('usagePanel');
+  try {
+    const data = await UN.api('GET', `/api/admin/usage${selectedDealerQuery()}`);
+    const ai = data.ai.length ? data.ai.map(r => `<li>${escapeHtml(AI_LABELS[r.feature] || r.feature)}: ${Number(r.attempts)}${Number(r.failures) ? ` (${Number(r.failures)} failed)` : ''}</li>`).join('') : '<li>None this month</li>';
+    const msgs = data.messaging.length ? data.messaging.map(r => `<li>${r.channel === 'sms' ? 'Texts' : 'Emails'} ${escapeHtml(r.status)}: ${Number(r.count)}</li>`).join('') : '<li>None this month</li>';
+    const exportsList = data.exports.length ? data.exports.slice(0, 15).map(e => `<li>${escapeHtml(e.export_type)} · ${Number(e.row_count)} rows · ${escapeHtml(e.user_name || 'Unknown user')} · ${escapeHtml(UN.fmt && UN.fmt.ago ? UN.fmt.ago(e.created_at) : e.created_at)}</li>`).join('') : '<li>No exports yet</li>';
+    const addons = data.entitlements.map(a => `<li>${escapeHtml(a.label)}: ${a.active ? 'active' : 'not included'}</li>`).join('');
+    el.innerHTML = `<p class="settings-note">For visibility only; nothing here limits or bills usage. Current AI features are included in the base plan.</p>
+      <div class="settings-form-grid">
+        <div><strong>AI requests this month</strong><ul>${ai}</ul></div>
+        <div><strong>Customer messages this month</strong><ul>${msgs}</ul></div>
+        <div><strong>Recent exports</strong><ul>${exportsList}</ul></div>
+        <div><strong>Add-ons</strong><ul>${addons}</ul></div>
+      </div>`;
+  } catch (err) {
+    el.innerHTML = `<p class="settings-note">${escapeHtml(err.message)}</p>`;
   }
 }
 

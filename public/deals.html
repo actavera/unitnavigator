@@ -165,7 +165,7 @@
     <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end;">
       <a class="btn btn-ghost" href="/paperwork/start">Start Paperwork</a>
       <a class="btn btn-ghost" href="/titles">Titles &amp; Registration</a>
-      <button class="btn btn-primary" onclick="exportContacts()">Export Contacts</button>
+      <button class="btn btn-primary" id="exportContactsBtn" onclick="exportContacts()">Export Contacts</button>
     </div>
   </header>
 
@@ -257,6 +257,7 @@
 <script src="/js/nav.js"></script>
 <script>
 if (UN.requireAuth()) UN.renderNav();
+if (document.getElementById('exportContactsBtn') && !UN.can('contacts_export')) document.getElementById('exportContactsBtn').style.display = 'none';
 
 let deals = [];
 let clients = [];

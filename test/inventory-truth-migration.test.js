@@ -40,6 +40,10 @@ test('upgrades a pre-feature database (inventory truth and deal checklist) witho
       DROP TABLE deal_reminder_state;
       DROP TABLE title_cases;
       DROP TABLE title_case_events;
+      DROP TABLE ai_usage;
+      DROP TABLE export_audit;
+      DROP TABLE dealership_entitlements;
+      DROP TABLE entitlement_events;
       ALTER TABLE units DROP COLUMN assigned_user_id;
       ALTER TABLE dealerships DROP COLUMN inventory_review_interval_days;
     `);
@@ -60,7 +64,7 @@ test('upgrades a pre-feature database (inventory truth and deal checklist) witho
       assert.equal(unit.assigned_user_id, null);
       assert.equal(unit.last_age_check_at, '2026-09-20T10:00:00.000Z');
       assert.equal(unit.stage, 'ready');
-      for (const table of ['unit_assignments', 'unit_dispositions', 'deal_checklist_items', 'deal_checklist_events', 'communication_consents', 'communication_messages', 'deal_reminder_state', 'title_cases', 'title_case_events']) {
+      for (const table of ['unit_assignments', 'unit_dispositions', 'deal_checklist_items', 'deal_checklist_events', 'communication_consents', 'communication_messages', 'deal_reminder_state', 'title_cases', 'title_case_events', 'ai_usage', 'export_audit', 'dealership_entitlements', 'entitlement_events']) {
         assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table), `${table} exists`);
         assert.equal(db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n, 0);
       }

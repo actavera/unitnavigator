@@ -64,6 +64,7 @@ const UN = {
     'settings_manage',
     'users_manage',
     'credit_pull',
+    'contacts_export',
   ],
   defaultPermissions(role) {
     if (role === 'super_admin' || role === 'admin') return [...UN.allPermissions];

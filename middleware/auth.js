@@ -22,6 +22,7 @@ const ALL_PERMISSIONS = [
   'settings_manage',
   'users_manage',
   'credit_pull',
+  'contacts_export',
 ];
 
 const ROLE_DEFAULTS = {
@@ -31,15 +32,22 @@ const ROLE_DEFAULTS = {
   staff: ['inventory_view', 'inventory_add', 'inventory_edit', 'deals_view', 'reports_view'],
 };
 
-function parsePermissions(value, role = 'staff') {
+// `version` is users.permissions_version. Rows saved before the dedicated
+// contacts_export permission existed (version 1) keep exporting through
+// reports_view, exactly as before, without rewriting any stored row. Any save
+// through user management writes version 2, after which the list is exact.
+function parsePermissions(value, role = 'staff', version = 1) {
   if (role === 'super_admin') return [...ALL_PERMISSIONS];
+  let list = null;
   if (value) {
     try {
       const parsed = JSON.parse(value);
-      if (Array.isArray(parsed)) return parsed.filter(p => ALL_PERMISSIONS.includes(p));
+      if (Array.isArray(parsed)) list = parsed.filter(p => ALL_PERMISSIONS.includes(p));
     } catch {}
   }
-  return [...(ROLE_DEFAULTS[role] || ROLE_DEFAULTS.staff)];
+  if (!list) list = [...(ROLE_DEFAULTS[role] || ROLE_DEFAULTS.staff)];
+  if (Number(version) < 2 && list.includes('reports_view') && !list.includes('contacts_export')) list.push('contacts_export');
+  return list;
 }
 
 function hasPermission(user, permission) {
@@ -55,7 +63,7 @@ function requireAuth(req, res, next) {
   try {
     req.user = jwt.verify(token, JWT_SECRET);
     const user = db.prepare(`
-      SELECT u.id, u.dealership_id, u.role, u.permissions, u.status, d.status AS dealership_status
+      SELECT u.id, u.dealership_id, u.role, u.permissions, u.permissions_version, u.status, d.status AS dealership_status
       FROM users u
       LEFT JOIN dealerships d ON d.id = u.dealership_id
       WHERE u.id = ?
@@ -68,7 +76,7 @@ function requireAuth(req, res, next) {
     // grant access to a different dealership than the user currently belongs to.
     req.user.dealership_id = user.dealership_id;
     req.user.role = user.role;
-    req.user.permissions = parsePermissions(user.permissions, user.role);
+    req.user.permissions = parsePermissions(user.permissions, user.role, user.permissions_version);
     next();
   } catch {
     res.status(401).json({ error: 'Invalid or expired session' });

@@ -17,14 +17,6 @@ Finish the operational core that the $500 base product promises.
 
 Communications foundation and missing-document reminders are built; they start sending once provider credentials are configured.
 
-## 3. Add-On Entitlements and Usage Controls
-Control which dealerships can use which paid features, without automated billing.
-- Current AI features, the simple showroom, and basic operations stay in the $500 base product; entitlements gate the paid add-ons listed above.
-- Internal usage visibility for AI and messaging (counted per provider request; no prompt, output, or customer content stored), designed once and applied to every AI route.
-- Entitlements by dealership and feature, checked before any provider call, with per-user permissions still applying inside an entitled dealership.
-- A dedicated bulk-contact-export permission (the contacts export currently needs only `reports_view`, which default staff roles have) and an export audit history covering the contacts export, the inventory export, and future exports.
-- No automated purchasing, charging, or invoicing.
-
 ## 4. 700Credit Product Add-Ons
 Begin with an audit of 700Credit's provider documentation and authorization requirements before any implementation. Then add products incrementally, each separately authorized and tested: identity/fraud, compliance, DL/DMV verification, income, prescreen/prequalification, and monthly products.
 
