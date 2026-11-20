@@ -1262,6 +1262,130 @@ router.get('/esign/:id/status', ...requirePermission('contracts_manage'), async 
   }
 });
 
+// ── Contracts center: list, download/print, and void unsigned packets ───────
+
+const SIGNED_STATUSES = new Set(['completed']);
+
+function parseSigners(value) {
+  try {
+    const list = JSON.parse(value || '[]');
+    return Array.isArray(list) ? list.map(s => ({ role: s.role || null, name: s.name || null })) : [];
+  } catch {
+    return [];
+  }
+}
+
+// Every e-sign packet for this dealership. filter: unsigned (default), signed, all.
+router.get('/esign', ...requirePermission('contracts_manage'), (req, res) => {
+  const filter = ['signed', 'unsigned', 'all'].includes(req.query.filter) ? req.query.filter : 'unsigned';
+  const rows = db.prepare(`
+    SELECT e.id, e.deal_id, e.provider, e.title, e.status, e.signer_summary, e.created_at, e.completed_at,
+           e.archive_path IS NOT NULL AS has_document, e.audit_log_path IS NOT NULL AS has_audit_log,
+           c.first_name, c.last_name, u.year, u.make, u.model, cu.name AS created_by_name
+    FROM esign_envelopes e
+    LEFT JOIN deals d ON d.id = e.deal_id AND d.dealership_id = e.dealership_id
+    LEFT JOIN customers c ON c.id = d.customer_id AND c.dealership_id = e.dealership_id
+    LEFT JOIN units u ON u.id = d.unit_id AND u.dealership_id = e.dealership_id
+    LEFT JOIN users cu ON cu.id = e.created_by AND cu.dealership_id = e.dealership_id
+    WHERE e.dealership_id = ?
+    ORDER BY e.created_at DESC, e.id DESC
+  `).all(req.user.dealership_id).map(row => {
+    const signed = SIGNED_STATUSES.has(String(row.status || '').toLowerCase());
+    return {
+      id: row.id,
+      deal_id: row.deal_id,
+      provider: row.provider,
+      title: row.title,
+      status: row.status,
+      signed,
+      created_at: row.created_at,
+      completed_at: row.completed_at,
+      has_document: Boolean(row.has_document),
+      has_audit_log: Boolean(row.has_audit_log),
+      customer_name: [row.first_name, row.last_name].filter(Boolean).join(' ') || null,
+      vehicle: [row.year, row.make, row.model].filter(Boolean).join(' ') || null,
+      created_by_name: row.created_by_name || null,
+      signers: parseSigners(row.signer_summary),
+    };
+  }).filter(row => filter === 'all' || (filter === 'signed' ? row.signed : !row.signed));
+  res.json({ contracts: rows });
+});
+
+// The archived signed PDF (kind=signed) or its audit log (kind=audit),
+// served inline so it can be viewed or printed. Only files inside this
+// server's e-sign archive, recorded on this dealership's own envelope.
+router.get('/esign/:id/document', ...requirePermission('contracts_manage'), (req, res) => {
+  const row = db.prepare('SELECT * FROM esign_envelopes WHERE id = ? AND dealership_id = ?').get(req.params.id, req.user.dealership_id);
+  if (!row) return res.status(404).json({ error: 'Contract not found.' });
+  const kind = req.query.kind === 'audit' ? 'audit' : 'signed';
+  const recorded = kind === 'audit' ? row.audit_log_path : row.archive_path;
+  if (!recorded) return res.status(404).json({ error: 'No signed copy is archived yet. Refresh its status first.' });
+  const file = path.join(esignArchiveDir, path.basename(recorded));
+  if (!file.startsWith(esignArchiveDir + path.sep) || !path.basename(file).startsWith(`${req.user.dealership_id}-`) || !isRegularFile(file)) {
+    return res.status(404).json({ error: 'The archived file could not be found.' });
+  }
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="${kind === 'audit' ? 'audit-log' : 'signed-contract'}-${row.id}.pdf"`);
+  res.setHeader('Cache-Control', 'no-store');
+  fs.createReadStream(file).pipe(res);
+});
+
+// Voids an unsigned packet: DocuSeal archives the submission (its signing
+// links stop working), then the local record is removed and the deal's
+// timeline notes it. Signed or archived contracts can never be deleted.
+async function archiveDocusealRemote(submissionId) {
+  const { token, baseUrl } = requireDocusealConfig();
+  const { signal, cancel } = withTimeout(PROVIDER_REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${baseUrl}/submissions/${encodeURIComponent(submissionId)}`, { method: 'DELETE', headers: { 'X-Auth-Token': token }, signal });
+    const buf = await readBodyWithLimit(response, MAX_PROVIDER_JSON_BYTES);
+    // Already gone at DocuSeal is fine: the goal is that it cannot be signed.
+    if (!response.ok && response.status !== 404) {
+      const body = parseJsonLoosely(buf);
+      throw Object.assign(new Error(body.error || body.message || `DocuSeal returned HTTP ${response.status}`), { statusCode: 502 });
+    }
+  } catch (err) {
+    if (isAbortError(err)) throw Object.assign(new Error('DocuSeal did not respond in time. Nothing was deleted.'), { statusCode: 504 });
+    throw err;
+  } finally {
+    cancel();
+  }
+}
+
+router.delete('/esign/:id', ...requirePermission('contracts_manage'), async (req, res) => {
+  const row = db.prepare('SELECT * FROM esign_envelopes WHERE id = ? AND dealership_id = ?').get(req.params.id, req.user.dealership_id);
+  if (!row) return res.status(404).json({ error: 'Contract not found.' });
+  if (SIGNED_STATUSES.has(String(row.status || '').toLowerCase()) || row.archive_path || row.audit_log_path || row.completed_at) {
+    return res.status(409).json({ error: 'Signed contracts are kept permanently and cannot be deleted.' });
+  }
+  try {
+    if (row.provider === 'docuseal') {
+      // Re-check with DocuSeal first: if it was signed since the last refresh,
+      // keep it.
+      const live = await docusealSubmissionStatus(row.provider_envelope_id).catch(err => {
+        if (/404|not found/i.test(err.message || '')) return null;
+        throw err;
+      });
+      if (live && String(live.status || '').toLowerCase() === 'completed') {
+        return res.status(409).json({ error: 'This contract was signed. Refresh its status to archive the signed copy; it cannot be deleted.' });
+      }
+      await archiveDocusealRemote(row.provider_envelope_id);
+    }
+    db.transaction(() => {
+      db.prepare('UPDATE deal_checklist_items SET esign_envelope_id = NULL WHERE esign_envelope_id = ? AND dealership_id = ?').run(row.id, req.user.dealership_id);
+      db.prepare('DELETE FROM esign_envelopes WHERE id = ? AND dealership_id = ?').run(row.id, req.user.dealership_id);
+      if (row.deal_id) {
+        db.prepare(`INSERT INTO activity_logs (dealership_id, entity_type, entity_id, action, note, user_id) VALUES (?, 'deal', ?, 'Unsigned e-sign packet voided', ?, ?)`)
+          .run(req.user.dealership_id, row.deal_id, row.title || null, req.user.id);
+      }
+    })();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Void e-sign packet failed:', err.message);
+    res.status(err.statusCode || 500).json({ error: err.message || 'The contract could not be voided. Nothing was deleted.' });
+  }
+});
+
 module.exports = router;
 module.exports.preparePacketWithStirling = preparePacketWithStirling;
 module.exports.toDocusealArea = toDocusealArea;

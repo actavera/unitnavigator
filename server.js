@@ -169,6 +169,7 @@ const staticPages = {
   '/credit/new':    'credit-new.html',
   '/deals':         'deals.html',
   '/titles':        'titles.html',
+  '/contracts':     'contracts.html',
   '/customers':     'customers.html',
   '/admin':         'admin.html',
   '/admin/sold-vehicle-data': 'admin-sold-data.html',
