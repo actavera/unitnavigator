@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/site.webmanifest">
+  <title>Contracts - Unit Navigator</title>
+  <script>(function(){var t=localStorage.getItem('un_theme')||'dark';document.documentElement.dataset.theme=t;})()</script>
+  <link rel="stylesheet" href="/css/main.css">
+  <style>
+    .contracts-shell { width: min(100% - 32px, 1200px); margin: 0 auto; padding: 32px 0 64px; }
+    .contracts-filters { display: flex; gap: 8px; flex-wrap: wrap; margin: 16px 0; }
+    .contracts-filters .active { border-color: var(--border-hi); }
+    .contracts-table { width: 100%; border-collapse: collapse; }
+    .contracts-table th, .contracts-table td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); font-size: .9rem; vertical-align: top; }
+    .contracts-table th { color: var(--muted); font-weight: 600; }
+    .contracts-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .status-signed { color: var(--green, #22c55e); font-weight: 600; }
+    @media (max-width: 760px) { .contracts-table .optional { display: none; } }
+    #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); padding: 10px 16px; border-radius: 8px; background: var(--s3); color: var(--text); display: none; z-index: 2000; }
+    #toast.show { display: block; }
+  </style>
+</head>
+<body>
+<div id="nav-container"></div>
+<main class="contracts-shell">
+  <h1>Contracts</h1>
+  <p class="text-muted">E-sign packets sent from Start Paperwork. Signed contracts are kept permanently; unsigned ones can be voided, which stops their signing links.</p>
+  <div class="contracts-filters" id="filters">
+    <button class="btn btn-ghost btn-sm" type="button" data-filter="unsigned" onclick="setFilter('unsigned')">Unsigned</button>
+    <button class="btn btn-ghost btn-sm" type="button" data-filter="signed" onclick="setFilter('signed')">Signed</button>
+    <button class="btn btn-ghost btn-sm" type="button" data-filter="all" onclick="setFilter('all')">All</button>
+  </div>
+  <div id="contractsBody"><p class="text-muted">Loading…</p></div>
+</main>
+<div id="toast"></div>
+<script src="/js/nav.js"></script>
+<script>
+if (UN.requireAuth()) UN.renderNav();
+
+let currentFilter = ['unsigned', 'signed', 'all'].includes(new URLSearchParams(location.search).get('filter')) ? new URLSearchParams(location.search).get('filter') : 'unsigned';
+
+function esc(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+function toast(msg, type = 'ok') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `show toast-${type}`;
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove('show'), 3500);
+}
+const label = s => String(s || 'pending').replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
+
+function row(c) {
+  const id = Number(c.id);
+  const status = c.signed ? '<span class="status-signed">Signed</span>' : esc(label(c.status));
+  const signers = (c.signers || []).map(s => esc(s.name || s.role || '')).filter(Boolean).join(', ');
+  const actions = [
+    `<button class="btn btn-ghost btn-sm" type="button" onclick="refreshStatus(${id})">Refresh status</button>`,
+    c.has_document ? `<button class="btn btn-primary btn-sm" type="button" onclick="openDocument(${id}, 'signed')">View / print</button>` : '',
+    c.has_audit_log ? `<button class="btn btn-ghost btn-sm" type="button" onclick="openDocument(${id}, 'audit')">Audit log</button>` : '',
+    !c.signed ? `<button class="btn btn-danger btn-sm" type="button" onclick="voidContract(${id})">Delete</button>` : '',
+    c.deal_id ? `<a class="btn btn-ghost btn-sm" href="/deals?deal=${Number(c.deal_id)}">Deal</a>` : '',
+  ].join('');
+  return `<tr>
+    <td><strong>${esc(c.customer_name || 'No customer linked')}</strong><br><span class="text-muted">${esc(c.vehicle || c.title || '')}</span></td>
+    <td>${status}</td>
+    <td class="optional">${signers}</td>
+    <td class="optional">${esc(c.created_at ? UN.fmt.ago(c.created_at) : '')}${c.created_by_name ? ' · ' + esc(c.created_by_name) : ''}</td>
+    <td class="optional">${esc(c.completed_at ? String(c.completed_at).slice(0, 10) : '')}</td>
+    <td><div class="contracts-actions">${actions}</div></td>
+  </tr>`;
+}
+
+function render(list) {
+  document.querySelectorAll('#filters [data-filter]').forEach(b => b.classList.toggle('active', b.dataset.filter === currentFilter));
+  const el = document.getElementById('contractsBody');
+  if (!list.length) { el.innerHTML = '<p class="text-muted">No contracts in this view.</p>'; return; }
+  el.innerHTML = `<table class="contracts-table">
+    <thead><tr><th>Customer / vehicle</th><th>Status</th><th class="optional">Signers</th><th class="optional">Sent</th><th class="optional">Signed on</th><th></th></tr></thead>
+    <tbody>${list.map(row).join('')}</tbody></table>`;
+}
+
+async function load() {
+  try { render((await UN.api('GET', `/api/paperwork/esign?filter=${encodeURIComponent(currentFilter)}`)).contracts || []); }
+  catch (e) { document.getElementById('contractsBody').textContent = e.message; }
+}
+
+function setFilter(filter) {
+  currentFilter = filter;
+  history.replaceState(null, '', `/contracts?filter=${filter}`);
+  load();
+}
+
+async function refreshStatus(id) {
+  try {
+    const data = await UN.api('GET', `/api/paperwork/esign/${Number(id)}/status`);
+    toast(data.archived ? 'Signed copy archived.' : `Status: ${label(data.status)}`);
+    load();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+// The document needs the session token, so it is fetched and opened from a
+// local blob; the browser's PDF viewer handles printing.
+async function openDocument(id, kind) {
+  const win = window.open('', '_blank');
+  try {
+    const res = await fetch(`/api/paperwork/esign/${Number(id)}/document?kind=${kind}`, { headers: { Authorization: `Bearer ${UN.getToken()}` } });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Could not open the document');
+    const url = URL.createObjectURL(await res.blob());
+    if (win) win.location.href = url; else location.href = url;
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (e) {
+    if (win) win.close();
+    toast(e.message, 'err');
+  }
+}
+
+async function voidContract(id) {
+  if (!confirm('Delete this unsigned contract? Its signing link will stop working. This cannot be undone.')) return;
+  try {
+    await UN.api('DELETE', `/api/paperwork/esign/${Number(id)}`);
+    toast('Unsigned contract deleted.');
+    load();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+load();
+</script>
+</body>
+</html>
